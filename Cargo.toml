@@ -1,0 +1,9 @@
+[workspace]
+default-members = [
+    "cli",
+]
+members = [
+    "cli",
+    "stream",
+    "model",
+]
