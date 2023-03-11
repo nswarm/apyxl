@@ -1,4 +1,5 @@
 use anyhow::Result;
+
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_until, take_while1};
 use nom::character::complete::{line_ending, not_line_ending};
@@ -6,15 +7,22 @@ use nom::multi::many0;
 use nom::sequence::terminated;
 use nom::IResult;
 
-use input::Input;
-use model::{Dto, Model};
-
-use crate::Parser;
+use crate::input::Input;
+use crate::model::{Dto, Model};
+use crate::parser::Parser;
 
 /// Parser that breaks up the input by the given delimiter.
 /// Newlines (either \r\n or just \n) also count as a delimiter.
 pub struct Delimited {
     delimiter: String,
+}
+
+impl Delimited {
+    pub fn new(delimiter: impl ToString) -> Self {
+        Self {
+            delimiter: delimiter.to_string(),
+        }
+    }
 }
 
 impl Parser for Delimited {

@@ -1,5 +1,5 @@
 [package]
-name = "output"
+name = "apyxl"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+nom = "7.1"
+chumsky = "1.0.0-alpha.0"

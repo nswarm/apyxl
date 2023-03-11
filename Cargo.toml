@@ -4,9 +4,5 @@ default-members = [
 ]
 members = [
     "cli",
-    "input",
-    "parser",
-    "model",
-    "generator",
-    "output",
+    "apyxl"
 ]

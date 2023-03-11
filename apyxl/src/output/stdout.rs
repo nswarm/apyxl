@@ -1,6 +1,8 @@
-use crate::Output;
-use anyhow::Result;
 use std::io::{stdout, Write};
+
+use anyhow::Result;
+
+use crate::output::Output;
 
 #[derive(Default)]
 pub struct StdOut {}

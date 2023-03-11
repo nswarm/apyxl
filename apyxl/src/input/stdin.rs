@@ -1,6 +1,8 @@
-use crate::Input;
-use anyhow::Result;
 use std::io::{stdin, Read};
+
+use anyhow::Result;
+
+use crate::input::Input;
 
 pub struct StdIn {
     data: String,
