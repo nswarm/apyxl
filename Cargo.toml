@@ -4,7 +4,9 @@ default-members = [
 ]
 members = [
     "cli",
-    "stream",
+    "input",
     "parser",
     "model",
+    "generator",
+    "output",
 ]

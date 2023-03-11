@@ -6,8 +6,8 @@ use nom::multi::many0;
 use nom::sequence::terminated;
 use nom::IResult;
 
+use input::Input;
 use model::{Dto, Model};
-use stream::Input;
 
 use crate::Parser;
 
