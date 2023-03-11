@@ -8,5 +8,5 @@ use crate::output::Output;
 mod dbg;
 
 pub trait Generator {
-    fn generate<O: Output>(&self, model: &Model, output: O) -> Result<()>;
+    fn generate(&self, model: &Model, output: &mut dyn Output) -> Result<()>;
 }

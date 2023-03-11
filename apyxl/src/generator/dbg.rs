@@ -9,7 +9,7 @@ use crate::output::Output;
 pub struct Dbg {}
 
 impl Generator for Dbg {
-    fn generate<O: Output>(&self, model: &Model, output: O) -> Result<()> {
+    fn generate(&self, model: &Model, output: &mut dyn Output) -> Result<()> {
         output.write(&format!("{:?}", model))
     }
 }

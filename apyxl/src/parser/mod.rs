@@ -8,5 +8,5 @@ use crate::model::Model;
 mod delimited;
 
 pub trait Parser {
-    fn parse<T: Input>(&self, input: &T) -> Result<Model>;
+    fn parse(&self, input: &dyn Input) -> Result<Model>;
 }

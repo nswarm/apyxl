@@ -26,7 +26,7 @@ impl Delimited {
 }
 
 impl Parser for Delimited {
-    fn parse<T: Input>(&self, input: &T) -> Result<Model> {
+    fn parse(&self, input: &dyn Input) -> Result<Model> {
         let tokens = finished_tokens(input.data(), &self.delimiter)?;
         let model = Model {
             dtos: tokens
