@@ -10,6 +10,6 @@ pub struct Dbg {}
 
 impl Generator for Dbg {
     fn generate(&self, model: &Model, output: &mut dyn Output) -> Result<()> {
-        output.write(&format!("{:?}", model))
+        output.write(&format!("{:#?}\n", model))
     }
 }

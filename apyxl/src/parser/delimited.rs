@@ -13,6 +13,7 @@ use crate::parser::Parser;
 
 /// Parser that breaks up the input by the given delimiter.
 /// Newlines (either \r\n or just \n) also count as a delimiter.
+#[derive(Debug)]
 pub struct Delimited {
     delimiter: String,
 }
@@ -54,9 +55,8 @@ fn finished_tokens<'a>(input: &'a str, delimiter: &'a str) -> Result<Vec<&'a str
 
 #[cfg(test)]
 mod test {
+    use crate::parser::delimited::finished_tokens;
     use anyhow::Result;
-
-    use crate::delimited::finished_tokens;
 
     #[test]
     fn tokens_single_char() -> Result<()> {

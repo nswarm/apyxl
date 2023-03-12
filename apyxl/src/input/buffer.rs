@@ -1,5 +1,6 @@
 use crate::input::Input;
 
+#[derive(Default)]
 pub struct Buffer {
     data: String,
 }
