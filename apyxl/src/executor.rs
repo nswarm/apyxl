@@ -214,7 +214,10 @@ mod test {
                     .split(&self.delimiter)
                     .into_iter()
                     .map(&str::to_owned)
-                    .map(|name| Dto { name })
+                    .map(|name| Dto {
+                        name,
+                        ..Default::default()
+                    })
                     .collect::<Vec<Dto>>(),
             })
         }

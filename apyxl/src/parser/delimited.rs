@@ -32,7 +32,10 @@ impl Parser for Delimited {
         let model = Model {
             dtos: tokens
                 .into_iter()
-                .map(|t| Dto { name: t.to_owned() })
+                .map(|t| Dto {
+                    name: t.to_owned(),
+                    ..Default::default()
+                })
                 .collect::<Vec<Dto>>(),
         };
         Ok(model)
