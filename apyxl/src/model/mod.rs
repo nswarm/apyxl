@@ -1,14 +1,31 @@
 /// A complete set of components that make up an API.
 #[derive(Default, Debug)]
 pub struct Api {
-    pub dtos: Vec<Dto>,
-    pub rpcs: Vec<Rpc>,
+    pub segments: Vec<Segment>,
+}
+
+impl Api {
+    pub fn dtos(&self) -> impl Iterator<Item = &Dto> {
+        self.segments.iter().filter_map(|segment| {
+            if let Segment::Dto(dto) = segment {
+                Some(dto)
+            } else {
+                None
+            }
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum Segment {
+    Dto(Dto),
+    Rpc(Rpc),
 }
 
 /// A single Data Transfer Object (DTO) used in an RPC, either directly or nested in another DTO.
 #[derive(Default, Debug)]
 pub struct Dto {
-    pub name: String,
+    pub name: String, // todo can be &str  prob
     pub fields: Vec<Field>,
 }
 

@@ -1,19 +1,22 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{Api, Dto, DtoRef, Field, Rpc};
+use crate::model::{Api, Dto, DtoRef, Field, Rpc, Segment};
 use crate::Input;
 use crate::Parser as ApyxlParser;
 
 type Error<'a> = extra::Err<Simple<'a, char>>;
 
-struct Rust {}
+#[derive(Default)]
+pub struct Rust {}
 
 impl ApyxlParser for Rust {
     fn parse(&self, input: &dyn Input) -> Result<Api> {
-        // parser().parse(input.data().chars())
-        Ok(Api::default())
+        api()
+            .parse(input.data())
+            .into_result()
+            .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))
     }
 }
 
@@ -66,10 +69,7 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc, Error<'a>> {
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('(').padded(), just(')').padded());
-    let return_type = just('-')
-        .ignore_then(just('>'))
-        .ignore_then(whitespace())
-        .ignore_then(dto_ref());
+    let return_type = just("->").ignore_then(whitespace()).ignore_then(dto_ref());
     name.then(params)
         .then(return_type.or_not())
         .then_ignore(ignore_fn_body().padded())
@@ -80,7 +80,18 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc, Error<'a>> {
         })
 }
 
-// fn api<'a>() -> impl Parser<'a, &'a str, Api> {}
+fn api<'a>() -> impl Parser<'a, &'a str, Api, Error<'a>> {
+    let segments = choice((
+        dto().padded().map(Segment::Dto),
+        rpc().padded().map(Segment::Rpc),
+    ))
+    .repeated()
+    .collect::<Vec<_>>();
+    segments
+        .padded()
+        .then(end())
+        .map(|(segments, _)| Api { segments })
+}
 
 #[cfg(test)]
 mod test {
