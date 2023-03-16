@@ -1,13 +1,10 @@
 use anyhow::Result;
 
-pub use delimited::Delimited;
-
 use crate::input::Input;
-use crate::model::Model;
+use crate::model::Api;
 
-mod delimited;
 mod rust;
 
 pub trait Parser {
-    fn parse(&self, input: &dyn Input) -> Result<Model>;
+    fn parse(&self, input: &dyn Input) -> Result<Api>;
 }

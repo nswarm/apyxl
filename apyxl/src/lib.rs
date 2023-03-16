@@ -15,12 +15,13 @@ mod parser;
 
 pub fn execute() -> Result<()> {
     let input = input::Buffer::new("abc,def,ghi");
-    Executor::default()
-        .input(&input)
-        .parser(&parser::Delimited::new(","))
-        .generator(
-            &generator::Dbg::default(),
-            vec![&mut output::StdOut::new("Debug Model:")],
-        )
-        .execute()
+    // Executor::default()
+    //     .input(&input)
+    //     .parser(&parser::Delimited::new(","))
+    //     .generator(
+    //         &generator::Dbg::default(),
+    //         vec![&mut output::StdOut::new("Debug Api:")],
+    //     )
+    //     .execute()
+    Ok(())
 }

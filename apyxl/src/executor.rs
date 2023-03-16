@@ -75,7 +75,7 @@ mod test {
 
     use crate::generator::Generator;
     use crate::input::Input;
-    use crate::model::{Dto, Model};
+    use crate::model::{Api, Dto};
     use crate::output::Output;
     use crate::parser::Parser;
 
@@ -207,8 +207,8 @@ mod test {
         }
     }
     impl Parser for FakeParser {
-        fn parse(&self, input: &dyn Input) -> Result<Model> {
-            Ok(Model {
+        fn parse(&self, input: &dyn Input) -> Result<Api> {
+            Ok(Api {
                 dtos: input
                     .data()
                     .split(&self.delimiter)
@@ -219,6 +219,7 @@ mod test {
                         ..Default::default()
                     })
                     .collect::<Vec<Dto>>(),
+                rpcs: vec![],
             })
         }
     }
@@ -244,7 +245,7 @@ mod test {
     }
 
     impl Generator for FakeGenerator {
-        fn generate(&self, model: &Model, output: &mut dyn Output) -> Result<()> {
+        fn generate(&self, model: &Api, output: &mut dyn Output) -> Result<()> {
             let dto_names = model
                 .dtos
                 .iter()

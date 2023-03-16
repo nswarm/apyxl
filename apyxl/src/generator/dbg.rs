@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::generator::Generator;
-use crate::model::Model;
+use crate::model::Api;
 use crate::output::Output;
 
 /// A generator that writes out the model in a readable format.
@@ -9,7 +9,7 @@ use crate::output::Output;
 pub struct Dbg {}
 
 impl Generator for Dbg {
-    fn generate(&self, model: &Model, output: &mut dyn Output) -> Result<()> {
+    fn generate(&self, model: &Api, output: &mut dyn Output) -> Result<()> {
         output.write(&format!("{:#?}\n", model))
     }
 }
