@@ -1,10 +1,10 @@
 /// A complete set of components that make up an API.
 #[derive(Default, Debug)]
-pub struct Api {
-    pub segments: Vec<Segment>,
+pub struct Api<'a> {
+    pub segments: Vec<Segment<'a>>,
 }
 
-impl Api {
+impl<'a> Api<'_> {
     pub fn dtos(&self) -> impl Iterator<Item = &Dto> {
         self.segments.iter().filter_map(|segment| {
             if let Segment::Dto(dto) = segment {
@@ -17,36 +17,36 @@ impl Api {
 }
 
 #[derive(Debug)]
-pub enum Segment {
-    Dto(Dto),
-    Rpc(Rpc),
+pub enum Segment<'a> {
+    Dto(Dto<'a>),
+    Rpc(Rpc<'a>),
 }
 
 /// A single Data Transfer Object (DTO) used in an RPC, either directly or nested in another DTO.
 #[derive(Default, Debug)]
-pub struct Dto {
-    pub name: String, // todo can be &str  prob
-    pub fields: Vec<Field>,
+pub struct Dto<'a> {
+    pub name: &'a str,
+    pub fields: Vec<Field<'a>>,
 }
 
 /// A field on a DTO.
 #[derive(Default, Debug)]
-pub struct Field {
-    pub name: String,
-    pub ty: DtoRef,
+pub struct Field<'a> {
+    pub name: &'a str,
+    pub ty: DtoRef<'a>,
 }
 
 /// A single Remote Procedure Call (RPC) within an API.
 #[derive(Default, Debug)]
-pub struct Rpc {
-    pub name: String,
-    pub params: Vec<Field>,
-    pub return_type: Option<DtoRef>,
+pub struct Rpc<'a> {
+    pub name: &'a str,
+    pub params: Vec<Field<'a>>,
+    pub return_type: Option<DtoRef<'a>>,
 }
 
 /// A reference to a DTO. Contains all necessary information to find the exact DTO within the API.
 #[derive(Default, Debug)]
-pub struct DtoRef {
+pub struct DtoRef<'a> {
     // todo namespace(s)
-    pub name: String,
+    pub name: &'a str,
 }

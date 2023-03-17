@@ -12,7 +12,7 @@ type Error<'a> = extra::Err<Simple<'a, char>>;
 pub struct Rust {}
 
 impl ApyxlParser for Rust {
-    fn parse(&self, input: &dyn Input) -> Result<Api> {
+    fn parse<'a>(&self, input: &'a dyn Input) -> Result<Api<'a>> {
         api()
             .parse(input.data())
             .into_result()
@@ -20,37 +20,29 @@ impl ApyxlParser for Rust {
     }
 }
 
-fn dto_ref<'a>() -> impl Parser<'a, &'a str, DtoRef, Error<'a>> {
+fn dto_ref<'a>() -> impl Parser<'a, &'a str, DtoRef<'a>, Error<'a>> {
     // todo type can't be ident (e.g. generics vec/map)
     // todo package pathing
     // todo reference one or more other types (and be able to cross ref that in api)
-    text::ident().map(|x: &str| DtoRef { name: x.to_owned() })
+    text::ident().map(|x: &str| DtoRef { name: x })
 }
 
-fn field<'a>() -> impl Parser<'a, &'a str, Field, Error<'a>> {
-    let ty = dto_ref();
-    let field = text::ident()
+fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
+    text::ident()
         .then_ignore(just(':').padded())
-        .then(ty)
-        .padded();
-    field.map(|(name, ty)| Field {
-        name: name.to_owned(),
-        ty,
-    })
+        .then(dto_ref())
+        .padded()
+        .map(|(name, ty)| Field { name, ty })
 }
 
-fn dto<'a>() -> impl Parser<'a, &'a str, Dto, Error<'a>> {
+fn dto<'a>() -> impl Parser<'a, &'a str, Dto<'a>, Error<'a>> {
     let fields = field()
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded());
     let name = text::keyword("struct").padded().ignore_then(text::ident());
-    let dto = name.then(fields);
-    dto.map(|(name, fields)| Dto {
-        name: name.to_owned(),
-        fields,
-    })
+    name.then(fields).map(|(name, fields)| Dto { name, fields })
 }
 
 fn ignore_fn_body<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
@@ -58,7 +50,7 @@ fn ignore_fn_body<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
     recursive(|nested| nested.delimited_by(just('{'), just('}')).or(anything)).ignored()
 }
 
-fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc, Error<'a>> {
+fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
     let fn_keyword = text::keyword("pub")
         .then(whitespace().at_least(1))
         .or_not()
@@ -74,13 +66,13 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc, Error<'a>> {
         .then(return_type.or_not())
         .then_ignore(ignore_fn_body().padded())
         .map(|((name, params), return_type)| Rpc {
-            name: name.to_owned(),
+            name,
             params,
             return_type,
         })
 }
 
-fn api<'a>() -> impl Parser<'a, &'a str, Api, Error<'a>> {
+fn api<'a>() -> impl Parser<'a, &'a str, Api<'a>, Error<'a>> {
     let segments = choice((
         dto().padded().map(Segment::Dto),
         rpc().padded().map(Segment::Rpc),
@@ -122,10 +114,10 @@ mod test {
         "#,
             )
             .into_result()?;
-        assert_eq!(&dto.name, "StructName");
+        assert_eq!(dto.name, "StructName");
         assert_eq!(dto.fields.len(), 2);
-        assert_eq!(&dto.fields[0].name, "field0");
-        assert_eq!(&dto.fields[1].name, "field1");
+        assert_eq!(dto.fields[0].name, "field0");
+        assert_eq!(dto.fields[1].name, "field1");
         Ok(())
     }
 
@@ -143,7 +135,7 @@ mod test {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(&rpc.name, "rpc_name");
+            assert_eq!(rpc.name, "rpc_name");
             assert!(rpc.params.is_empty());
             assert!(rpc.return_type.is_none());
             Ok(())
@@ -158,7 +150,7 @@ mod test {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(&rpc.name, "rpc_name");
+            assert_eq!(rpc.name, "rpc_name");
             assert!(rpc.params.is_empty());
             assert!(rpc.return_type.is_none());
             Ok(())
@@ -190,7 +182,7 @@ mod test {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(&rpc.name, "rpc_name");
+            assert_eq!(rpc.name, "rpc_name");
             assert!(rpc.params.is_empty());
             assert!(rpc.return_type.is_none());
             Ok(())
@@ -216,7 +208,7 @@ mod test {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(&rpc.name, "rpc_name");
+            assert_eq!(rpc.name, "rpc_name");
             assert!(rpc.params.is_empty());
             assert!(rpc.return_type.is_none());
             Ok(())
@@ -287,7 +279,7 @@ mod test {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(rpc.return_type.map(|x| x.name), Some("Asdfg".to_owned()));
+            assert_eq!(rpc.return_type.map(|x| x.name), Some("Asdfg"));
             Ok(())
         }
 
@@ -300,7 +292,7 @@ mod test {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(rpc.return_type.map(|x| x.name), Some("Asdfg".to_owned()));
+            assert_eq!(rpc.return_type.map(|x| x.name), Some("Asdfg"));
             Ok(())
         }
     }

@@ -8,5 +8,5 @@ mod rust;
 pub use rust::Rust;
 
 pub trait Parser {
-    fn parse(&self, input: &dyn Input) -> Result<Api>;
+    fn parse<'a>(&self, input: &'a dyn Input) -> Result<Api<'a>>;
 }

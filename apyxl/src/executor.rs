@@ -207,13 +207,12 @@ mod test {
         }
     }
     impl Parser for FakeParser {
-        fn parse(&self, input: &dyn Input) -> Result<Api> {
+        fn parse<'a>(&self, input: &'a dyn Input) -> Result<Api<'a>> {
             Ok(Api {
                 segments: input
                     .data()
                     .split(&self.delimiter)
                     .into_iter()
-                    .map(&str::to_owned)
                     .map(|name| Dto {
                         name,
                         ..Default::default()
@@ -246,10 +245,7 @@ mod test {
 
     impl Generator for FakeGenerator {
         fn generate(&self, model: &Api, output: &mut dyn Output) -> Result<()> {
-            let dto_names = model
-                .dtos()
-                .map(|dto| dto.name.as_str())
-                .collect::<Vec<&str>>();
+            let dto_names = model.dtos().map(|dto| dto.name).collect::<Vec<&str>>();
             output.write(&dto_names.join(&self.delimiter))?;
             Ok(())
         }
