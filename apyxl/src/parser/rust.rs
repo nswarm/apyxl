@@ -169,52 +169,6 @@ mod test {
         }
 
         #[test]
-        fn ignore_fn_body() -> Result<(), TestError> {
-            let rpc = rpc()
-                .parse(
-                    r#"
-            fn rpc_name() {
-
-
-                        1234 !@#$%^&*()_+-= asdf
-
-             }
-            "#,
-                )
-                .into_result()?;
-            assert_eq!(rpc.name, "rpc_name");
-            assert!(rpc.params.is_empty());
-            assert!(rpc.return_type.is_none());
-            Ok(())
-        }
-
-        #[test]
-        fn ignore_brackets_in_fn_body() -> Result<(), TestError> {
-            let rpc = rpc()
-                .parse(
-                    r#"
-            fn rpc_name() {
-                {}
-                {{}}
-                {{
-                }}
-                {
-                    {
-                        {{}
-                        {}}
-                    }
-                }
-            }
-            "#,
-                )
-                .into_result()?;
-            assert_eq!(rpc.name, "rpc_name");
-            assert!(rpc.params.is_empty());
-            assert!(rpc.return_type.is_none());
-            Ok(())
-        }
-
-        #[test]
         fn single_param() -> Result<(), TestError> {
             let rpc = rpc()
                 .parse(
@@ -294,6 +248,74 @@ mod test {
                 .into_result()?;
             assert_eq!(rpc.return_type.map(|x| x.name), Some("Asdfg"));
             Ok(())
+        }
+    }
+
+    mod fn_body {
+        use crate::parser::rust::ignore_fn_body;
+        use chumsky::Parser;
+
+        #[test]
+        fn empty() {
+            let result = ignore_fn_body().parse("{}").into_result();
+            assert!(result.is_ok(), "content should be parsed as empty");
+        }
+
+        #[test]
+        fn arbitrary_content() {
+            let result = ignore_fn_body()
+                .parse(
+                    r#"{
+                1234 !@#$%^&*()_+-= asdf
+            }"#,
+                )
+                .into_result();
+            assert!(result.is_ok(), "content should be parsed as empty");
+        }
+
+        #[test]
+        fn brackets() {
+            let result = ignore_fn_body()
+                .parse(
+                    r#"{
+                {}
+                {{}}
+                {{
+                }}
+                {
+                    {
+                        {{}
+                        {}}
+                    }
+                }
+            }"#,
+                )
+                .into_result();
+            assert!(result.is_ok(), "content should be parsed as empty");
+        }
+
+        #[test]
+        fn line_comment() {
+            let result = ignore_fn_body()
+                .parse(
+                    r#"
+                    { // don't break! {{{
+                    }"#,
+                )
+                .into_result();
+            assert!(result.is_ok(), "content should be parsed as empty");
+        }
+
+        #[test]
+        fn block_comment() {
+            let result = ignore_fn_body()
+                .parse(
+                    r#"{
+                    { /* don't break! {{{ */
+                    }"#,
+                )
+                .into_result();
+            assert!(result.is_ok(), "content should be parsed as empty");
         }
     }
 }
