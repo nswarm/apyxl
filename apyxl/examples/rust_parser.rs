@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         .input(&input)
         .parser(&parser::Rust::default())
         .generator(
-            &generator::Dbg::default(),
+            &mut generator::Dbg::default(),
             vec![&mut output::StdOut::new("Debug Api:")],
         )
         .execute()

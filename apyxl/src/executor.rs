@@ -13,7 +13,7 @@ pub struct Executor<'a> {
 }
 
 pub struct GeneratorInfo<'a> {
-    generator: &'a dyn Generator,
+    generator: &'a mut dyn Generator,
     outputs: Vec<&'a mut dyn Output>,
 }
 
@@ -30,7 +30,7 @@ impl<'a> Executor<'a> {
 
     pub fn generator(
         mut self,
-        generator: &'a dyn Generator,
+        generator: &'a mut dyn Generator,
         outputs: Vec<&'a mut dyn Output>,
     ) -> Self {
         self.generator_infos
@@ -92,7 +92,7 @@ mod test {
             Executor::default()
                 .input(&input::Buffer::new(parser.test_data(1)))
                 .parser(&parser)
-                .generator(&FakeGenerator::default(), vec![&mut output])
+                .generator(&mut FakeGenerator::default(), vec![&mut output])
                 .execute()?;
             assert_eq!(output.to_string(), parser.test_data(1));
             Ok(())
@@ -102,16 +102,16 @@ mod test {
         fn calls_all_generators_with_correct_outputs() -> Result<()> {
             let input_vec = vec![1, 2, 3];
             let parser = FakeParser::new(",");
-            let gen0 = FakeGenerator::new("/");
-            let gen1 = FakeGenerator::new(":");
+            let mut gen0 = FakeGenerator::new("/");
+            let mut gen1 = FakeGenerator::new(":");
             let mut output0 = output::Buffer::default();
             let mut output1 = output::Buffer::default();
             let mut output2 = output::Buffer::default();
             Executor::default()
                 .input(&input::Buffer::new(parser.test_data_vec(&input_vec)))
                 .parser(&parser)
-                .generator(&gen0, vec![&mut output0])
-                .generator(&gen1, vec![&mut output1, &mut output2])
+                .generator(&mut gen0, vec![&mut output0])
+                .generator(&mut gen1, vec![&mut output1, &mut output2])
                 .execute()?;
             assert_eq!(output0.to_string(), gen0.expected(&input_vec));
             assert_eq!(output1.to_string(), gen1.expected(&input_vec));
@@ -131,7 +131,7 @@ mod test {
                 // no input
                 .parser(&FakeParser::default())
                 .generator(
-                    &FakeGenerator::default(),
+                    &mut FakeGenerator::default(),
                     vec![&mut output::Buffer::default()],
                 )
                 .execute();
@@ -145,7 +145,7 @@ mod test {
                 .input(&input::Buffer::new(parser.test_data(1)))
                 // no parser
                 .generator(
-                    &FakeGenerator::default(),
+                    &mut FakeGenerator::default(),
                     vec![&mut output::Buffer::default()],
                 )
                 .execute();
@@ -170,7 +170,7 @@ mod test {
                 .input(&input::Buffer::new(parser.test_data(1)))
                 .parser(&FakeParser::default())
                 .generator(
-                    &FakeGenerator::default(),
+                    &mut FakeGenerator::default(),
                     vec![
                         /* no outputs */
                     ],
@@ -244,9 +244,9 @@ mod test {
     }
 
     impl Generator for FakeGenerator {
-        fn generate(&self, model: &Api, output: &mut dyn Output) -> Result<()> {
+        fn generate(&mut self, model: &Api, output: &mut dyn Output) -> Result<()> {
             let dto_names = model.dtos().map(|dto| dto.name).collect::<Vec<&str>>();
-            output.write(&dto_names.join(&self.delimiter))?;
+            output.write_str(&dto_names.join(&self.delimiter))?;
             Ok(())
         }
     }
