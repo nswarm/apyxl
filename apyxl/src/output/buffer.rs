@@ -23,6 +23,11 @@ impl Output for Buffer {
         self.data.push(data);
         Ok(())
     }
+
+    fn newline(&mut self) -> Result<()> {
+        self.data.push('\n');
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -30,4 +30,8 @@ impl Output for StdOut {
     fn write(&mut self, data: char) -> Result<()> {
         todo!()
     }
+
+    fn newline(&mut self) -> Result<()> {
+        todo!()
+    }
 }

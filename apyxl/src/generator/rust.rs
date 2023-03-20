@@ -1,26 +1,26 @@
 use anyhow::Result;
 
-use crate::generator::indent::Indent;
 use crate::generator::Generator;
 use crate::model::{Api, Dto, DtoRef, Field};
-use crate::output::Output;
+use crate::output::{Indented, Output};
 
 #[derive(Default)]
-pub struct Rust {
-    indent: Indent,
-}
+pub struct Rust {}
+
+const INDENT: &str = "    ";
 
 impl Generator for Rust {
     fn generate(&mut self, api: &Api, output: &mut dyn Output) -> Result<()> {
+        let mut output = Indented::new(output, INDENT);
         for dto in api.dtos() {
-            self.write_dto(dto, output)?;
+            self.write_dto(dto, &mut output)?;
         }
         Ok(())
     }
 }
 
 impl Rust {
-    fn write_dto(&mut self, dto: &Dto, output: &mut dyn Output) -> Result<()> {
+    fn write_dto(&mut self, dto: &Dto, output: &mut Indented) -> Result<()> {
         self.write_dto_start(dto, output)?;
 
         for field in &dto.fields {
@@ -31,23 +31,26 @@ impl Rust {
         Ok(())
     }
 
-    fn write_dto_start(&mut self, dto: &Dto, output: &mut dyn Output) -> Result<()> {
+    fn write_dto_start(&mut self, dto: &Dto, output: &mut Indented) -> Result<()> {
         output.write_str("struct ")?;
         output.write_str(dto.name)?;
         output.write_str(" {")?;
-        self.indent.add(1);
+        output.indent(1);
+        output.newline()?;
         Ok(())
     }
 
-    fn write_dto_end(&mut self, output: &mut dyn Output) -> Result<()> {
-        self.indent.sub(1);
+    fn write_dto_end(&mut self, output: &mut Indented) -> Result<()> {
+        output.indent(-1);
         output.write_str("}")?;
+        output.newline()?;
         Ok(())
     }
 
     fn write_field(&mut self, field: &Field, output: &mut dyn Output) -> Result<()> {
         self.write_param(field, output)?;
         output.write(',')?;
+        output.newline()?;
         Ok(())
     }
 
@@ -66,25 +69,47 @@ impl Rust {
 
 #[cfg(test)]
 mod test {
+    use crate::generator::rust::INDENT;
     use crate::generator::Rust;
-    use crate::model::{DtoRef, Field};
+    use crate::model::{Dto, DtoRef, Field};
     use crate::output;
-    use crate::output::Output;
+    use crate::output::{Indented, Output};
     use anyhow::Result;
 
     #[test]
-    fn dto_ref() -> Result<()> {
+    fn dto() -> Result<()> {
         assert_output(
-            |gen, o| gen.write_dto_ref(&DtoRef { name: "asdf" }, o),
-            "asdf",
+            |gen, o| {
+                gen.write_dto(
+                    &Dto {
+                        name: "DtoName",
+                        fields: vec![
+                            Field {
+                                name: "field0",
+                                ty: DtoRef { name: "Type0" },
+                            },
+                            Field {
+                                name: "field1",
+                                ty: DtoRef { name: "Type1" },
+                            },
+                        ],
+                    },
+                    &mut Indented::new(o, INDENT),
+                )
+            },
+            r#"struct DtoName {
+    field0: Type0,
+    field1: Type1,
+}
+"#,
         )
     }
 
     #[test]
-    fn param() -> Result<()> {
+    fn field() -> Result<()> {
         assert_output(
             |gen, o| {
-                gen.write_param(
+                gen.write_field(
                     &Field {
                         name: "asdf",
                         ty: DtoRef { name: "Type" },
@@ -92,7 +117,15 @@ mod test {
                     o,
                 )
             },
-            "asdf: Type",
+            "asdf: Type,\n",
+        )
+    }
+
+    #[test]
+    fn dto_ref() -> Result<()> {
+        assert_output(
+            |gen, o| gen.write_dto_ref(&DtoRef { name: "asdf" }, o),
+            "asdf",
         )
     }
 

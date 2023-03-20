@@ -7,7 +7,6 @@ use crate::model::Api;
 use crate::output::Output;
 
 mod dbg;
-mod indent;
 mod rust;
 
 pub trait Generator {
