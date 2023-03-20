@@ -12,13 +12,14 @@ const INDENT: &str = "    ";
 impl Generator for Rust {
     fn generate(&mut self, api: &Api, output: &mut dyn Output) -> Result<()> {
         let mut o = Indented::new(output, INDENT);
-        for dto in api.dtos() {
-            self.write_dto(dto, &mut o)?;
-            o.newline()?;
-        }
 
         for rpc in api.rpcs() {
             self.write_rpc(rpc, &mut o)?;
+            o.newline()?;
+        }
+
+        for dto in api.dtos() {
+            self.write_dto(dto, &mut o)?;
             o.newline()?;
         }
         Ok(())
@@ -102,10 +103,43 @@ impl Rust {
 mod test {
     use crate::generator::rust::INDENT;
     use crate::generator::Rust;
-    use crate::model::{Dto, DtoRef, Field, Rpc};
-    use crate::output;
+    use crate::model::{Api, Dto, DtoRef, Field, Rpc, Segment};
     use crate::output::{Indented, Output};
+    use crate::{output, Generator};
     use anyhow::Result;
+
+    #[test]
+    fn full_generation() -> Result<()> {
+        let api = Api {
+            segments: vec![
+                Segment::Dto(Dto {
+                    name: "DtoName",
+                    fields: vec![Field {
+                        name: "i",
+                        ty: DtoRef { name: "i32" },
+                    }],
+                }),
+                Segment::Rpc(Rpc {
+                    name: "rpc_name",
+                    params: vec![Field {
+                        name: "dto",
+                        ty: DtoRef { name: "DtoName" },
+                    }],
+                    return_type: Some(DtoRef { name: "DtoName" }),
+                }),
+            ],
+        };
+        let expected = r#"pub fn rpc_name(
+    dto: DtoName,
+) -> DtoName;
+
+struct DtoName {
+    i: i32,
+}
+
+"#;
+        assert_output(|gen, o| gen.generate(&api, o), expected)
+    }
 
     #[test]
     fn dto() -> Result<()> {
