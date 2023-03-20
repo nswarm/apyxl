@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::generator::Generator;
-use crate::model::{Api, Dto, DtoRef, Field};
+use crate::model::{Api, Dto, DtoRef, Field, Rpc};
 use crate::output::{Indented, Output};
 
 #[derive(Default)]
@@ -11,58 +11,89 @@ const INDENT: &str = "    ";
 
 impl Generator for Rust {
     fn generate(&mut self, api: &Api, output: &mut dyn Output) -> Result<()> {
-        let mut output = Indented::new(output, INDENT);
+        let mut o = Indented::new(output, INDENT);
         for dto in api.dtos() {
-            self.write_dto(dto, &mut output)?;
+            self.write_dto(dto, &mut o)?;
+            o.newline()?;
+        }
+
+        for rpc in api.rpcs() {
+            self.write_rpc(rpc, &mut o)?;
+            o.newline()?;
         }
         Ok(())
     }
 }
 
 impl Rust {
-    fn write_dto(&mut self, dto: &Dto, output: &mut Indented) -> Result<()> {
-        self.write_dto_start(dto, output)?;
+    fn write_dto(&mut self, dto: &Dto, o: &mut Indented) -> Result<()> {
+        self.write_dto_start(dto, o)?;
 
         for field in &dto.fields {
-            self.write_field(field, output)?;
+            self.write_field(field, o)?;
+            o.newline()?;
         }
 
-        self.write_dto_end(output)?;
+        self.write_block_end(o)
+    }
+
+    fn write_rpc(&mut self, rpc: &Rpc, o: &mut Indented) -> Result<()> {
+        o.write_str("pub fn ")?;
+        o.write_str(rpc.name)?;
+
+        o.write('(')?;
+        o.indent(1);
+        for field in &rpc.params {
+            o.newline()?;
+            self.write_field(field, o)?;
+        }
+        o.indent(-1);
+
+        if !rpc.params.is_empty() {
+            o.newline()?;
+        }
+
+        o.write(')')?;
+
+        if let Some(return_type) = &rpc.return_type {
+            o.write_str(" -> ")?;
+            self.write_dto_ref(return_type, o)?;
+        }
+
+        o.write(';')?;
+        o.newline()
+    }
+
+    fn write_dto_start(&mut self, dto: &Dto, o: &mut Indented) -> Result<()> {
+        o.write_str("struct ")?;
+        o.write_str(dto.name)?;
+        o.write_str(" {")?;
+        o.indent(1);
+        o.newline()
+    }
+
+    fn write_block_end(&mut self, o: &mut Indented) -> Result<()> {
+        o.indent(-1);
+        o.write_str("}")?;
+        o.newline()?;
         Ok(())
     }
 
-    fn write_dto_start(&mut self, dto: &Dto, output: &mut Indented) -> Result<()> {
-        output.write_str("struct ")?;
-        output.write_str(dto.name)?;
-        output.write_str(" {")?;
-        output.indent(1);
-        output.newline()?;
+    fn write_field(&mut self, field: &Field, o: &mut dyn Output) -> Result<()> {
+        self.write_param(field, o)?;
+        o.write(',')?;
         Ok(())
     }
 
-    fn write_dto_end(&mut self, output: &mut Indented) -> Result<()> {
-        output.indent(-1);
-        output.write_str("}")?;
-        output.newline()?;
+    fn write_param(&mut self, field: &Field, o: &mut dyn Output) -> Result<()> {
+        o.write_str(field.name)?;
+        o.write_str(": ")?;
+        self.write_dto_ref(&field.ty, o)?;
         Ok(())
     }
 
-    fn write_field(&mut self, field: &Field, output: &mut dyn Output) -> Result<()> {
-        self.write_param(field, output)?;
-        output.write(',')?;
-        output.newline()?;
-        Ok(())
-    }
-
-    fn write_param(&mut self, field: &Field, output: &mut dyn Output) -> Result<()> {
-        output.write_str(field.name)?;
-        output.write_str(": ")?;
-        self.write_dto_ref(&field.ty, output)?;
-        Ok(())
-    }
-
-    fn write_dto_ref(&mut self, dto_ref: &DtoRef, output: &mut dyn Output) -> Result<()> {
-        output.write_str(dto_ref.name)?;
+    fn write_dto_ref(&mut self, dto_ref: &DtoRef, o: &mut dyn Output) -> Result<()> {
+        o.write_str(dto_ref.name)?;
         Ok(())
     }
 }
@@ -71,7 +102,7 @@ impl Rust {
 mod test {
     use crate::generator::rust::INDENT;
     use crate::generator::Rust;
-    use crate::model::{Dto, DtoRef, Field};
+    use crate::model::{Dto, DtoRef, Field, Rpc};
     use crate::output;
     use crate::output::{Indented, Output};
     use anyhow::Result;
@@ -106,6 +137,53 @@ mod test {
     }
 
     #[test]
+    fn rpc() -> Result<()> {
+        assert_output(
+            |gen, o| {
+                gen.write_rpc(
+                    &Rpc {
+                        name: "rpc_name",
+                        params: vec![
+                            Field {
+                                name: "param0",
+                                ty: DtoRef { name: "Type0" },
+                            },
+                            Field {
+                                name: "param1",
+                                ty: DtoRef { name: "Type1" },
+                            },
+                        ],
+                        return_type: None,
+                    },
+                    &mut Indented::new(o, INDENT),
+                )
+            },
+            r#"pub fn rpc_name(
+    param0: Type0,
+    param1: Type1,
+);
+"#,
+        )
+    }
+
+    #[test]
+    fn rpc_with_return() -> Result<()> {
+        assert_output(
+            |gen, o| {
+                gen.write_rpc(
+                    &Rpc {
+                        name: "rpc_name",
+                        params: vec![],
+                        return_type: Some(DtoRef { name: "ReturnType" }),
+                    },
+                    &mut Indented::new(o, INDENT),
+                )
+            },
+            "pub fn rpc_name() -> ReturnType;\n",
+        )
+    }
+
+    #[test]
     fn field() -> Result<()> {
         assert_output(
             |gen, o| {
@@ -117,7 +195,7 @@ mod test {
                     o,
                 )
             },
-            "asdf: Type,\n",
+            "asdf: Type,",
         )
     }
 

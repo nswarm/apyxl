@@ -14,6 +14,16 @@ impl<'a> Api<'_> {
             }
         })
     }
+
+    pub fn rpcs(&self) -> impl Iterator<Item = &Rpc> {
+        self.segments.iter().filter_map(|segment| {
+            if let Segment::Rpc(rpc) = segment {
+                Some(rpc)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[derive(Debug)]
