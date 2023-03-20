@@ -4,7 +4,6 @@ use anyhow::Result;
 #[derive(Default)]
 pub struct Buffer {
     data: String,
-    indent: i32,
 }
 
 impl ToString for Buffer {

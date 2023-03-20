@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::generator::Generator;
-use crate::model::{Api, Dto, DtoRef, Field, Rpc};
+use crate::model::{Api, Dto, Field, Rpc, TypeRef};
 use crate::output::{Indented, Output};
 
 #[derive(Default)]
@@ -93,7 +93,7 @@ impl Rust {
         Ok(())
     }
 
-    fn write_dto_ref(&mut self, dto_ref: &DtoRef, o: &mut dyn Output) -> Result<()> {
+    fn write_dto_ref(&mut self, dto_ref: &TypeRef, o: &mut dyn Output) -> Result<()> {
         o.write_str(dto_ref.name)?;
         Ok(())
     }
@@ -103,7 +103,7 @@ impl Rust {
 mod test {
     use crate::generator::rust::INDENT;
     use crate::generator::Rust;
-    use crate::model::{Api, Dto, DtoRef, Field, Rpc, Segment};
+    use crate::model::{Api, Dto, Field, Rpc, Segment, TypeRef};
     use crate::output::{Indented, Output};
     use crate::{output, Generator};
     use anyhow::Result;
@@ -116,16 +116,16 @@ mod test {
                     name: "DtoName",
                     fields: vec![Field {
                         name: "i",
-                        ty: DtoRef { name: "i32" },
+                        ty: TypeRef { name: "i32" },
                     }],
                 }),
                 Segment::Rpc(Rpc {
                     name: "rpc_name",
                     params: vec![Field {
                         name: "dto",
-                        ty: DtoRef { name: "DtoName" },
+                        ty: TypeRef { name: "DtoName" },
                     }],
-                    return_type: Some(DtoRef { name: "DtoName" }),
+                    return_type: Some(TypeRef { name: "DtoName" }),
                 }),
             ],
         };
@@ -151,11 +151,11 @@ struct DtoName {
                         fields: vec![
                             Field {
                                 name: "field0",
-                                ty: DtoRef { name: "Type0" },
+                                ty: TypeRef { name: "Type0" },
                             },
                             Field {
                                 name: "field1",
-                                ty: DtoRef { name: "Type1" },
+                                ty: TypeRef { name: "Type1" },
                             },
                         ],
                     },
@@ -180,11 +180,11 @@ struct DtoName {
                         params: vec![
                             Field {
                                 name: "param0",
-                                ty: DtoRef { name: "Type0" },
+                                ty: TypeRef { name: "Type0" },
                             },
                             Field {
                                 name: "param1",
-                                ty: DtoRef { name: "Type1" },
+                                ty: TypeRef { name: "Type1" },
                             },
                         ],
                         return_type: None,
@@ -208,7 +208,7 @@ struct DtoName {
                     &Rpc {
                         name: "rpc_name",
                         params: vec![],
-                        return_type: Some(DtoRef { name: "ReturnType" }),
+                        return_type: Some(TypeRef { name: "ReturnType" }),
                     },
                     &mut Indented::new(o, INDENT),
                 )
@@ -224,7 +224,7 @@ struct DtoName {
                 gen.write_field(
                     &Field {
                         name: "asdf",
-                        ty: DtoRef { name: "Type" },
+                        ty: TypeRef { name: "Type" },
                     },
                     o,
                 )
@@ -236,7 +236,7 @@ struct DtoName {
     #[test]
     fn dto_ref() -> Result<()> {
         assert_output(
-            |gen, o| gen.write_dto_ref(&DtoRef { name: "asdf" }, o),
+            |gen, o| gen.write_dto_ref(&TypeRef { name: "asdf" }, o),
             "asdf",
         )
     }

@@ -32,7 +32,7 @@ fn main() -> Result<()> {
         .parser(&parser::Rust::default())
         .generator(
             &mut generator::Dbg::default(),
-            vec![&mut output::StdOut::new("Debug Api:")],
+            vec![&mut output::StdOut::default()],
         )
         .execute()
 }

@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{Api, Dto, DtoRef, Field, Rpc, Segment};
+use crate::model::{Api, Dto, Field, Rpc, Segment, TypeRef};
 use crate::Input;
 use crate::Parser as ApyxlParser;
 
@@ -20,11 +20,11 @@ impl ApyxlParser for Rust {
     }
 }
 
-fn dto_ref<'a>() -> impl Parser<'a, &'a str, DtoRef<'a>, Error<'a>> {
+fn dto_ref<'a>() -> impl Parser<'a, &'a str, TypeRef<'a>, Error<'a>> {
     // todo type can't be ident (e.g. generics vec/map)
     // todo package pathing
     // todo reference one or more other types (and be able to cross ref that in api)
-    text::ident().map(|x: &str| DtoRef { name: x })
+    text::ident().map(|x: &str| TypeRef { name: x })
 }
 
 fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {

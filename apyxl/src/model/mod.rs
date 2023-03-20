@@ -4,7 +4,7 @@ pub struct Api<'a> {
     pub segments: Vec<Segment<'a>>,
 }
 
-impl<'a> Api<'_> {
+impl Api<'_> {
     pub fn dtos(&self) -> impl Iterator<Item = &Dto> {
         self.segments.iter().filter_map(|segment| {
             if let Segment::Dto(dto) = segment {
@@ -32,31 +32,33 @@ pub enum Segment<'a> {
     Rpc(Rpc<'a>),
 }
 
-/// A single Data Transfer Object (DTO) used in an RPC, either directly or nested in another DTO.
+/// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
 #[derive(Default, Debug)]
 pub struct Dto<'a> {
     pub name: &'a str,
     pub fields: Vec<Field<'a>>,
 }
 
-/// A field on a DTO.
+/// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
 #[derive(Default, Debug)]
 pub struct Field<'a> {
     pub name: &'a str,
-    pub ty: DtoRef<'a>,
+    pub ty: TypeRef<'a>,
 }
 
-/// A single Remote Procedure Call (RPC) within an API.
+/// A single Remote Procedure Call (RPC) within an [Api].
 #[derive(Default, Debug)]
 pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
-    pub return_type: Option<DtoRef<'a>>,
+    pub return_type: Option<TypeRef<'a>>,
 }
 
-/// A reference to a DTO. Contains all necessary information to find the exact DTO within the API.
+/// A type such as a language primitive or a reference to a [Dto]. A primitive will likely only have
+/// the [name] field. a [Dto] reference will contain all necessary information to find the exact [Dto]
+/// within the API.
 #[derive(Default, Debug)]
-pub struct DtoRef<'a> {
+pub struct TypeRef<'a> {
     // todo namespace(s)
     pub name: &'a str,
 }
