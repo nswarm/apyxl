@@ -75,7 +75,7 @@ mod test {
 
     use crate::generator::Generator;
     use crate::input::Input;
-    use crate::model::{Api, Dto, Segment};
+    use crate::model::{Api, Dto, Segment, ROOT_NAMESPACE};
     use crate::output::Output;
     use crate::parser::Parser;
 
@@ -209,6 +209,7 @@ mod test {
     impl Parser for FakeParser {
         fn parse<'a>(&self, input: &'a dyn Input) -> Result<Api<'a>> {
             Ok(Api {
+                name: ROOT_NAMESPACE,
                 segments: input
                     .data()
                     .split(&self.delimiter)

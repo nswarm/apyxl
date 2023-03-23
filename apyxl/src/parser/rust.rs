@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{Api, Dto, Field, Rpc, Segment, TypeRef};
+use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, ROOT_NAMESPACE};
 use crate::Input;
 use crate::Parser as ApyxlParser;
 
@@ -13,10 +13,16 @@ pub struct Rust {}
 
 impl ApyxlParser for Rust {
     fn parse<'a>(&self, input: &'a dyn Input) -> Result<Api<'a>> {
-        api()
+        let segments = segments(namespace())
+            .padded()
+            .then_ignore(end())
             .parse(input.data())
             .into_result()
-            .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))
+            .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
+        Ok(Api {
+            name: ROOT_NAMESPACE,
+            segments,
+        })
     }
 }
 
@@ -72,24 +78,46 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
         })
 }
 
-fn api<'a>() -> impl Parser<'a, &'a str, Api<'a>, Error<'a>> {
-    let segments = choice((
+fn segments<'a>(
+    namespace: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
+) -> impl Parser<'a, &'a str, Vec<Segment<'a>>, Error<'a>> {
+    choice((
         dto().padded().map(Segment::Dto),
         rpc().padded().map(Segment::Rpc),
+        namespace.padded().map(Segment::Namespace),
     ))
     .repeated()
-    .collect::<Vec<_>>();
-    segments
-        .padded()
-        .then(end())
-        .map(|(segments, _)| Api { segments })
+    .collect::<Vec<_>>()
+}
+
+fn namespace<'a>() -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
+    recursive(|nested| {
+        let mod_keyword = text::keyword("pub")
+            .then(whitespace().at_least(1))
+            .or_not()
+            .then(text::keyword("mod"));
+        let body = segments(nested)
+            .boxed()
+            .delimited_by(just('{').padded(), just('}').padded());
+        mod_keyword
+            .padded()
+            .ignore_then(text::ident())
+            .then(body)
+            .map(|(name, segments)| Namespace { name, segments })
+    })
 }
 
 #[cfg(test)]
 mod test {
-    use crate::parser::rust::{dto, field};
+    use anyhow::Result;
     use chumsky::error::Simple;
     use chumsky::Parser;
+
+    use crate::input;
+    use crate::model::ROOT_NAMESPACE;
+    use crate::parser::rust::field;
+    use crate::parser::Rust;
+    use crate::Parser as ApyxlParser;
 
     type TestError = Vec<Simple<'static, char>>;
 
@@ -103,28 +131,151 @@ mod test {
     }
 
     #[test]
-    fn test_dto() -> Result<(), TestError> {
-        let dto = dto()
-            .parse(
-                r#"
-        struct StructName {
-            field0: i32,
-            field1: f32,
-        }
-        "#,
-            )
-            .into_result()?;
-        assert_eq!(dto.name, "StructName");
-        assert_eq!(dto.fields.len(), 2);
-        assert_eq!(dto.fields[0].name, "field0");
-        assert_eq!(dto.fields[1].name, "field1");
+    fn full_parse() -> Result<()> {
+        // todo!
+        let input = input::Buffer::new(r#""#);
+        let namespace = Rust::default().parse(&input)?;
+        assert_eq!(namespace.name, ROOT_NAMESPACE);
+        assert!(namespace.segments.is_empty());
         Ok(())
     }
 
+    mod namespace {
+        use chumsky::Parser;
+
+        use crate::model::Segment;
+        use crate::parser::rust::namespace;
+        use crate::parser::rust::test::TestError;
+
+        #[test]
+        fn empty() -> Result<(), TestError> {
+            let namespace = namespace()
+                .parse(
+                    r#"
+            mod empty {}
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(namespace.name, "empty");
+            assert!(namespace.segments.is_empty());
+            Ok(())
+        }
+
+        #[test]
+        fn with_dto() -> Result<(), TestError> {
+            let namespace = namespace()
+                .parse(
+                    r#"
+            mod ns {
+                struct DtoName {}
+            }
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(namespace.name, "ns");
+            assert_eq!(namespace.segments.len(), 1);
+            match &namespace.segments[0] {
+                Segment::Dto(dto) => assert_eq!(dto.name, "DtoName"),
+                _ => panic!("wrong segment type"),
+            }
+            Ok(())
+        }
+
+        #[test]
+        fn nested() -> Result<(), TestError> {
+            let namespace = namespace()
+                .parse(
+                    r#"
+            mod ns0 {
+                mod ns1 {}
+            }
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(namespace.name, "ns0");
+            assert_eq!(namespace.segments.len(), 1);
+            match &namespace.segments[0] {
+                Segment::Namespace(ns) => assert_eq!(ns.name, "ns1"),
+                _ => panic!("wrong segment type"),
+            }
+            Ok(())
+        }
+
+        #[test]
+        fn nested_dto() -> Result<(), TestError> {
+            let namespace = namespace()
+                .parse(
+                    r#"
+            mod ns0 {
+                mod ns1 {
+                    struct DtoName {}
+                }
+            }
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(namespace.name, "ns0");
+            assert_eq!(namespace.segments.len(), 1);
+            match &namespace.segments[0] {
+                Segment::Namespace(ns) => {
+                    assert_eq!(ns.name, "ns1");
+                    assert_eq!(ns.segments.len(), 1);
+                    match &ns.segments[0] {
+                        Segment::Dto(dto) => assert_eq!(dto.name, "DtoName"),
+                        _ => panic!("ns1: wrong segment type"),
+                    }
+                }
+                _ => panic!("ns0: wrong segment type"),
+            }
+            Ok(())
+        }
+    }
+
+    mod dto {
+        use chumsky::Parser;
+
+        use crate::parser::rust::dto;
+        use crate::parser::rust::test::TestError;
+
+        #[test]
+        fn empty() -> Result<(), TestError> {
+            let dto = dto()
+                .parse(
+                    r#"
+            struct StructName {}
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(dto.name, "StructName");
+            assert_eq!(dto.fields.len(), 0);
+            Ok(())
+        }
+
+        #[test]
+        fn multiple_fields() -> Result<(), TestError> {
+            let dto = dto()
+                .parse(
+                    r#"
+            struct StructName {
+                field0: i32,
+                field1: f32,
+            }
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(dto.name, "StructName");
+            assert_eq!(dto.fields.len(), 2);
+            assert_eq!(dto.fields[0].name, "field0");
+            assert_eq!(dto.fields[1].name, "field1");
+            Ok(())
+        }
+    }
+
     mod rpc {
+        use chumsky::Parser;
+
         use crate::parser::rust::rpc;
         use crate::parser::rust::test::TestError;
-        use chumsky::Parser;
 
         #[test]
         fn empty_fn() -> Result<(), TestError> {
@@ -252,8 +403,9 @@ mod test {
     }
 
     mod fn_body {
-        use crate::parser::rust::ignore_fn_body;
         use chumsky::Parser;
+
+        use crate::parser::rust::ignore_fn_body;
 
         #[test]
         fn empty() {

@@ -103,7 +103,7 @@ impl Rust {
 mod test {
     use crate::generator::rust::INDENT;
     use crate::generator::Rust;
-    use crate::model::{Api, Dto, Field, Rpc, Segment, TypeRef};
+    use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, ROOT_NAMESPACE};
     use crate::output::{Indented, Output};
     use crate::{output, Generator};
     use anyhow::Result;
@@ -111,6 +111,7 @@ mod test {
     #[test]
     fn full_generation() -> Result<()> {
         let api = Api {
+            name: ROOT_NAMESPACE,
             segments: vec![
                 Segment::Dto(Dto {
                     name: "DtoName",
@@ -127,6 +128,16 @@ mod test {
                     }],
                     return_type: Some(TypeRef { name: "DtoName" }),
                 }),
+                Segment::Namespace(Namespace {
+                    name: "ns0",
+                    segments: vec![Segment::Dto(Dto {
+                        name: "DtoName",
+                        fields: vec![Field {
+                            name: "i",
+                            ty: TypeRef { name: "i32" },
+                        }],
+                    })],
+                }),
             ],
         };
         let expected = r#"pub fn rpc_name(
@@ -135,6 +146,12 @@ mod test {
 
 struct DtoName {
     i: i32,
+}
+
+mod ns0 {
+    struct DtoName {
+        i: i32,
+    }
 }
 
 "#;
