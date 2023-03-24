@@ -26,17 +26,20 @@ impl ApyxlParser for Rust {
     }
 }
 
-fn dto_ref<'a>() -> impl Parser<'a, &'a str, TypeRef<'a>, Error<'a>> {
-    // todo type can't be ident (e.g. generics vec/map)
-    // todo package pathing
-    // todo reference one or more other types (and be able to cross ref that in api)
-    text::ident().map(|x: &str| TypeRef { name: x })
+fn type_ref<'a>() -> impl Parser<'a, &'a str, TypeRef<'a>, Error<'a>> {
+    text::ident()
+        .separated_by(just("::"))
+        .at_least(1)
+        .collect::<Vec<_>>()
+        .map(|components| TypeRef {
+            fully_qualified_type_name: components,
+        })
 }
 
 fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
     text::ident()
         .then_ignore(just(':').padded())
-        .then(dto_ref())
+        .then(type_ref())
         .padded()
         .map(|(name, ty)| Field { name, ty })
 }
@@ -67,7 +70,7 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('(').padded(), just(')').padded());
-    let return_type = just("->").ignore_then(whitespace()).ignore_then(dto_ref());
+    let return_type = just("->").ignore_then(whitespace()).ignore_then(type_ref());
     name.then(params)
         .then(return_type.or_not())
         .then_ignore(ignore_fn_body().padded())
@@ -126,7 +129,7 @@ mod test {
         let result = field().parse("name: Type");
         let output = result.into_result()?;
         assert_eq!(output.name, "name");
-        assert_eq!(output.ty.name, "Type");
+        assert_eq!(output.ty.name().unwrap(), "Type");
         Ok(())
     }
 
@@ -330,7 +333,7 @@ mod test {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 1);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name, "ParamType0");
+            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
             Ok(())
         }
 
@@ -345,11 +348,11 @@ mod test {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name, "ParamType0");
+            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name, "ParamType1");
+            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name, "ParamType2");
+            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
             Ok(())
         }
 
@@ -367,11 +370,11 @@ mod test {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name, "ParamType0");
+            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name, "ParamType1");
+            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name, "ParamType2");
+            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
             Ok(())
         }
 
@@ -384,7 +387,7 @@ mod test {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(rpc.return_type.map(|x| x.name), Some("Asdfg"));
+            assert_eq!(rpc.return_type.map(|x| x.name()), Some(Some("Asdfg")));
             Ok(())
         }
 
@@ -397,7 +400,7 @@ mod test {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(rpc.return_type.map(|x| x.name), Some("Asdfg"));
+            assert_eq!(rpc.return_type.map(|x| x.name()), Some(Some("Asdfg")));
             Ok(())
         }
     }

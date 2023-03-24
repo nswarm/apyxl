@@ -41,13 +41,30 @@ pub struct Rpc<'a> {
     pub return_type: Option<TypeRef<'a>>,
 }
 
-/// A type such as a language primitive or a reference to a [Dto]. A primitive will likely only have
-/// the [name] field. a [Dto] reference will contain all necessary information to find the exact [Dto]
-/// within the API.
+/// A type such as a language primitive or a reference to a [Dto]. A [Dto] reference will contain
+/// all necessary information to find the exact [Dto] within the API.
 #[derive(Default, Debug)]
 pub struct TypeRef<'a> {
-    // todo namespace(s)
-    pub name: &'a str,
+    pub fully_qualified_type_name: Vec<&'a str>,
+}
+
+impl<'a> TypeRef<'a> {
+    pub fn new(fqtn: &[&'a str]) -> Self {
+        Self {
+            fully_qualified_type_name: fqtn.to_vec(),
+        }
+    }
+}
+
+impl<'a> TypeRef<'a> {
+    pub fn namespace(&self) -> Vec<&'a str> {
+        let len = self.fully_qualified_type_name.len();
+        self.fully_qualified_type_name[..len - 1].to_vec()
+    }
+
+    pub fn name(&self) -> Option<&'a str> {
+        self.fully_qualified_type_name.last().copied()
+    }
 }
 
 impl Namespace<'_> {

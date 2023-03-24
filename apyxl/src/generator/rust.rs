@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use crate::generator::Generator;
 use crate::model::{Api, Dto, Field, Namespace, Rpc, TypeRef};
@@ -75,7 +75,7 @@ fn write_rpc(rpc: &Rpc, o: &mut Indented) -> Result<()> {
 
     if let Some(return_type) = &rpc.return_type {
         o.write_str(" -> ")?;
-        write_dto_ref(return_type, o)?;
+        write_type_ref(return_type, o)?;
     }
 
     o.write(';')?;
@@ -109,16 +109,28 @@ fn write_field(field: &Field, o: &mut dyn Output) -> Result<()> {
 fn write_param(field: &Field, o: &mut dyn Output) -> Result<()> {
     o.write_str(field.name)?;
     o.write_str(": ")?;
-    write_dto_ref(&field.ty, o)
+    write_type_ref(&field.ty, o)
 }
 
-fn write_dto_ref(dto_ref: &TypeRef, o: &mut dyn Output) -> Result<()> {
-    o.write_str(dto_ref.name)
+fn write_type_ref(type_ref: &TypeRef, o: &mut dyn Output) -> Result<()> {
+    write_joined(&type_ref.fully_qualified_type_name, "::", o)
+}
+
+/// Writes the `components` joined with `separator` without unnecessary allocations.
+fn write_joined(components: &[&str], separator: &str, o: &mut dyn Output) -> Result<()> {
+    let len = components.len();
+    for (i, component) in components.iter().enumerate() {
+        o.write_str(component)?;
+        if i < len - 1 {
+            o.write_str(separator)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod test {
-    use crate::generator::rust::{write_dto, write_dto_ref, write_field, write_rpc, INDENT};
+    use crate::generator::rust::{write_dto, write_field, write_rpc, write_type_ref, INDENT};
     use crate::generator::Rust;
     use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, ROOT_NAMESPACE};
     use crate::output::{Indented, Output};
@@ -134,16 +146,22 @@ mod test {
                     name: "DtoName",
                     fields: vec![Field {
                         name: "i",
-                        ty: TypeRef { name: "i32" },
+                        ty: TypeRef::new(&["i32"]),
                     }],
                 }),
                 Segment::Rpc(Rpc {
                     name: "rpc_name",
-                    params: vec![Field {
-                        name: "dto",
-                        ty: TypeRef { name: "DtoName" },
-                    }],
-                    return_type: Some(TypeRef { name: "DtoName" }),
+                    params: vec![
+                        Field {
+                            name: "dto",
+                            ty: TypeRef::new(&["DtoName"]),
+                        },
+                        Field {
+                            name: "dto2",
+                            ty: TypeRef::new(&["ns0", "DtoName"]),
+                        },
+                    ],
+                    return_type: Some(TypeRef::new(&["DtoName"])),
                 }),
                 Segment::Namespace(Namespace {
                     name: "ns0",
@@ -151,7 +169,7 @@ mod test {
                         name: "DtoName",
                         fields: vec![Field {
                             name: "i",
-                            ty: TypeRef { name: "i32" },
+                            ty: TypeRef::new(&["i32"]),
                         }],
                     })],
                 }),
@@ -159,6 +177,7 @@ mod test {
         };
         let expected = r#"pub fn rpc_name(
     dto: DtoName,
+    dto2: ns0::DtoName,
 ) -> DtoName;
 
 struct DtoName {
@@ -186,11 +205,11 @@ pub mod ns0 {
                         fields: vec![
                             Field {
                                 name: "field0",
-                                ty: TypeRef { name: "Type0" },
+                                ty: TypeRef::new(&["Type0"]),
                             },
                             Field {
                                 name: "field1",
-                                ty: TypeRef { name: "Type1" },
+                                ty: TypeRef::new(&["Type1"]),
                             },
                         ],
                     },
@@ -215,11 +234,11 @@ pub mod ns0 {
                         params: vec![
                             Field {
                                 name: "param0",
-                                ty: TypeRef { name: "Type0" },
+                                ty: TypeRef::new(&["Type0"]),
                             },
                             Field {
                                 name: "param1",
-                                ty: TypeRef { name: "Type1" },
+                                ty: TypeRef::new(&["Type1"]),
                             },
                         ],
                         return_type: None,
@@ -243,7 +262,7 @@ pub mod ns0 {
                     &Rpc {
                         name: "rpc_name",
                         params: vec![],
-                        return_type: Some(TypeRef { name: "ReturnType" }),
+                        return_type: Some(TypeRef::new(&["ReturnType"])),
                     },
                     &mut Indented::new(o, INDENT),
                 )
@@ -259,7 +278,7 @@ pub mod ns0 {
                 write_field(
                     &Field {
                         name: "asdf",
-                        ty: TypeRef { name: "Type" },
+                        ty: TypeRef::new(&["Type"]),
                     },
                     o,
                 )
@@ -269,8 +288,8 @@ pub mod ns0 {
     }
 
     #[test]
-    fn dto_ref() -> Result<()> {
-        assert_output(|o| write_dto_ref(&TypeRef { name: "asdf" }, o), "asdf")
+    fn type_ref() -> Result<()> {
+        assert_output(|o| write_type_ref(&TypeRef::new(&["asdf"]), o), "asdf")
     }
 
     fn assert_output<F: Fn(&mut dyn Output) -> Result<()>>(write: F, expected: &str) -> Result<()> {
