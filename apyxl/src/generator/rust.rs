@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 use crate::generator::Generator;
 use crate::model::{Api, Dto, Field, Namespace, Rpc, TypeRef};
@@ -130,17 +130,18 @@ fn write_joined(components: &[&str], separator: &str, o: &mut dyn Output) -> Res
 
 #[cfg(test)]
 mod test {
+    use anyhow::Result;
+
     use crate::generator::rust::{write_dto, write_field, write_rpc, write_type_ref, INDENT};
     use crate::generator::Rust;
-    use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, ROOT_NAMESPACE};
+    use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, UNDEFINED_NAMESPACE};
     use crate::output::{Indented, Output};
     use crate::{output, Generator};
-    use anyhow::Result;
 
     #[test]
     fn full_generation() -> Result<()> {
         let api = Api {
-            name: ROOT_NAMESPACE,
+            name: UNDEFINED_NAMESPACE,
             segments: vec![
                 Segment::Dto(Dto {
                     name: "DtoName",

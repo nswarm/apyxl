@@ -4,7 +4,8 @@ use crate::generator::Generator;
 use crate::model::Api;
 use crate::output::Output;
 
-/// A generator that writes out the model in a readable format.
+/// A generator that writes out the model in a the rust [std::fmt::Debug] format.
+/// Note that this format is pretty verbose.
 #[derive(Default)]
 pub struct Dbg {}
 

@@ -3,18 +3,20 @@ use apyxl::input;
 use apyxl::{generator, output, parser, Executor};
 
 fn main() -> Result<()> {
-    let input = input::Buffer::new(
+    let mut input = input::Buffer::new(
         r#"
         struct GetDataRequest {
             id: String,
         }
 
         struct GetDataResponse {
-            some_data: Data,
+            some_data: some_module::Data,
         }
 
-        struct Data {
-            value: String,
+        mod some_module {
+            struct Data {
+                value: String,
+            }
         }
 
         fn get_data(user_id: String, request: GetDataRequest) -> GetDataResponse {
@@ -28,7 +30,7 @@ fn main() -> Result<()> {
         "#,
     );
     Executor::default()
-        .input(&input)
+        .input(&mut input)
         .parser(&parser::Rust::default())
         .generator(
             &mut generator::Dbg::default(),

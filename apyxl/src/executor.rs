@@ -7,7 +7,7 @@ use crate::parser::Parser;
 
 #[derive(Default)]
 pub struct Executor<'a> {
-    input: Option<&'a dyn Input>,
+    input: Option<&'a mut dyn Input>,
     parser: Option<&'a dyn Parser>,
     generator_infos: Vec<GeneratorInfo<'a>>,
 }
@@ -18,7 +18,7 @@ pub struct GeneratorInfo<'a> {
 }
 
 impl<'a> Executor<'a> {
-    pub fn input(mut self, input: &'a dyn Input) -> Self {
+    pub fn input(mut self, input: &'a mut dyn Input) -> Self {
         self.input = Some(input);
         self
     }
@@ -71,11 +71,11 @@ impl<'a> Executor<'a> {
 
 #[cfg(test)]
 mod test {
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
 
     use crate::generator::Generator;
     use crate::input::Input;
-    use crate::model::{Api, Dto, Segment, ROOT_NAMESPACE};
+    use crate::model::{Api, Dto, Segment, UNDEFINED_NAMESPACE};
     use crate::output::Output;
     use crate::parser::Parser;
 
@@ -90,7 +90,7 @@ mod test {
             let mut output = output::Buffer::default();
             let parser = FakeParser::default();
             Executor::default()
-                .input(&input::Buffer::new(parser.test_data(1)))
+                .input(&mut input::Buffer::new(parser.test_data(1)))
                 .parser(&parser)
                 .generator(&mut FakeGenerator::default(), vec![&mut output])
                 .execute()?;
@@ -108,7 +108,7 @@ mod test {
             let mut output1 = output::Buffer::default();
             let mut output2 = output::Buffer::default();
             Executor::default()
-                .input(&input::Buffer::new(parser.test_data_vec(&input_vec)))
+                .input(&mut input::Buffer::new(parser.test_data_vec(&input_vec)))
                 .parser(&parser)
                 .generator(&mut gen0, vec![&mut output0])
                 .generator(&mut gen1, vec![&mut output1, &mut output2])
@@ -142,7 +142,7 @@ mod test {
         fn missing_parser() {
             let parser = FakeParser::default();
             let result = Executor::default()
-                .input(&input::Buffer::new(parser.test_data(1)))
+                .input(&mut input::Buffer::new(parser.test_data(1)))
                 // no parser
                 .generator(
                     &mut FakeGenerator::default(),
@@ -156,7 +156,7 @@ mod test {
         fn missing_generator() {
             let parser = FakeParser::default();
             let result = Executor::default()
-                .input(&input::Buffer::new(parser.test_data(1)))
+                .input(&mut input::Buffer::new(parser.test_data(1)))
                 .parser(&parser)
                 // no generator
                 .execute();
@@ -167,7 +167,7 @@ mod test {
         fn missing_output() {
             let parser = FakeParser::default();
             let result = Executor::default()
-                .input(&input::Buffer::new(parser.test_data(1)))
+                .input(&mut input::Buffer::new(parser.test_data(1)))
                 .parser(&FakeParser::default())
                 .generator(
                     &mut FakeGenerator::default(),
@@ -207,11 +207,12 @@ mod test {
         }
     }
     impl Parser for FakeParser {
-        fn parse<'a>(&self, input: &'a dyn Input) -> Result<Api<'a>> {
+        fn parse<'a>(&self, input: &'a mut dyn Input) -> Result<Api<'a>> {
             Ok(Api {
-                name: ROOT_NAMESPACE,
+                name: UNDEFINED_NAMESPACE,
                 segments: input
-                    .data()
+                    .next_chunk()
+                    .ok_or_else(|| anyhow!("no input data!"))?
                     .split(&self.delimiter)
                     .into_iter()
                     .map(|name| Dto {

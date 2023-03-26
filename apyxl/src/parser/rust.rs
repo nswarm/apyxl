@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, ROOT_NAMESPACE};
+use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, UNDEFINED_NAMESPACE};
 use crate::Input;
 use crate::Parser as ApyxlParser;
 
@@ -12,16 +12,20 @@ type Error<'a> = extra::Err<Simple<'a, char>>;
 pub struct Rust {}
 
 impl ApyxlParser for Rust {
-    fn parse<'a>(&self, input: &'a dyn Input) -> Result<Api<'a>> {
-        let segments = segments(namespace())
-            .padded()
-            .then_ignore(end())
-            .parse(input.data())
-            .into_result()
-            .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
+    fn parse<'a>(&self, input: &'a mut dyn Input) -> Result<Api<'a>> {
+        // while next_chunk
+        // let api = parse(chunk)
+        // ApiBuilder.merge(api)
+
+        // let segments = segments(namespace())
+        //     .padded()
+        //     .then_ignore(end())
+        //     .parse(input.data())
+        //     .into_result()
+        //     .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
         Ok(Api {
-            name: ROOT_NAMESPACE,
-            segments,
+            name: UNDEFINED_NAMESPACE,
+            segments: vec![], // segments,
         })
     }
 }
@@ -117,7 +121,7 @@ mod test {
     use chumsky::Parser;
 
     use crate::input;
-    use crate::model::ROOT_NAMESPACE;
+    use crate::model::UNDEFINED_NAMESPACE;
     use crate::parser::rust::field;
     use crate::parser::Rust;
     use crate::Parser as ApyxlParser;
@@ -135,12 +139,11 @@ mod test {
 
     #[test]
     fn full_parse() -> Result<()> {
-        // todo!
-        let input = input::Buffer::new(r#""#);
-        let namespace = Rust::default().parse(&input)?;
-        assert_eq!(namespace.name, ROOT_NAMESPACE);
-        assert!(namespace.segments.is_empty());
-        Ok(())
+        // let input = input::Buffer::new(r#""#);
+        // let namespace = Rust::default().parse(&input)?;
+        // assert_eq!(namespace.name, UNDEFINED_NAMESPACE);
+        // assert!(namespace.segments.is_empty());
+        todo!()
     }
 
     mod namespace {
