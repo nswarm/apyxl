@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::model::{Api, Namespace, Segment, TypeRef, UNDEFINED_NAMESPACE};
 
+// todo description
 pub struct Builder<'a> {
     api: Api<'a>,
     namespace_stack: Vec<&'a str>,
@@ -24,7 +25,7 @@ impl<'a> Builder<'a> {
     ///
     /// If the `name` of the `namespace` is [UNDEFINED_NAMESPACE] it will be merged with the
     /// current builder namespace. Otherwise it will be added as a new namespace underneath the
-    /// current builder namespace. Duplicates will be preserved.
+    /// current builder namespace.
     pub fn merge(&mut self, namespace: Namespace<'a>) {
         if namespace.name == UNDEFINED_NAMESPACE {
             self.current_namespace_mut().merge(namespace)
@@ -40,21 +41,21 @@ impl<'a> Builder<'a> {
     /// nested within the full namespace specified by the stack.
     pub fn enter_namespace(&mut self, name: &'a str) {
         // todo has_namespace?
-        if !self
-            .current_namespace_mut()
-            .namespaces()
-            .any(|ns| ns.name == name)
-        {
-            // todo add_namespace?
-            // todo namespace new(name)?
-            self.current_namespace_mut()
-                .segments
-                .push(Segment::Namespace(Namespace {
-                    name,
-                    segments: vec![],
-                }))
-        }
-        self.namespace_stack.push(name);
+        // if !self
+        //     .current_namespace_mut()
+        //     .namespaces()
+        //     .any(|ns| ns.name == name)
+        // {
+        //     // todo add_namespace?
+        //     // todo namespace new(name)?
+        //     self.current_namespace_mut()
+        //         .segments
+        //         .push(Segment::Namespace(Namespace {
+        //             name,
+        //             segments: vec![],
+        //         }))
+        // }
+        // self.namespace_stack.push(name);
     }
 
     /// Remove the most recently-added namespace from the stack.
@@ -78,8 +79,9 @@ impl<'a> Builder<'a> {
     // }
 
     fn current_namespace_mut(&mut self) -> &mut Namespace<'a> {
-        self.api.find_namespace_mut(&TypeRef::new(&self.namespace_stack))
-            .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
+        // self.api.find_namespace_mut(&TypeRef::new(&self.namespace_stack))
+        //     .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
+        todo!()
     }
 }
 
@@ -230,6 +232,13 @@ mod test {
                     .push(Segment::Namespace(current_namespace()));
                 builder.enter_namespace(CURRENT_NAMESPACE);
                 builder
+            }
+        }
+
+        mod finalize {
+            #[test]
+            fn asdf() {
+                todo!("nyi")
             }
         }
 
