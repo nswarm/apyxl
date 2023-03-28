@@ -134,7 +134,7 @@ mod test {
 
     use crate::generator::rust::{write_dto, write_field, write_rpc, write_type_ref, INDENT};
     use crate::generator::Rust;
-    use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, UNDEFINED_NAMESPACE};
+    use crate::model::{Api, Dto, Field, Namespace, Rpc, NamespaceChild, TypeRef, UNDEFINED_NAMESPACE};
     use crate::output::{Indented, Output};
     use crate::{output, Generator};
 
@@ -142,15 +142,15 @@ mod test {
     fn full_generation() -> Result<()> {
         let api = Api {
             name: UNDEFINED_NAMESPACE,
-            segments: vec![
-                Segment::Dto(Dto {
+            children: vec![
+                NamespaceChild::Dto(Dto {
                     name: "DtoName",
                     fields: vec![Field {
                         name: "i",
                         ty: TypeRef::new(&["i32"]),
                     }],
                 }),
-                Segment::Rpc(Rpc {
+                NamespaceChild::Rpc(Rpc {
                     name: "rpc_name",
                     params: vec![
                         Field {
@@ -164,9 +164,9 @@ mod test {
                     ],
                     return_type: Some(TypeRef::new(&["DtoName"])),
                 }),
-                Segment::Namespace(Namespace {
+                NamespaceChild::Namespace(Namespace {
                     name: "ns0",
-                    segments: vec![Segment::Dto(Dto {
+                    children: vec![NamespaceChild::Dto(Dto {
                         name: "DtoName",
                         fields: vec![Field {
                             name: "i",

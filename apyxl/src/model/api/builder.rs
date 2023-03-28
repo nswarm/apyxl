@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::model::{Api, Namespace, Segment, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{Api, Namespace, TypeRef, UNDEFINED_NAMESPACE};
 
 // todo description
 pub struct Builder<'a> {
@@ -30,32 +30,20 @@ impl<'a> Builder<'a> {
         if namespace.name == UNDEFINED_NAMESPACE {
             self.current_namespace_mut().merge(namespace)
         } else {
-            // todo add_namespace?
-            self.current_namespace_mut()
-                .segments
-                .push(Segment::Namespace(namespace))
+            self.current_namespace_mut().add_namespace(namespace);
         }
     }
 
     /// Add `namespace` to the current namespace stack of the Builder. Any [Api]s merged will be
     /// nested within the full namespace specified by the stack.
     pub fn enter_namespace(&mut self, name: &'a str) {
-        // todo has_namespace?
-        // if !self
-        //     .current_namespace_mut()
-        //     .namespaces()
-        //     .any(|ns| ns.name == name)
-        // {
-        //     // todo add_namespace?
-        //     // todo namespace new(name)?
-        //     self.current_namespace_mut()
-        //         .segments
-        //         .push(Segment::Namespace(Namespace {
-        //             name,
-        //             segments: vec![],
-        //         }))
-        // }
-        // self.namespace_stack.push(name);
+        if self.current_namespace().namespace(name).is_none() {
+            self.current_namespace_mut().add_namespace(Namespace {
+                name,
+                ..Default::default()
+            });
+        }
+        self.namespace_stack.push(name);
     }
 
     /// Remove the most recently-added namespace from the stack.
@@ -72,16 +60,14 @@ impl<'a> Builder<'a> {
         todo!("nyi")
     }
 
-    // todo current_namespace (non-mut)
-    // fn current_namespace_mut(&mut self) -> &mut Namespace<'a> {
-    //     self.api.find_namespace_mut(&TypeRef::new(&self.namespace_stack))
-    //         .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
-    // }
+    fn current_namespace(&self) -> &Namespace<'a> {
+        self.api.find_namespace(&TypeRef::from(self.namespace_stack.as_slice()))
+            .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
+    }
 
     fn current_namespace_mut(&mut self) -> &mut Namespace<'a> {
-        // self.api.find_namespace_mut(&TypeRef::new(&self.namespace_stack))
-        //     .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
-        todo!()
+        self.api.find_namespace_mut(&TypeRef::from(self.namespace_stack.as_slice()))
+            .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
 }
 
@@ -111,55 +97,58 @@ mod test {
     }
 
     mod merge {
-        use crate::model::{Dto, Namespace, Segment};
+        use crate::model::{Dto, Namespace, NamespaceChild};
 
         mod no_current_namespace {
             use crate::model::api::builder::test::merge::{
-                test_dto_segment, test_named_namespace, test_namespace, test_namespace_segment,
+                test_child_dto, test_child_namespace, test_named_namespace, test_namespace,
                 NS_NAMES,
             };
-            use crate::model::{Builder, Namespace, Segment, UNDEFINED_NAMESPACE};
-
-            #[test]
-            fn name_is_empty() {
-                let mut builder = Builder::default();
-                builder.merge(test_named_namespace("", 1));
-                assert_eq!(builder.api.name, UNDEFINED_NAMESPACE, "no change root name");
-                assert_eq!(builder.api.segments, vec![test_dto_segment(1)]);
-            }
+            use crate::model::{Builder, Namespace, NamespaceChild, UNDEFINED_NAMESPACE};
 
             #[test]
             fn name_is_root() {
                 let mut builder = Builder::default();
                 builder.merge(test_named_namespace(UNDEFINED_NAMESPACE, 1));
                 assert_eq!(builder.api.name, UNDEFINED_NAMESPACE, "no change root name");
-                assert_eq!(builder.api.segments, vec![test_dto_segment(1)]);
+                assert_eq!(builder.api.children, vec![test_child_dto(1)]);
+            }
+
+            #[test]
+            fn name_is_empty() {
+                let mut builder = Builder::default();
+                // Anonymous namespace same as "new".
+                builder.merge(test_named_namespace("", 1));
+                assert_eq!(
+                    builder.api.children,
+                    vec![NamespaceChild::Namespace(test_named_namespace("", 1))]
+                );
             }
 
             #[test]
             fn name_is_new() {
                 let mut builder = Builder::default();
-                builder.api.segments.push(test_namespace_segment(1));
+                builder.api.children.push(test_child_namespace(1));
                 builder.merge(test_namespace(2));
                 assert_eq!(
-                    builder.api.segments,
-                    vec![test_namespace_segment(1), test_namespace_segment(2)]
+                    builder.api.children,
+                    vec![test_child_namespace(1), test_child_namespace(2)]
                 );
             }
 
             #[test]
             fn name_is_existing() {
                 let mut builder = Builder::default();
-                builder.api.segments.push(test_namespace_segment(1));
+                builder.api.children.push(test_child_namespace(1));
                 builder.merge(test_named_namespace(NS_NAMES[1], 2));
                 assert_eq!(
-                    builder.api.segments,
+                    builder.api.children,
                     vec![
                         // Duplicates preserved.
-                        test_namespace_segment(1),
-                        Segment::Namespace(Namespace {
+                        test_child_namespace(1),
+                        NamespaceChild::Namespace(Namespace {
                             name: NS_NAMES[1],
-                            segments: vec![test_dto_segment(2)],
+                            children: vec![test_child_dto(2)],
                         })
                     ]
                 );
@@ -168,20 +157,9 @@ mod test {
 
         mod has_current_namespace {
             use crate::model::api::builder::test::merge::{
-                test_dto_segment, test_named_namespace, test_namespace, test_namespace_segment,
+                test_child_dto, test_child_namespace, test_named_namespace, test_namespace,
             };
-            use crate::model::{Builder, Namespace, Segment, UNDEFINED_NAMESPACE};
-
-            #[test]
-            fn name_is_empty() {
-                let mut builder = test_builder();
-                builder.merge(test_named_namespace("", 1));
-                assert_eq!(builder.api.name, UNDEFINED_NAMESPACE, "no change root name");
-
-                let mut expected = current_namespace();
-                expected.segments.push(test_dto_segment(1));
-                assert_eq!(builder.api.segments, vec![Segment::Namespace(expected)]);
-            }
+            use crate::model::{Builder, Namespace, NamespaceChild, UNDEFINED_NAMESPACE};
 
             #[test]
             fn name_is_root() {
@@ -190,8 +168,27 @@ mod test {
                 assert_eq!(builder.api.name, UNDEFINED_NAMESPACE, "no change root name");
 
                 let mut expected = current_namespace();
-                expected.segments.push(test_dto_segment(1));
-                assert_eq!(builder.api.segments, vec![Segment::Namespace(expected)]);
+                expected.children.push(test_child_dto(1));
+                assert_eq!(
+                    builder.api.children,
+                    vec![NamespaceChild::Namespace(expected)]
+                );
+            }
+
+            #[test]
+            fn name_is_empty() {
+                let mut builder = test_builder();
+                builder.merge(test_named_namespace("", 1));
+
+                // Anonymous namespace same as "new".
+                let mut expected = current_namespace();
+                expected
+                    .children
+                    .push(NamespaceChild::Namespace(test_named_namespace("", 1)));
+                assert_eq!(
+                    builder.api.children,
+                    vec![NamespaceChild::Namespace(expected)]
+                );
             }
 
             #[test]
@@ -200,23 +197,29 @@ mod test {
                 builder.merge(test_namespace(2));
 
                 let mut expected = current_namespace();
-                expected.segments.push(test_namespace_segment(2));
-                assert_eq!(builder.api.segments, vec![Segment::Namespace(expected)]);
+                expected.children.push(test_child_namespace(2));
+                assert_eq!(
+                    builder.api.children,
+                    vec![NamespaceChild::Namespace(expected)]
+                );
             }
 
             #[test]
             fn name_is_existing() {
                 let mut builder = test_builder();
-                if let Segment::Namespace(ns) = builder.api.segments.get_mut(0).unwrap() {
-                    ns.segments.push(test_namespace_segment(2));
+                if let NamespaceChild::Namespace(ns) = builder.api.children.get_mut(0).unwrap() {
+                    ns.children.push(test_child_namespace(2));
                 }
                 builder.merge(test_namespace(2));
 
                 let mut expected = current_namespace();
                 // Duplicates preserved.
-                expected.segments.push(test_namespace_segment(2));
-                expected.segments.push(test_namespace_segment(2));
-                assert_eq!(builder.api.segments, vec![Segment::Namespace(expected)],);
+                expected.children.push(test_child_namespace(2));
+                expected.children.push(test_child_namespace(2));
+                assert_eq!(
+                    builder.api.children,
+                    vec![NamespaceChild::Namespace(expected)],
+                );
             }
 
             const CURRENT_NAMESPACE: &str = "current";
@@ -226,24 +229,14 @@ mod test {
 
             fn test_builder() -> Builder<'static> {
                 let mut builder = Builder::default();
-                builder
-                    .api
-                    .segments
-                    .push(Segment::Namespace(current_namespace()));
+                builder.api.add_namespace(current_namespace());
                 builder.enter_namespace(CURRENT_NAMESPACE);
                 builder
             }
         }
 
-        mod finalize {
-            #[test]
-            fn asdf() {
-                todo!("nyi")
-            }
-        }
-
-        fn test_namespace_segment(i: usize) -> Segment<'static> {
-            Segment::Namespace(test_namespace(i))
+        fn test_child_namespace(i: usize) -> NamespaceChild<'static> {
+            NamespaceChild::Namespace(test_namespace(i))
         }
 
         const NS_NAMES: &[&str] = &["ns0", "ns1", "ns2", "ns3", "ns4"];
@@ -254,12 +247,12 @@ mod test {
         fn test_named_namespace(name: &'static str, i: usize) -> Namespace<'static> {
             Namespace {
                 name,
-                segments: vec![test_dto_segment(i)],
+                children: vec![test_child_dto(i)],
             }
         }
 
-        fn test_dto_segment(i: usize) -> Segment<'static> {
-            Segment::Dto(test_dto(i))
+        fn test_child_dto(i: usize) -> NamespaceChild<'static> {
+            NamespaceChild::Dto(test_dto(i))
         }
 
         const DTO_NAMES: &[&str] = &["DtoName0", "DtoName1", "DtoName2", "DtoName3", "DtoName4"];
@@ -268,6 +261,18 @@ mod test {
                 name: DTO_NAMES[i],
                 fields: vec![],
             }
+        }
+    }
+
+    mod finalize {
+
+        // validate typerefs not empty
+        // validate typerefs all have real linkage
+        // validate dtos/rpcs have required bits
+
+        #[test]
+        fn asdf() {
+            todo!("nyi")
         }
     }
 }

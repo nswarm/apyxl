@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{Api, Dto, Field, Namespace, Rpc, Segment, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE};
 use crate::Input;
 use crate::Parser as ApyxlParser;
 
@@ -17,7 +17,7 @@ impl ApyxlParser for Rust {
         // let api = parse(chunk)
         // ApiBuilder.merge(api)
 
-        // let segments = segments(namespace())
+        // let children = children(namespace())
         //     .padded()
         //     .then_ignore(end())
         //     .parse(input.data())
@@ -25,7 +25,7 @@ impl ApyxlParser for Rust {
         //     .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
         Ok(Api {
             name: UNDEFINED_NAMESPACE,
-            segments: vec![], // segments,
+            children: vec![], // children,
         })
     }
 }
@@ -85,13 +85,13 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
         })
 }
 
-fn segments<'a>(
+fn namespace_children<'a>(
     namespace: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
-) -> impl Parser<'a, &'a str, Vec<Segment<'a>>, Error<'a>> {
+) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
-        dto().padded().map(Segment::Dto),
-        rpc().padded().map(Segment::Rpc),
-        namespace.padded().map(Segment::Namespace),
+        dto().padded().map(NamespaceChild::Dto),
+        rpc().padded().map(NamespaceChild::Rpc),
+        namespace.padded().map(NamespaceChild::Namespace),
     ))
     .repeated()
     .collect::<Vec<_>>()
@@ -103,14 +103,14 @@ fn namespace<'a>() -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
             .then(whitespace().at_least(1))
             .or_not()
             .then(text::keyword("mod"));
-        let body = segments(nested)
+        let body = namespace_children(nested)
             .boxed()
             .delimited_by(just('{').padded(), just('}').padded());
         mod_keyword
             .padded()
             .ignore_then(text::ident())
             .then(body)
-            .map(|(name, segments)| Namespace { name, segments })
+            .map(|(name, children)| Namespace { name, children })
     })
 }
 
@@ -142,14 +142,14 @@ mod test {
         // let input = input::Buffer::new(r#""#);
         // let namespace = Rust::default().parse(&input)?;
         // assert_eq!(namespace.name, UNDEFINED_NAMESPACE);
-        // assert!(namespace.segments.is_empty());
+        // assert!(namespace.children.is_empty());
         todo!()
     }
 
     mod namespace {
         use chumsky::Parser;
 
-        use crate::model::Segment;
+        use crate::model::NamespaceChild;
         use crate::parser::rust::namespace;
         use crate::parser::rust::test::TestError;
 
@@ -163,7 +163,7 @@ mod test {
                 )
                 .into_result()?;
             assert_eq!(namespace.name, "empty");
-            assert!(namespace.segments.is_empty());
+            assert!(namespace.children.is_empty());
             Ok(())
         }
 
@@ -179,10 +179,10 @@ mod test {
                 )
                 .into_result()?;
             assert_eq!(namespace.name, "ns");
-            assert_eq!(namespace.segments.len(), 1);
-            match &namespace.segments[0] {
-                Segment::Dto(dto) => assert_eq!(dto.name, "DtoName"),
-                _ => panic!("wrong segment type"),
+            assert_eq!(namespace.children.len(), 1);
+            match &namespace.children[0] {
+                NamespaceChild::Dto(dto) => assert_eq!(dto.name, "DtoName"),
+                _ => panic!("wrong child type"),
             }
             Ok(())
         }
@@ -199,10 +199,10 @@ mod test {
                 )
                 .into_result()?;
             assert_eq!(namespace.name, "ns0");
-            assert_eq!(namespace.segments.len(), 1);
-            match &namespace.segments[0] {
-                Segment::Namespace(ns) => assert_eq!(ns.name, "ns1"),
-                _ => panic!("wrong segment type"),
+            assert_eq!(namespace.children.len(), 1);
+            match &namespace.children[0] {
+                NamespaceChild::Namespace(ns) => assert_eq!(ns.name, "ns1"),
+                _ => panic!("wrong child type"),
             }
             Ok(())
         }
@@ -221,17 +221,17 @@ mod test {
                 )
                 .into_result()?;
             assert_eq!(namespace.name, "ns0");
-            assert_eq!(namespace.segments.len(), 1);
-            match &namespace.segments[0] {
-                Segment::Namespace(ns) => {
+            assert_eq!(namespace.children.len(), 1);
+            match &namespace.children[0] {
+                NamespaceChild::Namespace(ns) => {
                     assert_eq!(ns.name, "ns1");
-                    assert_eq!(ns.segments.len(), 1);
-                    match &ns.segments[0] {
-                        Segment::Dto(dto) => assert_eq!(dto.name, "DtoName"),
-                        _ => panic!("ns1: wrong segment type"),
+                    assert_eq!(ns.children.len(), 1);
+                    match &ns.children[0] {
+                        NamespaceChild::Dto(dto) => assert_eq!(dto.name, "DtoName"),
+                        _ => panic!("ns1: wrong child type"),
                     }
                 }
-                _ => panic!("ns0: wrong segment type"),
+                _ => panic!("ns0: wrong child type"),
             }
             Ok(())
         }

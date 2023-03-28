@@ -10,7 +10,7 @@ pub type Api<'a> = Namespace<'a>;
 pub const UNDEFINED_NAMESPACE: &str = "_";
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Segment<'a> {
+pub enum NamespaceChild<'a> {
     Dto(Dto<'a>),
     Rpc(Rpc<'a>),
     Namespace(Namespace<'a>),
@@ -20,7 +20,7 @@ pub enum Segment<'a> {
 #[derive(Default, Debug, Eq, PartialEq)]
 pub struct Namespace<'a> {
     pub name: &'a str,
-    pub segments: Vec<Segment<'a>>,
+    pub children: Vec<NamespaceChild<'a>>,
 }
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
@@ -64,10 +64,15 @@ impl<'a> TypeRef<'a> {
     }
 
     /// Returns an iterator over the part of the path _before_ the name, which represents the
-    /// namespace it is a part of.
-    pub fn namespace<'b>(&'b self) -> impl Iterator<Item = &'a str> + 'b {
+    /// namespace it is a part of as an iterator over the type ref.
+    pub fn namespace_iter<'b>(&'b self) -> impl Iterator<Item = &'a str> + 'b {
         let len = self.fully_qualified_type_name.len();
         self.fully_qualified_type_name.iter().copied().take(len - 1)
+    }
+
+    /// Returns the part of the path _before_ the name
+    pub fn namespace(&self) -> TypeRef<'a> {
+        TypeRef::new(&self.namespace_iter().collect::<Vec<_>>())
     }
 
     /// The name is always the last part of the type path.
@@ -76,137 +81,173 @@ impl<'a> TypeRef<'a> {
     }
 }
 
-impl<'a, T: Iterator<Item = &'a str>> From<T> for TypeRef<'a> {
-    fn from(value: T) -> Self {
-        TypeRef {
-            fully_qualified_type_name: value.collect::<Vec<_>>(),
+impl<'a> From<&[&'a str]> for TypeRef<'a> {
+    fn from(value: &[&'a str]) -> Self {
+        Self {
+            fully_qualified_type_name: value.to_vec(),
         }
     }
 }
 
-macro_rules! get {
-    ($self: ident, $name: ident, $segment: ident, $iter: ident) => {
-        $self.segments.$iter().find_map(|s| match s {
-            Segment::$segment(value) if value.name == $name => Some(value),
-            _ => None,
-        })
-    };
+impl<'a> From<Vec<&'a str>> for TypeRef<'a> {
+    fn from(value: Vec<&'a str>) -> Self {
+        Self {
+            fully_qualified_type_name: value,
+        }
+    }
 }
 
-macro_rules! iter {
-    ($self: ident, $segment:ident, $iter: ident) => {
-        $self.segments.$iter().filter_map(|segment| {
-            if let Segment::$segment(value) = segment {
+impl<'a> Namespace<'a> {
+    /// Merge children from other namespace into this namespace. The other namespace's name is ignored.
+    /// Note that this will preserve duplicate children.
+    pub fn merge(&mut self, mut other: Namespace<'a>) {
+        self.children.append(&mut other.children)
+    }
+
+    /// Add a [Dto] as a child of this [Namespace].
+    pub fn add_dto(&mut self, value: Dto<'a>) {
+        self.children.push(NamespaceChild::Dto(value));
+    }
+
+    /// Add an [Rpc] as a child of this [Namespace].
+    pub fn add_rpc(&mut self, value: Rpc<'a>) {
+        self.children.push(NamespaceChild::Rpc(value));
+    }
+
+    /// Add a [Namespace] as a child of this [Namespace].
+    pub fn add_namespace(&mut self, value: Namespace<'a>) {
+        self.children.push(NamespaceChild::Namespace(value));
+    }
+
+    /// Get a [Dto] within this [Namespace] by name."
+    fn dto(&self, name: &str) -> Option<&Dto<'a>> {
+        self.children.iter().find_map(|s| match s {
+            NamespaceChild::Dto(value) if value.name == name => Some(value),
+            _ => None,
+        })
+    }
+
+    /// Get a [Dto] within this [Namespace] by name."
+    fn dto_mut(&mut self, name: &str) -> Option<&mut Dto<'a>> {
+        self.children.iter_mut().find_map(|s| match s {
+            NamespaceChild::Dto(value) if value.name == name => Some(value),
+            _ => None,
+        })
+    }
+
+    /// Get a [Rpc] within this [Namespace] by name."
+    fn rpc(&self, name: &str) -> Option<&Rpc<'a>> {
+        self.children.iter().find_map(|s| match s {
+            NamespaceChild::Rpc(value) if value.name == name => Some(value),
+            _ => None,
+        })
+    }
+
+    /// Get a [Rpc] within this [Namespace] by name."
+    fn rpc_mut(&mut self, name: &str) -> Option<&mut Rpc<'a>> {
+        self.children.iter_mut().find_map(|s| match s {
+            NamespaceChild::Rpc(value) if value.name == name => Some(value),
+            _ => None,
+        })
+    }
+
+    /// Get a [Namespace] within this [Namespace] by name."
+    fn namespace(&self, name: &str) -> Option<&Namespace<'a>> {
+        self.children.iter().find_map(|s| match s {
+            NamespaceChild::Namespace(value) if value.name == name => Some(value),
+            _ => None,
+        })
+    }
+
+    /// Get a [Namespace] within this [Namespace] by name."
+    fn namespace_mut(&mut self, name: &str) -> Option<&mut Namespace<'a>> {
+        self.children.iter_mut().find_map(|s| match s {
+            NamespaceChild::Namespace(value) if value.name == name => Some(value),
+            _ => None,
+        })
+    }
+
+    /// Iterate over all [Dto]s within this [Namespace].
+    pub fn dtos(&self) -> impl Iterator<Item = &Dto<'a>> {
+        self.children.iter().filter_map(|child| {
+            if let NamespaceChild::Dto(value) = child {
                 Some(value)
             } else {
                 None
             }
         })
-    };
-}
-
-macro_rules! find {
-    ($self: ident, $type_ref: ident, $get: ident, $find_namespace: ident) => {{
-        if !$type_ref.has_namespace() {
-            return $type_ref.name().map_or(None, |name| $self.$get(name));
-        }
-        let namespace = $self.$find_namespace(&TypeRef::from($type_ref.namespace()));
-        let name = $type_ref.name();
-        match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.$get(name),
-            _ => None,
-        }
-    }};
-}
-
-impl<'a> Namespace<'a> {
-    /// Merge segments from other namespace into this namespace. The other namespace's name is ignored.
-    /// Note that this will preserve duplicate segments.
-    pub fn merge(&mut self, mut other: Namespace<'a>) {
-        self.segments.append(&mut other.segments)
-    }
-
-    /// Add a [Dto] as a segment in this [Namespace].
-    pub fn add_dto(&mut self, value: Dto<'a>) {
-        self.segments.push(Segment::Dto(value));
-    }
-
-    /// Add an [Rpc] as a segment in this [Namespace].
-    pub fn add_rpc(&mut self, value: Rpc<'a>) {
-        self.segments.push(Segment::Rpc(value));
-    }
-
-    /// Add a nested [Namespace] under this [Namespace].
-    pub fn add_namespace(&mut self, value: Namespace<'a>) {
-        self.segments.push(Segment::Namespace(value));
-    }
-
-    /// Get a [Dto] within this [Namespace] by name."
-    fn dto(&self, name: &str) -> Option<&Dto<'a>> {
-        get!(self, name, Dto, iter)
-    }
-
-    /// Get a [Dto] within this [Namespace] by name."
-    fn dto_mut(&mut self, name: &str) -> Option<&mut Dto<'a>> {
-        get!(self, name, Dto, iter_mut)
-    }
-
-    /// Get a [Rpc] within this [Namespace] by name."
-    fn rpc(&self, name: &str) -> Option<&Rpc<'a>> {
-        get!(self, name, Rpc, iter)
-    }
-
-    /// Get a [Rpc] within this [Namespace] by name."
-    fn rpc_mut(&mut self, name: &str) -> Option<&mut Rpc<'a>> {
-        get!(self, name, Rpc, iter_mut)
-    }
-
-    /// Get a [Namespace] within this [Namespace] by name."
-    fn namespace(&self, name: &str) -> Option<&Namespace<'a>> {
-        get!(self, name, Namespace, iter)
-    }
-
-    /// Get a [Namespace] within this [Namespace] by name."
-    fn namespace_mut(&mut self, name: &str) -> Option<&mut Namespace<'a>> {
-        get!(self, name, Namespace, iter_mut)
-    }
-
-    /// Iterate over all [Dto]s within this [Namespace].
-    pub fn dtos(&self) -> impl Iterator<Item = &Dto<'a>> {
-        iter!(self, Dto, iter)
     }
 
     /// Iterate over all [Rpc]s within this [Namespace].
     pub fn rpcs(&self) -> impl Iterator<Item = &Rpc<'a>> {
-        iter!(self, Rpc, iter)
+        self.children.iter().filter_map(|child| {
+            if let NamespaceChild::Rpc(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
     }
 
     /// Iterate over all [Namespace]s within this [Namespace].
     pub fn namespaces(&self) -> impl Iterator<Item = &Namespace<'a>> {
-        iter!(self, Namespace, iter)
+        self.children.iter().filter_map(|child| {
+            if let NamespaceChild::Namespace(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
     }
 
     /// Find a [Dto] by `type_ref` relative to this [Namespace].
     pub fn find_dto(&self, type_ref: &TypeRef) -> Option<&Dto<'a>> {
-        find!(self, type_ref, dto, find_namespace)
+        if !type_ref.has_namespace() {
+            return type_ref.name().and_then(|name| self.dto(name));
+        }
+        let namespace = self.find_namespace(&type_ref.namespace());
+        let name = type_ref.name();
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.dto(name),
+            _ => None,
+        }
     }
 
     /// Find a [Dto] by `type_ref` relative to this [Namespace].
     pub fn find_dto_mut(&mut self, type_ref: &TypeRef) -> Option<&mut Dto<'a>> {
-        find!(self, type_ref, dto_mut, find_namespace_mut)
+        if !type_ref.has_namespace() {
+            return type_ref.name().and_then(|name| self.dto_mut(name));
+        }
+        let namespace = self.find_namespace_mut(&type_ref.namespace());
+        let name = type_ref.name();
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.dto_mut(name),
+            _ => None,
+        }
     }
 
     /// Find a [Rpc] by `type_ref` relative to this [Namespace].
     pub fn find_rpc(&self, type_ref: &TypeRef) -> Option<&Rpc<'a>> {
-        find!(self, type_ref, rpc, find_namespace)
+        let namespace = self.find_namespace(&type_ref.namespace());
+        let name = type_ref.name();
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.rpc(name),
+            _ => None,
+        }
     }
 
     /// Find a [Rpc] by `type_ref` relative to this [Namespace].
     pub fn find_rpc_mut(&mut self, type_ref: &TypeRef) -> Option<&mut Rpc<'a>> {
-        find!(self, type_ref, rpc_mut, find_namespace_mut)
+        let namespace = self.find_namespace_mut(&type_ref.namespace());
+        let name = type_ref.name();
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.rpc_mut(name),
+            _ => None,
+        }
     }
 
     /// Find a [Namespace] by `type_ref` relative to this [Namespace].
+    /// If the type ref is empty, this [Namespace] will be returned.
     pub fn find_namespace(&self, type_ref: &TypeRef) -> Option<&Namespace<'a>> {
         let mut namespace_it = self;
         for name in &type_ref.fully_qualified_type_name {
@@ -229,7 +270,7 @@ impl<'a> Namespace<'a> {
                 return None;
             }
         }
-        None
+        Some(namespace_it)
     }
 }
 
@@ -315,29 +356,32 @@ mod tests {
 
         #[test]
         fn dto() {
-            let api = complex_api();
+            let mut api = complex_api();
             let type_ref1 = TypeRef::new(&[test_dto(1).name]);
             let type_ref2 = TypeRef::new(&[test_dto(2).name]);
             assert_eq!(api.find_dto(&type_ref1), Some(&test_dto(1)));
-            assert_eq!(api.find_dto(&type_ref2), Some(&test_dto(2)));
+            assert_eq!(api.find_dto_mut(&type_ref2), Some(&mut test_dto(2)));
         }
 
         #[test]
         fn rpc() {
-            let api = complex_api();
+            let mut api = complex_api();
             let type_ref1 = TypeRef::new(&[test_dto(1).name]);
             let type_ref2 = TypeRef::new(&[test_dto(2).name]);
             assert_eq!(api.find_rpc(&type_ref1), Some(&test_rpc(1)),);
-            assert_eq!(api.find_rpc(&type_ref2), Some(&test_rpc(2)),);
+            assert_eq!(api.find_rpc_mut(&type_ref2), Some(&mut test_rpc(2)),);
         }
 
         #[test]
         fn namespace() {
-            let api = complex_api();
+            let mut api = complex_api();
             let type_ref1 = TypeRef::new(&[complex_namespace(1).name]);
             let type_ref2 = TypeRef::new(&[complex_namespace(2).name]);
             assert_eq!(api.find_namespace(&type_ref1), Some(&complex_namespace(1)));
-            assert_eq!(api.find_namespace(&type_ref2), Some(&complex_namespace(2)));
+            assert_eq!(
+                api.find_namespace_mut(&type_ref2),
+                Some(&mut complex_namespace(2))
+            );
         }
 
         #[test]
@@ -347,6 +391,14 @@ mod tests {
             assert_eq!(api.find_dto(&type_ref), Some(&test_dto(3)));
             assert_eq!(api.find_rpc(&type_ref), Some(&test_rpc(3)));
             assert_eq!(api.find_namespace(&type_ref), Some(&test_namespace(3)));
+        }
+
+        #[test]
+        fn multi_depth_child() {
+            let api = complex_api();
+            let type_ref =
+                TypeRef::new(&[complex_namespace(1).name, test_namespace(4).name, NAMES[5]]);
+            assert_eq!(api.find_dto(&type_ref), Some(&test_dto(5)));
         }
     }
 
@@ -370,7 +422,9 @@ mod tests {
         namespace.add_rpc(test_rpc(i + 2));
         namespace.add_rpc(test_rpc(i + 3));
         namespace.add_namespace(test_namespace(i + 2));
-        namespace.add_namespace(test_namespace(i + 3));
+        let mut deep_namespace = test_namespace(i + 3);
+        deep_namespace.add_dto(test_dto(5));
+        namespace.add_namespace(deep_namespace);
         namespace
     }
 

@@ -75,7 +75,7 @@ mod test {
 
     use crate::generator::Generator;
     use crate::input::Input;
-    use crate::model::{Api, Dto, Segment, UNDEFINED_NAMESPACE};
+    use crate::model::{Api, Dto, NamespaceChild, UNDEFINED_NAMESPACE};
     use crate::output::Output;
     use crate::parser::Parser;
 
@@ -210,7 +210,7 @@ mod test {
         fn parse<'a>(&self, input: &'a mut dyn Input) -> Result<Api<'a>> {
             Ok(Api {
                 name: UNDEFINED_NAMESPACE,
-                segments: input
+                children: input
                     .next_chunk()
                     .ok_or_else(|| anyhow!("no input data!"))?
                     .split(&self.delimiter)
@@ -219,8 +219,8 @@ mod test {
                         name,
                         ..Default::default()
                     })
-                    .map(Segment::Dto)
-                    .collect::<Vec<Segment>>(),
+                    .map(NamespaceChild::Dto)
+                    .collect::<Vec<NamespaceChild>>(),
             })
         }
     }
