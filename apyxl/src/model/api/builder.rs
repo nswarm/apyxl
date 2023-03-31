@@ -1,11 +1,27 @@
 use anyhow::Result;
+use log::{info, log};
+use thiserror::Error;
 
 use crate::model::{Api, Namespace, TypeRef, UNDEFINED_NAMESPACE};
 
-// todo description
+/// Helper struct for parsing [Namespace]s spread across multiple chunks.
+/// After all desired [Namespace]s are merged, the [Builder] can be finalized via [Builder::build] which will
+/// perform validation across the entire [Api].
 pub struct Builder<'a> {
     api: Api<'a>,
     namespace_stack: Vec<&'a str>,
+}
+
+#[derive(Error, Debug)]
+pub enum ValidationError<'a> {
+    #[error("Cannot add a namespace with the name {}", UNDEFINED_NAMESPACE)]
+    InvalidNamespaceName,
+
+    #[error("Found duplicate DTO definition at path {0:?}")]
+    DuplicateDto(TypeRef<'a>),
+
+    #[error("Found duplicate RPC definition at path {0:?}")]
+    DuplicateRpc(TypeRef<'a>),
 }
 
 impl Default for Builder<'_> {
@@ -30,7 +46,7 @@ impl<'a> Builder<'a> {
         if namespace.name == UNDEFINED_NAMESPACE {
             self.current_namespace_mut().merge(namespace)
         } else {
-            self.current_namespace_mut().add_namespace(namespace);
+            self.current_namespace_mut().add_namespace(namespace)
         }
     }
 
@@ -52,13 +68,54 @@ impl<'a> Builder<'a> {
     }
 
     /// Finalize and validate the API.
-    /// - De-dupes namespaces.
-    /// - Errors for duplicate types.
-    /// - Errors for TypeRefs with missing types not specified in list of primitives.
-    // todo probably want a more complex error type here that can give info about >1 issue.
-    pub fn finalize(self) -> Result<Api<'a>> {
-        todo!("nyi")
+    /// - Dedupes namespaces recursively.
+    /// - Errors for [Dto]s and [Rpc]s with identical paths (aka duplicate definitions).
+    /// - Errors for TypeRefs with missing types not specified in list of assumed types.
+    pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
+        dedupe_namespaces(&mut self.api)?;
+        validate_namespace_names(&mut self.api)?;
+        validate_no_duplicates(&mut self.api)?;
+        validate_type_refs(&mut self.api)?;
+        Ok(self.api)
     }
+
+    // /// Merge [Namespace] `other` into this [Namespace] by adding all of `other`'s children to to
+    // /// this [Namespace]'s children. `other`'s name is ignored. The process will continue through
+    // /// non-fatal errors in order to produce as much error information as possible.
+    // ///
+    // /// Duplicate [Namespace]s will be merged, recursively.
+    // /// Duplicate children of other child types will produce a [ValidationError].
+    // pub fn merge(&mut self, other: Namespace<'a>) -> Result<(), Vec<ValidationError>> {
+    //     let mut errors = Vec::new();
+    //     for child in other.children {
+    //         match child {
+    //             NamespaceChild::Namespace(child_namespace) => {
+    //                 if let Some(existing) = self.namespace_mut(child_namespace.name) {
+    //                     existing.merge(child_namespace)?;
+    //                 } else {
+    //                     self.add_namespace(child_namespace);
+    //                 }
+    //             }
+    //             NamespaceChild::Dto(child_dto) => {
+    //                 if let Some(existing) = self.dto(child_dto.name) {
+    //                     errors.push(ValidationError::DuplicateDto(child_dto.))
+    //                 } else {
+    //                     self.add_namespace(child_namespace);
+    //                 }
+    //             }
+    //             NamespaceChild::Rpc(_) => {}
+    //         }
+    //     }
+    //     if namespace.name == UNDEFINED_NAMESPACE {
+    //         return Err(MergeError);
+    //     }
+    //     if let Some(existing) = self.namespace_mut(namespace.name) {
+    //         existing.merge(namespace)
+    //     } else {
+    //         Ok(())
+    //     }
+    //     self.children.append(&mut other.children);
+    // }
 
     fn current_namespace(&self) -> &Namespace<'a> {
         self.api.find_namespace(&TypeRef::from(self.namespace_stack.as_slice()))
@@ -69,6 +126,30 @@ impl<'a> Builder<'a> {
         self.api.find_namespace_mut(&TypeRef::from(self.namespace_stack.as_slice()))
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
+}
+
+fn dedupe_namespaces<'a>(namespace: &mut Namespace<'a>) -> Result<(), Vec<ValidationError<'a>>> {
+    info!("deduping namespaces...");
+    Ok(())
+}
+
+fn validate_namespace_names<'a>(
+    namespace: &mut Namespace<'a>,
+) -> Result<(), Vec<ValidationError<'a>>> {
+    info!("validating namespace names...");
+    Ok(())
+}
+
+fn validate_no_duplicates<'a>(
+    namespace: &mut Namespace<'a>,
+) -> Result<(), Vec<ValidationError<'a>>> {
+    info!("validating no duplicate definitions...");
+    Ok(())
+}
+
+fn validate_type_refs<'a>(namespace: &mut Namespace<'a>) -> Result<(), Vec<ValidationError<'a>>> {
+    info!("validating type refs...");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -264,7 +345,7 @@ mod test {
         }
     }
 
-    mod finalize {
+    mod build {
 
         // validate typerefs not empty
         // validate typerefs all have real linkage

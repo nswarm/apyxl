@@ -2,11 +2,11 @@ pub use builder::Builder;
 
 mod builder;
 
-/// A complete set of components that make up an API.
+/// A complete set of components that make up an API. The root [Namespace] of the entire API.
+/// The name will always be [UNDEFINED_NAMESPACE]
 pub type Api<'a> = Namespace<'a>;
 
-/// When parsing, the root namespace should be given this name so that when generating it can be
-/// special cased as necessary.
+/// The root namespace of the entire API.
 pub const UNDEFINED_NAMESPACE: &str = "_";
 
 #[derive(Debug, Eq, PartialEq)]
@@ -98,28 +98,35 @@ impl<'a> From<Vec<&'a str>> for TypeRef<'a> {
 }
 
 impl<'a> Namespace<'a> {
-    /// Merge children from other namespace into this namespace. The other namespace's name is ignored.
-    /// Note that this will preserve duplicate children.
+    /// Perform a simple merge of [Namespace] `other` into this [Namespace] by adding all of
+    /// `other`'s children to to this [Namespace]'s children. `other`'s name is ignored. This may
+    /// result in duplicate children.
     pub fn merge(&mut self, mut other: Namespace<'a>) {
         self.children.append(&mut other.children)
     }
 
-    /// Add a [Dto] as a child of this [Namespace].
-    pub fn add_dto(&mut self, value: Dto<'a>) {
-        self.children.push(NamespaceChild::Dto(value));
+    /// Add dto [Dto] `dto` as a child of this [Namespace].
+    /// No validation is performed to ensure the [Dto] does not already exist, which may result
+    /// in duplicates.
+    pub fn add_dto(&mut self, dto: Dto<'a>) {
+        self.children.push(NamespaceChild::Dto(dto));
     }
 
-    /// Add an [Rpc] as a child of this [Namespace].
-    pub fn add_rpc(&mut self, value: Rpc<'a>) {
-        self.children.push(NamespaceChild::Rpc(value));
+    /// Add the [Rpc] `rpc` as a child of this [Namespace].
+    /// No validation is performed to ensure the [Rpc] does not already exist, which may result
+    //     /// in duplicates.
+    pub fn add_rpc(&mut self, rpc: Rpc<'a>) {
+        self.children.push(NamespaceChild::Rpc(rpc));
     }
 
-    /// Add a [Namespace] as a child of this [Namespace].
-    pub fn add_namespace(&mut self, value: Namespace<'a>) {
-        self.children.push(NamespaceChild::Namespace(value));
+    /// Add the [Namespace] `namespace` as a child of this [Namespace].
+    /// No validation is performed to ensure the [Namespace] does not already exist, which may result
+    //     /// in duplicates.
+    pub fn add_namespace(&mut self, namespace: Namespace<'a>) {
+        self.children.push(NamespaceChild::Namespace(namespace));
     }
 
-    /// Get a [Dto] within this [Namespace] by name."
+    /// Get a [Dto] within this [Namespace] by name.
     fn dto(&self, name: &str) -> Option<&Dto<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Dto(value) if value.name == name => Some(value),
@@ -127,7 +134,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Dto] within this [Namespace] by name."
+    /// Get a [Dto] within this [Namespace] by name.
     fn dto_mut(&mut self, name: &str) -> Option<&mut Dto<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Dto(value) if value.name == name => Some(value),
@@ -135,7 +142,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Rpc] within this [Namespace] by name."
+    /// Get a [Rpc] within this [Namespace] by name.
     fn rpc(&self, name: &str) -> Option<&Rpc<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Rpc(value) if value.name == name => Some(value),
@@ -143,7 +150,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Rpc] within this [Namespace] by name."
+    /// Get a [Rpc] within this [Namespace] by name.
     fn rpc_mut(&mut self, name: &str) -> Option<&mut Rpc<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Rpc(value) if value.name == name => Some(value),
@@ -151,7 +158,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Namespace] within this [Namespace] by name."
+    /// Get a [Namespace] within this [Namespace] by name.
     fn namespace(&self, name: &str) -> Option<&Namespace<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Namespace(value) if value.name == name => Some(value),
@@ -159,7 +166,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Namespace] within this [Namespace] by name."
+    /// Get a [Namespace] within this [Namespace] by name.
     fn namespace_mut(&mut self, name: &str) -> Option<&mut Namespace<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Namespace(value) if value.name == name => Some(value),
@@ -278,10 +285,32 @@ impl<'a> Namespace<'a> {
 mod tests {
     use crate::model::{Api, Dto, Namespace, Rpc};
 
+    #[test]
+    fn merge() {
+        let mut ns0 = test_namespace(1);
+        ns0.add_rpc(test_rpc(1));
+        ns0.add_dto(test_dto(1));
+        ns0.add_namespace(test_namespace(3));
+
+        let mut ns1 = test_namespace(2);
+        ns1.add_rpc(test_rpc(2));
+        ns1.add_dto(test_dto(2));
+        ns1.add_namespace(test_namespace(4));
+
+        ns0.merge(ns1);
+        assert_eq!(ns0.dtos().count(), 2);
+        assert_eq!(ns0.rpcs().count(), 2);
+        assert_eq!(ns0.namespaces().count(), 2);
+        assert!(ns0.dto(test_dto(1).name).is_some());
+        assert!(ns0.dto(test_dto(2).name).is_some());
+        assert!(ns0.dto(test_rpc(1).name).is_some());
+        assert!(ns0.dto(test_rpc(2).name).is_some());
+        assert!(ns0.dto(test_namespace(3).name).is_some());
+        assert!(ns0.dto(test_namespace(4).name).is_some());
+    }
+
     mod add_get {
-        use crate::model::api::tests::{
-            complex_api, complex_namespace, test_dto, test_namespace, test_rpc, NAMES,
-        };
+        use crate::model::api::tests::{complex_api, complex_namespace, test_dto, test_rpc, NAMES};
 
         #[test]
         fn dto() {
