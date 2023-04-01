@@ -1,8 +1,9 @@
 use anyhow::Result;
-use log::{info, log};
+use itertools::Itertools;
+use log::info;
 use thiserror::Error;
 
-use crate::model::{Api, Namespace, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{Api, Namespace, NamespaceChild, TypeRef, UNDEFINED_NAMESPACE};
 
 /// Helper struct for parsing [Namespace]s spread across multiple chunks.
 /// After all desired [Namespace]s are merged, the [Builder] can be finalized via [Builder::build] which will
@@ -100,50 +101,12 @@ impl<'a> Builder<'a> {
     /// - Errors for [Dto]s and [Rpc]s with identical paths (aka duplicate definitions).
     /// - Errors for TypeRefs with missing types not specified in list of assumed types.
     pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
-        dedupe_namespaces(&mut self.api)?;
-        validate_namespace_names(&mut self.api, &TypeRef::default())?;
-        validate_no_duplicates(&mut self.api, &TypeRef::default())?;
-        validate_type_refs(&mut self.api, &TypeRef::default())?;
+        dedupe_namespace_children(&mut self.api);
+        validate_namespace_names(&self.api, &TypeRef::default())?;
+        validate_no_duplicates(&self.api, &TypeRef::default())?;
+        validate_type_refs(&self.api, &TypeRef::default())?;
         Ok(self.api)
     }
-
-    // /// Merge [Namespace] `other` into this [Namespace] by adding all of `other`'s children to to
-    // /// this [Namespace]'s children. `other`'s name is ignored. The process will continue through
-    // /// non-fatal errors in order to produce as much error information as possible.
-    // ///
-    // /// Duplicate [Namespace]s will be merged, recursively.
-    // /// Duplicate children of other child types will produce a [ValidationError].
-    // pub fn merge(&mut self, other: Namespace<'a>) -> Result<(), Vec<ValidationError>> {
-    //     let mut errors = Vec::new();
-    //     for child in other.children {
-    //         match child {
-    //             NamespaceChild::Namespace(child_namespace) => {
-    //                 if let Some(existing) = self.namespace_mut(child_namespace.name) {
-    //                     existing.merge(child_namespace)?;
-    //                 } else {
-    //                     self.add_namespace(child_namespace);
-    //                 }
-    //             }
-    //             NamespaceChild::Dto(child_dto) => {
-    //                 if let Some(existing) = self.dto(child_dto.name) {
-    //                     errors.push(ValidationError::DuplicateDto(child_dto.))
-    //                 } else {
-    //                     self.add_namespace(child_namespace);
-    //                 }
-    //             }
-    //             NamespaceChild::Rpc(_) => {}
-    //         }
-    //     }
-    //     if namespace.name == UNDEFINED_NAMESPACE {
-    //         return Err(MergeError);
-    //     }
-    //     if let Some(existing) = self.namespace_mut(namespace.name) {
-    //         existing.merge(namespace)
-    //     } else {
-    //         Ok(())
-    //     }
-    //     self.children.append(&mut other.children);
-    // }
 
     fn current_namespace(&self) -> &Namespace<'a> {
         self.api.find_namespace(&TypeRef::from(self.namespace_stack.as_slice()))
@@ -156,9 +119,24 @@ impl<'a> Builder<'a> {
     }
 }
 
-fn dedupe_namespaces<'a>(namespace: &mut Namespace<'a>) -> Result<(), Vec<ValidationError<'a>>> {
+fn dedupe_namespace_children(namespace: &mut Namespace) {
     info!("deduping namespaces...");
-    Ok(())
+    namespace
+        .take_namespaces()
+        .into_iter()
+        .sorted_unstable_by_key(|ns| ns.name)
+        .coalesce(|mut lhs, rhs| {
+            if rhs.name == lhs.name {
+                lhs.merge(rhs);
+                Ok(lhs)
+            } else {
+                Err((lhs, rhs))
+            }
+        })
+        .for_each(|mut ns| {
+            dedupe_namespace_children(&mut ns);
+            namespace.add_namespace(ns)
+        });
 }
 
 fn validate_namespace_names<'a>(
@@ -174,19 +152,13 @@ fn validate_namespace_names<'a>(
             continue;
         }
         let result = validate_namespace_names(namespace, &type_ref);
-        if let Err(mut child_errors) = result {
-            errors.append(&mut child_errors)
-        }
+        append_errors(&mut errors, result)
     }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
+    errors_to_result(errors)
 }
 
 fn validate_no_duplicates<'a>(
-    namespace: &mut Namespace<'a>,
+    namespace: &Namespace<'a>,
     type_ref: &TypeRef<'a>,
 ) -> Result<(), Vec<ValidationError<'a>>> {
     info!("validating no duplicate definitions...");
@@ -194,11 +166,28 @@ fn validate_no_duplicates<'a>(
 }
 
 fn validate_type_refs<'a>(
-    namespace: &mut Namespace<'a>,
+    namespace: &Namespace<'a>,
     type_ref: &TypeRef<'a>,
 ) -> Result<(), Vec<ValidationError<'a>>> {
     info!("validating type refs...");
     Ok(())
+}
+
+fn append_errors<'a>(
+    errors: &mut Vec<ValidationError<'a>>,
+    result: Result<(), Vec<ValidationError<'a>>>,
+) {
+    if let Err(mut child_errors) = result {
+        errors.append(&mut child_errors)
+    }
+}
+
+fn errors_to_result(errors: Vec<ValidationError>) -> Result<(), Vec<ValidationError>> {
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 #[cfg(test)]
@@ -395,22 +384,67 @@ mod tests {
     }
 
     mod build {
-        // validate typerefs all have real linkage
-        // validate dtos/rpcs have required bits
-
         use crate::model::api::builder::ValidationError;
         use crate::model::tests::{complex_api, complex_namespace, test_dto};
         use crate::model::{Api, Builder, TypeRef};
 
         mod dedupe_namespaces {
+            use crate::model::tests::test_namespace;
+            use crate::model::Builder;
+
             #[test]
             fn within_root() {
-                todo!("nyi");
+                let mut builder = Builder::default();
+                builder.api.add_namespace(test_namespace(2));
+                builder.api.add_namespace(test_namespace(1));
+                builder.api.add_namespace(test_namespace(1));
+                builder.api.add_namespace(test_namespace(3));
+                builder.api.add_namespace(test_namespace(2));
+                builder.api.add_namespace(test_namespace(1));
+                let api = builder.build().expect("build failed");
+                assert_eq!(api.namespaces().count(), 3);
+                assert!(api.namespace(test_namespace(1).name).is_some());
+                assert!(api.namespace(test_namespace(2).name).is_some());
+                assert!(api.namespace(test_namespace(3).name).is_some());
             }
 
             #[test]
             fn within_sub_namespace() {
-                todo!("nyi");
+                let mut builder = Builder::default();
+                let mut nested_namespace = test_namespace(4);
+                nested_namespace.add_namespace(test_namespace(2));
+                nested_namespace.add_namespace(test_namespace(1));
+                nested_namespace.add_namespace(test_namespace(1));
+                nested_namespace.add_namespace(test_namespace(3));
+                nested_namespace.add_namespace(test_namespace(2));
+                nested_namespace.add_namespace(test_namespace(1));
+                builder.api.add_namespace(nested_namespace);
+
+                let api = builder.build().expect("build failed");
+                assert_eq!(api.namespaces().count(), 1);
+                assert!(api.namespace(test_namespace(4).name).is_some());
+
+                let nested = api.namespace(test_namespace(4).name).unwrap();
+                assert_eq!(nested.namespaces().count(), 3);
+                assert!(nested.namespace(test_namespace(1).name).is_some());
+                assert!(nested.namespace(test_namespace(2).name).is_some());
+                assert!(nested.namespace(test_namespace(3).name).is_some());
+            }
+
+            #[test]
+            fn across_sub_namespaces_with_same_name() {
+                let mut builder = Builder::default();
+
+                for _ in 0..2 {
+                    let mut nested_namespace = test_namespace(1);
+                    nested_namespace.add_namespace(test_namespace(2));
+                    builder.api.add_namespace(nested_namespace);
+                }
+
+                let api = builder.build().expect("build failed");
+                assert_eq!(api.namespaces().count(), 1);
+                let nested = api.namespace(test_namespace(1).name).unwrap();
+                assert_eq!(nested.namespaces().count(), 1);
             }
         }
 

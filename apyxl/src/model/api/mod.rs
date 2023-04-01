@@ -1,4 +1,5 @@
 pub use builder::Builder;
+use itertools::Itertools;
 
 mod builder;
 
@@ -211,6 +212,20 @@ impl<'a> Namespace<'a> {
                 None
             }
         })
+    }
+
+    /// Removes all [Namespaces] from this [Namespace] and returns them in a [Vec].
+    pub fn take_namespaces(&mut self) -> Vec<Namespace<'a>> {
+        self.children
+            .drain_filter(|child| matches!(child, NamespaceChild::Namespace(_)))
+            .map(|child| {
+                if let NamespaceChild::Namespace(ns) = child {
+                    ns
+                } else {
+                    unreachable!("already checked that it matches")
+                }
+            })
+            .collect_vec()
     }
 
     /// Find a [Dto] by `type_ref` relative to this [Namespace].

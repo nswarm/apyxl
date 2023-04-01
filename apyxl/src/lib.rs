@@ -1,3 +1,5 @@
+#![feature(drain_filter)]
+
 pub use crate::executor::Executor;
 pub use crate::generator::Generator;
 pub use crate::input::Input;
