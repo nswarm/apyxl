@@ -70,7 +70,7 @@ impl<'a> Executor<'a> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use anyhow::{anyhow, Result};
 
     use crate::generator::Generator;
@@ -82,7 +82,7 @@ mod test {
     mod execute {
         use anyhow::Result;
 
-        use crate::executor::test::{FakeGenerator, FakeParser};
+        use crate::executor::tests::{FakeGenerator, FakeParser};
         use crate::{input, output, Executor};
 
         #[test]
@@ -121,7 +121,7 @@ mod test {
     }
 
     mod validation {
-        use crate::executor::test::{FakeGenerator, FakeParser};
+        use crate::executor::tests::{FakeGenerator, FakeParser};
         use crate::executor::Executor;
         use crate::{input, output};
 

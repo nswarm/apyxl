@@ -47,7 +47,7 @@ pub struct Rpc<'a> {
 
 /// A type such as a language primitive or a reference to a [Dto]. A [Dto] reference will contain
 /// all necessary information to find the exact [Dto] within the API.
-#[derive(Default, Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Eq, PartialEq, Clone)]
 pub struct TypeRef<'a> {
     pub fully_qualified_type_name: Vec<&'a str>,
 }
@@ -57,6 +57,12 @@ impl<'a> TypeRef<'a> {
         Self {
             fully_qualified_type_name: fqtn.to_vec(),
         }
+    }
+
+    pub fn child(&self, name: &'a str) -> Self {
+        let mut child = self.clone();
+        child.fully_qualified_type_name.push(name);
+        child
     }
 
     pub fn has_namespace(&self) -> bool {
@@ -282,7 +288,7 @@ impl<'a> Namespace<'a> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use crate::model::{Api, Dto, Namespace, Rpc};
 
     #[test]
@@ -433,7 +439,7 @@ mod tests {
 
     const NAMES: &[&str] = &["name0", "name1", "name2", "name3", "name4", "name5"];
 
-    fn complex_api() -> Api<'static> {
+    pub fn complex_api() -> Api<'static> {
         let mut api = Api::default();
         api.add_dto(test_dto(1));
         api.add_dto(test_dto(2));
@@ -444,7 +450,7 @@ mod tests {
         api
     }
 
-    fn complex_namespace(i: usize) -> Namespace<'static> {
+    pub fn complex_namespace(i: usize) -> Namespace<'static> {
         let mut namespace = test_namespace(i);
         namespace.add_dto(test_dto(i + 2));
         namespace.add_dto(test_dto(i + 3));
@@ -457,21 +463,21 @@ mod tests {
         namespace
     }
 
-    fn test_dto(i: usize) -> Dto<'static> {
+    pub fn test_dto(i: usize) -> Dto<'static> {
         Dto {
             name: NAMES[i],
             ..Default::default()
         }
     }
 
-    fn test_rpc(i: usize) -> Rpc<'static> {
+    pub fn test_rpc(i: usize) -> Rpc<'static> {
         Rpc {
             name: NAMES[i],
             ..Default::default()
         }
     }
 
-    fn test_namespace(i: usize) -> Namespace<'static> {
+    pub fn test_namespace(i: usize) -> Namespace<'static> {
         Namespace {
             name: NAMES[i],
             ..Default::default()

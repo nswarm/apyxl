@@ -30,7 +30,7 @@ impl Output for Buffer {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::output::Buffer;
     use crate::Output;
     use anyhow::Result;

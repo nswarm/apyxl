@@ -86,7 +86,7 @@ impl Output for Indented<'_> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::output::{Buffer, Indented};
     use crate::Output;
     use anyhow::Result;

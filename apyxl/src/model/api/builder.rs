@@ -12,15 +12,43 @@ pub struct Builder<'a> {
     namespace_stack: Vec<&'a str>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError<'a> {
-    #[error("Cannot add a namespace with the name {}", UNDEFINED_NAMESPACE)]
-    InvalidNamespaceName,
+    #[error(
+        "Invalid namespace found at path {0:?}. Only the root namespace can be named {}.",
+        UNDEFINED_NAMESPACE
+    )]
+    InvalidNamespaceName(TypeRef<'a>),
 
-    #[error("Found duplicate DTO definition at path {0:?}")]
+    #[error("Invalid DTO name within namespace {0:?}, RPC #{1}. DTO names cannot be empty.")]
+    InvalidDtoName(TypeRef<'a>, usize),
+
+    #[error("Invalid field name within DTO {0:?}, field #{1}. Field names cannot be empty.")]
+    InvalidDtoFieldName(TypeRef<'a>, &'a str),
+
+    #[error("Invalid type for field {0:?}::{1}. Type '{2:?}' must be a valid DTO in the API.")]
+    InvalidDtoFieldType(TypeRef<'a>, &'a str, TypeRef<'a>),
+
+    #[error("Invalid RPC name within namespace {0:?}, RPC #{1}. RPC names cannot be empty.")]
+    InvalidRpcName(TypeRef<'a>, usize),
+
+    #[error(
+        "Invalid field name within DTO {0:?}, parameter #{1}. Parameter names cannot be empty."
+    )]
+    InvalidRpcParameterName(TypeRef<'a>, &'a str),
+
+    #[error("Invalid type for param in RPC {0:?}::{1}, parameter {2}. Type '{3:?}' must be a valid DTO in the API.")]
+    InvalidRpcParameterType(TypeRef<'a>, &'a str, &'a str, TypeRef<'a>),
+
+    #[error(
+        "Invalid return type for RPC {0:?}::{1}. Type '{2:?}' must be a valid DTO in the API."
+    )]
+    InvalidRpcReturnType(TypeRef<'a>, &'a str, TypeRef<'a>),
+
+    #[error("Duplicate DTO definition: {0:?}")]
     DuplicateDto(TypeRef<'a>),
 
-    #[error("Found duplicate RPC definition at path {0:?}")]
+    #[error("Duplicate RPC definition: {0:?}")]
     DuplicateRpc(TypeRef<'a>),
 }
 
@@ -73,9 +101,9 @@ impl<'a> Builder<'a> {
     /// - Errors for TypeRefs with missing types not specified in list of assumed types.
     pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespaces(&mut self.api)?;
-        validate_namespace_names(&mut self.api)?;
-        validate_no_duplicates(&mut self.api)?;
-        validate_type_refs(&mut self.api)?;
+        validate_namespace_names(&mut self.api, &TypeRef::default())?;
+        validate_no_duplicates(&mut self.api, &TypeRef::default())?;
+        validate_type_refs(&mut self.api, &TypeRef::default())?;
         Ok(self.api)
     }
 
@@ -134,26 +162,47 @@ fn dedupe_namespaces<'a>(namespace: &mut Namespace<'a>) -> Result<(), Vec<Valida
 }
 
 fn validate_namespace_names<'a>(
-    namespace: &mut Namespace<'a>,
+    namespace: &Namespace<'a>,
+    parent: &TypeRef<'a>,
 ) -> Result<(), Vec<ValidationError<'a>>> {
     info!("validating namespace names...");
-    Ok(())
+    let mut errors = Vec::new();
+    for namespace in namespace.namespaces() {
+        let type_ref = parent.child(namespace.name);
+        if namespace.name == UNDEFINED_NAMESPACE {
+            errors.push(ValidationError::InvalidNamespaceName(type_ref));
+            continue;
+        }
+        let result = validate_namespace_names(namespace, &type_ref);
+        if let Err(mut child_errors) = result {
+            errors.append(&mut child_errors)
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 fn validate_no_duplicates<'a>(
     namespace: &mut Namespace<'a>,
+    type_ref: &TypeRef<'a>,
 ) -> Result<(), Vec<ValidationError<'a>>> {
     info!("validating no duplicate definitions...");
     Ok(())
 }
 
-fn validate_type_refs<'a>(namespace: &mut Namespace<'a>) -> Result<(), Vec<ValidationError<'a>>> {
+fn validate_type_refs<'a>(
+    namespace: &mut Namespace<'a>,
+    type_ref: &TypeRef<'a>,
+) -> Result<(), Vec<ValidationError<'a>>> {
     info!("validating type refs...");
     Ok(())
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     mod namespace {
         use crate::model::Builder;
 
@@ -181,7 +230,7 @@ mod test {
         use crate::model::{Dto, Namespace, NamespaceChild};
 
         mod no_current_namespace {
-            use crate::model::api::builder::test::merge::{
+            use crate::model::api::builder::tests::merge::{
                 test_child_dto, test_child_namespace, test_named_namespace, test_namespace,
                 NS_NAMES,
             };
@@ -237,7 +286,7 @@ mod test {
         }
 
         mod has_current_namespace {
-            use crate::model::api::builder::test::merge::{
+            use crate::model::api::builder::tests::merge::{
                 test_child_dto, test_child_namespace, test_named_namespace, test_namespace,
             };
             use crate::model::{Builder, Namespace, NamespaceChild, UNDEFINED_NAMESPACE};
@@ -346,14 +395,145 @@ mod test {
     }
 
     mod build {
-
-        // validate typerefs not empty
         // validate typerefs all have real linkage
         // validate dtos/rpcs have required bits
 
-        #[test]
-        fn asdf() {
-            todo!("nyi")
+        use crate::model::api::builder::ValidationError;
+        use crate::model::tests::{complex_api, complex_namespace, test_dto};
+        use crate::model::{Api, Builder, TypeRef};
+
+        mod dedupe_namespaces {
+            #[test]
+            fn within_root() {
+                todo!("nyi");
+            }
+
+            #[test]
+            fn within_sub_namespace() {
+                todo!("nyi");
+            }
+        }
+
+        mod validate_dto {
+            #[test]
+            fn name_not_empty() {
+                todo!("nyi");
+            }
+
+            #[test]
+            fn field_name_not_empty() {
+                todo!("nyi");
+            }
+
+            #[test]
+            fn field_type_not_empty() {
+                todo!("nyi");
+            }
+
+            #[test]
+            fn field_type_valid_linkage() {
+                todo!("nyi");
+            }
+        }
+
+        mod validate_rpc {
+            #[test]
+            fn name_not_empty() {
+                todo!("nyi");
+            }
+
+            #[test]
+            fn param_name_not_empty() {
+                todo!("nyi");
+            }
+
+            #[test]
+            fn param_type_not_empty() {
+                todo!("nyi");
+            }
+
+            #[test]
+            fn param_type_valid_linkage() {
+                todo!("nyi");
+            }
+
+            #[test]
+            fn return_type_valid_linkage() {
+                todo!("nyi");
+            }
+        }
+
+        mod validate_namespace {
+            use crate::model::api::builder::tests::build::{assert_contains_error, test_builder};
+            use crate::model::api::builder::ValidationError;
+            use crate::model::tests::{complex_namespace, test_namespace};
+            use crate::model::{TypeRef, UNDEFINED_NAMESPACE};
+
+            #[test]
+            fn root_namespace_undefined_allowed() {
+                let builder = test_builder();
+                assert!(builder.build().is_ok());
+            }
+
+            #[test]
+            fn name_within_root_not_undefined() {
+                let mut builder = test_builder();
+                builder
+                    .api
+                    .namespace_mut(complex_namespace(1).name)
+                    .unwrap()
+                    .name = UNDEFINED_NAMESPACE;
+                assert_contains_error(
+                    &builder.build(),
+                    ValidationError::InvalidNamespaceName(TypeRef::from(
+                        [UNDEFINED_NAMESPACE].as_slice(),
+                    )),
+                );
+            }
+
+            #[test]
+            fn name_below_root_not_undefined() {
+                let mut builder = test_builder();
+                builder
+                    .api
+                    .namespace_mut(complex_namespace(1).name)
+                    .unwrap()
+                    .namespace_mut(test_namespace(3).name)
+                    .unwrap()
+                    .name = UNDEFINED_NAMESPACE;
+                assert_contains_error(
+                    &builder.build(),
+                    ValidationError::InvalidNamespaceName(TypeRef::from(
+                        [complex_namespace(1).name, UNDEFINED_NAMESPACE].as_slice(),
+                    )),
+                );
+            }
+        }
+
+        fn assert_contains_error(
+            build_result: &Result<Api, Vec<ValidationError>>,
+            error: ValidationError,
+        ) {
+            let errors = build_result
+                .as_ref()
+                .map(|_| "...but it passed!")
+                .expect_err("expected Builder::build to fail");
+            assert!(errors.contains(&error), "actual: {:?}", errors);
+        }
+
+        fn test_builder() -> Builder<'static> {
+            Builder {
+                api: complex_api(),
+                ..Default::default()
+            }
+        }
+
+        fn valid_dto_ref() -> TypeRef<'static> {
+            TypeRef::from([complex_namespace(1).name, test_dto(3).name].as_slice())
+        }
+
+        fn invalid_dto_ref() -> TypeRef<'static> {
+            TypeRef::from([complex_namespace(1).name, "i_dont_exist"].as_slice())
         }
     }
 }

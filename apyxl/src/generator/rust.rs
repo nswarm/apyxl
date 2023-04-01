@@ -129,12 +129,14 @@ fn write_joined(components: &[&str], separator: &str, o: &mut dyn Output) -> Res
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use anyhow::Result;
 
     use crate::generator::rust::{write_dto, write_field, write_rpc, write_type_ref, INDENT};
     use crate::generator::Rust;
-    use crate::model::{Api, Dto, Field, Namespace, Rpc, NamespaceChild, TypeRef, UNDEFINED_NAMESPACE};
+    use crate::model::{
+        Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE,
+    };
     use crate::output::{Indented, Output};
     use crate::{output, Generator};
 

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
@@ -115,15 +115,12 @@ fn namespace<'a>() -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use anyhow::Result;
     use chumsky::error::Simple;
     use chumsky::Parser;
 
-    use crate::input;
-    use crate::model::UNDEFINED_NAMESPACE;
     use crate::parser::rust::field;
-    use crate::parser::Rust;
     use crate::Parser as ApyxlParser;
 
     type TestError = Vec<Simple<'static, char>>;
@@ -151,7 +148,7 @@ mod test {
 
         use crate::model::NamespaceChild;
         use crate::parser::rust::namespace;
-        use crate::parser::rust::test::TestError;
+        use crate::parser::rust::tests::TestError;
 
         #[test]
         fn empty() -> Result<(), TestError> {
@@ -241,7 +238,7 @@ mod test {
         use chumsky::Parser;
 
         use crate::parser::rust::dto;
-        use crate::parser::rust::test::TestError;
+        use crate::parser::rust::tests::TestError;
 
         #[test]
         fn empty() -> Result<(), TestError> {
@@ -281,7 +278,7 @@ mod test {
         use chumsky::Parser;
 
         use crate::parser::rust::rpc;
-        use crate::parser::rust::test::TestError;
+        use crate::parser::rust::tests::TestError;
 
         #[test]
         fn empty_fn() -> Result<(), TestError> {
