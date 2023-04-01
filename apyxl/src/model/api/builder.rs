@@ -103,8 +103,10 @@ impl<'a> Builder<'a> {
     pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespace_children(&mut self.api);
         validate_namespace_names(&self.api, &TypeRef::default())?;
-        validate_no_duplicates(&self.api, &TypeRef::default())?;
-        validate_type_refs(&self.api, &TypeRef::default())?;
+        validate_dtos(&self.api, &TypeRef::default())?;
+        validate_rpcs(&self.api, &TypeRef::default())?;
+        validate_no_duplicate_dtos(&self.api, &TypeRef::default())?;
+        validate_no_duplicate_rpcs(&self.api, &TypeRef::default())?;
         Ok(self.api)
     }
 
@@ -157,7 +159,7 @@ fn validate_namespace_names<'a>(
     errors_to_result(errors)
 }
 
-fn validate_no_duplicates<'a>(
+fn validate_no_duplicate_dtos<'a>(
     namespace: &Namespace<'a>,
     type_ref: &TypeRef<'a>,
 ) -> Result<(), Vec<ValidationError<'a>>> {
@@ -165,7 +167,23 @@ fn validate_no_duplicates<'a>(
     Ok(())
 }
 
-fn validate_type_refs<'a>(
+fn validate_no_duplicate_rpcs<'a>(
+    namespace: &Namespace<'a>,
+    type_ref: &TypeRef<'a>,
+) -> Result<(), Vec<ValidationError<'a>>> {
+    info!("validating no duplicate definitions...");
+    Ok(())
+}
+
+fn validate_dtos<'a>(
+    namespace: &Namespace<'a>,
+    type_ref: &TypeRef<'a>,
+) -> Result<(), Vec<ValidationError<'a>>> {
+    info!("validating type refs...");
+    Ok(())
+}
+
+fn validate_rpcs<'a>(
     namespace: &Namespace<'a>,
     type_ref: &TypeRef<'a>,
 ) -> Result<(), Vec<ValidationError<'a>>> {
@@ -449,14 +467,45 @@ mod tests {
         }
 
         mod validate_dto {
+            use crate::model::api::builder::tests::build::assert_contains_error;
+            use crate::model::api::builder::ValidationError;
+            use crate::model::tests::{test_dto, test_namespace};
+            use crate::model::{Builder, Dto, Field, TypeRef};
+
             #[test]
             fn name_not_empty() {
-                todo!("nyi");
+                let mut builder = Builder::default();
+                let mut namespace = test_namespace(1);
+                namespace.add_dto(test_dto(1));
+                namespace.add_dto(test_dto(2));
+                namespace.add_dto(Dto::default());
+                builder.api.add_namespace(namespace);
+
+                let result = builder.build();
+                let expected_type_ref = TypeRef::from([test_namespace(1).name].as_slice());
+                let expected_position = 3;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidDtoName(expected_type_ref, expected_position),
+                );
             }
 
             #[test]
             fn field_name_not_empty() {
-                todo!("nyi");
+                // let mut builder = Builder::default();
+                // let mut namespace = test_namespace(1);
+                // let mut dto = test_dto(1);
+                // // dto.fields.push(Field { name: "", ty: Default::default() })
+                // // namespace.add_dto();
+                // builder.api.add_namespace(namespace);
+                //
+                // let result = builder.build();
+                // let expected_type_ref = TypeRef::from([test_namespace(1).name].as_slice());
+                // let expected_position = 3;
+                // assert_contains_error(
+                //     &result,
+                //     ValidationError::InvalidDtoName(expected_type_ref, expected_position),
+                // );
             }
 
             #[test]
