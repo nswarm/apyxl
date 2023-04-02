@@ -3,7 +3,7 @@ use itertools::Itertools;
 use log::info;
 use thiserror::Error;
 
-use crate::model::{Api, Namespace, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{Api, Field, Namespace, TypeRef, UNDEFINED_NAMESPACE};
 
 /// Helper struct for parsing [Namespace]s spread across multiple chunks.
 /// After all desired [Namespace]s are merged, the [Builder] can be finalized via [Builder::build] which will
@@ -21,25 +21,17 @@ pub enum ValidationError<'a> {
     )]
     InvalidNamespaceName(TypeRef<'a>),
 
-    #[error("Invalid DTO name within namespace '{0:?}', RPC #{1}. DTO names cannot be empty.")]
+    #[error("Invalid DTO name within namespace '{0:?}', index #{1}. DTO names cannot be empty.")]
     InvalidDtoName(TypeRef<'a>, usize),
 
-    #[error("Invalid field name within DTO '{0:?}', field #{1}. Field names cannot be empty.")]
-    InvalidDtoFieldName(TypeRef<'a>, usize),
-
-    #[error("Invalid type for field '{0:?}::{1}'. Type '{2:?}' must be a valid DTO in the API.")]
-    InvalidDtoFieldType(TypeRef<'a>, &'a str, TypeRef<'a>),
-
-    #[error("Invalid RPC name within namespace '{0:?}', RPC #{1}. RPC names cannot be empty.")]
+    #[error("Invalid RPC name within namespace '{0:?}', index #{1}. RPC names cannot be empty.")]
     InvalidRpcName(TypeRef<'a>, usize),
 
-    #[error(
-        "Invalid field name within DTO '{0:?}', parameter #{1}. Parameter names cannot be empty."
-    )]
-    InvalidRpcParameterName(TypeRef<'a>, usize),
+    #[error("Invalid field name at '{0:?}', index {1}. Field names cannot be empty.")]
+    InvalidFieldName(TypeRef<'a>, usize),
 
-    #[error("Invalid type for param in RPC '{0:?}', parameter '{1}'. Type '{2:?}' must be a valid DTO in the API.")]
-    InvalidRpcParameterType(TypeRef<'a>, &'a str, TypeRef<'a>),
+    #[error("Invalid field type '{0:?}::{1}'. Type '{2:?}' must be a valid DTO in the API.")]
+    InvalidFieldType(TypeRef<'a>, &'a str, TypeRef<'a>),
 
     #[error("Invalid return type for RPC {0:?}. Type '{1:?}' must be a valid DTO in the API.")]
     InvalidRpcReturnType(TypeRef<'a>, TypeRef<'a>),
@@ -98,18 +90,19 @@ impl<'a> Builder<'a> {
     /// - Dedupes namespaces recursively.
     /// - Errors for [Dto]s and [Rpc]s with identical paths (aka duplicate definitions).
     /// - Errors for TypeRefs with missing types not specified in list of assumed types.
-    pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
+    pub fn build<'b>(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespace_children(&mut self.api);
 
         let errors = [
-            validate_namespace_names(&self.api, &TypeRef::default()),
-            validate_dtos(&self.api, &TypeRef::default()),
-            validate_rpcs(&self.api, &TypeRef::default()),
-            validate_no_duplicates(&self.api, &TypeRef::default()),
+            recurse_namespaces(&self.api, TypeRef::default(), validate_namespace_names),
+            recurse_namespaces(&self.api, TypeRef::default(), validate_dtos),
+            recurse_namespaces(&self.api, TypeRef::default(), validate_rpcs),
+            recurse_namespaces(&self.api, TypeRef::default(), validate_no_duplicates),
         ]
         .into_iter()
         .flatten()
         .collect_vec();
+
         if errors.is_empty() {
             Ok(self.api)
         } else {
@@ -117,19 +110,18 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn current_namespace(&self) -> &Namespace<'a> {
+    pub fn current_namespace(&self) -> &Namespace<'a> {
         self.api.find_namespace(&self.namespace_stack.as_slice().into())
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
 
-    fn current_namespace_mut(&mut self) -> &mut Namespace<'a> {
+    pub fn current_namespace_mut(&mut self) -> &mut Namespace<'a> {
         self.api.find_namespace_mut(&self.namespace_stack.as_slice().into())
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
 }
 
 fn dedupe_namespace_children(namespace: &mut Namespace) {
-    info!("deduping namespaces...");
     namespace
         .take_namespaces()
         .into_iter()
@@ -148,100 +140,153 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
         });
 }
 
-fn validate_namespace_names<'a>(
-    namespace: &Namespace<'a>,
-    parent_ref: &TypeRef<'a>,
-) -> Vec<ValidationError<'a>> {
-    info!("validating namespace names...");
-    let mut errors = Vec::new();
-    for child in namespace.namespaces() {
-        let type_ref = parent_ref.child(child.name);
+fn validate_namespace_names<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    namespace.namespaces().filter_map(move |child| {
         if child.name == UNDEFINED_NAMESPACE {
-            errors.push(ValidationError::InvalidNamespaceName(type_ref));
-            continue;
-        }
-        let mut child_errors = validate_namespace_names(child, &type_ref);
-        errors.append(&mut child_errors);
-    }
-    errors
-}
-
-fn validate_no_duplicates<'a>(
-    namespace: &Namespace<'a>,
-    type_ref: &TypeRef<'a>,
-) -> Vec<ValidationError<'a>> {
-    info!("validating no duplicate definitions...");
-    let dupe_dto_errors = namespace
-        .dtos()
-        .duplicates_by(|dto| dto.name)
-        .map(|dto| ValidationError::DuplicateDto(type_ref.child(dto.name)));
-
-    let dupe_rpc_errors = namespace
-        .rpcs()
-        .duplicates_by(|rpc| rpc.name)
-        .map(|rpc| ValidationError::DuplicateRpc(type_ref.child(rpc.name)));
-
-    let child_errors = namespace
-        .namespaces()
-        .flat_map(|child| validate_no_duplicates(child, &type_ref.child(child.name)));
-
-    child_errors
-        .chain(dupe_dto_errors)
-        .chain(dupe_rpc_errors)
-        .collect_vec()
-}
-
-fn validate_dtos<'a>(
-    namespace: &Namespace<'a>,
-    type_ref: &TypeRef<'a>,
-) -> Vec<ValidationError<'a>> {
-    info!("validating type refs...");
-
-    let empty_name_errors = namespace.dtos().enumerate().filter_map(|(i, dto)| {
-        if dto.name.is_empty() {
-            Some(ValidationError::InvalidDtoName(type_ref.clone(), i + 1))
+            Some(ValidationError::InvalidNamespaceName(
+                type_ref.child(child.name),
+            ))
         } else {
             None
         }
-    });
-
-    let empty_field_name_errors = namespace.dtos().flat_map(|dto| {
-        dto.fields.iter().enumerate().filter_map(|(i, field)| {
-            if field.name.is_empty() {
-                Some(ValidationError::InvalidDtoFieldName(
-                    type_ref.child(dto.name),
-                    i + 1,
-                ))
-            } else if field.ty.fully_qualified_type_name.is_empty() {
-                Some(ValidationError::InvalidDtoFieldType(
-                    type_ref.child(dto.name),
-                    field.name,
-                    field.ty.clone(),
-                ))
-            } else {
-                None
-            }
-        })
-    });
-
-    // todo type
-
-    let child_errors = namespace
-        .namespaces()
-        .flat_map(|child| validate_dtos(child, &type_ref.child(child.name)));
-
-    child_errors
-        .chain(empty_name_errors)
-        .chain(empty_field_name_errors)
-        .collect_vec()
+    })
 }
 
-fn validate_rpcs<'a>(
-    namespace: &Namespace<'a>,
-    type_ref: &TypeRef<'a>,
-) -> Vec<ValidationError<'a>> {
-    info!("validating type refs...");
-    vec![]
+fn validate_no_duplicates<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    let namespace_type_ref = type_ref.clone();
+    let dupe_dto_errors = namespace
+        .dtos()
+        .duplicates_by(|dto| dto.name)
+        .map(move |dto| ValidationError::DuplicateDto(namespace_type_ref.child(dto.name)));
+
+    let namespace_type_ref = type_ref.clone();
+    let dupe_rpc_errors = namespace
+        .rpcs()
+        .duplicates_by(|rpc| rpc.name)
+        .map(move |rpc| ValidationError::DuplicateRpc(namespace_type_ref.child(rpc.name)));
+
+    dupe_dto_errors.chain(dupe_rpc_errors)
+}
+
+fn validate_dtos<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    let dto_name_errors = validate_dto_names(namespace, type_ref.clone());
+    let field_errors = validate_dto_fields(namespace, type_ref.clone());
+    dto_name_errors.chain(field_errors)
+}
+
+fn validate_dto_names<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    namespace.dtos().enumerate().filter_map(move |(i, dto)| {
+        if dto.name.is_empty() {
+            Some(ValidationError::InvalidDtoName(type_ref.clone(), i))
+        } else {
+            None
+        }
+    })
+}
+
+fn validate_dto_fields<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    namespace
+        .dtos()
+        .flat_map(move |dto| validate_fields(dto.fields.iter(), type_ref.child(dto.name)))
+}
+
+fn validate_rpcs<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    let rpc_name_errors = validate_rpc_names(namespace, type_ref.clone());
+    let param_errors = validate_rpc_params(namespace, type_ref.clone());
+    let ret_type_errors = validate_rpc_return_types(namespace, type_ref.clone());
+    rpc_name_errors.chain(param_errors).chain(ret_type_errors)
+}
+
+fn validate_rpc_names<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    namespace.rpcs().enumerate().filter_map(move |(i, rpc)| {
+        if rpc.name.is_empty() {
+            Some(ValidationError::InvalidRpcName(type_ref.clone(), i))
+        } else {
+            None
+        }
+    })
+}
+
+fn validate_rpc_params<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    namespace
+        .rpcs()
+        .flat_map(move |rpc| validate_fields(rpc.params.iter(), type_ref.child(rpc.name)))
+}
+
+fn validate_rpc_return_types<'a, 'b>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
+    namespace.rpcs().filter_map(|x| None)
+}
+
+fn validate_fields<'a, 'b>(
+    fields: impl Iterator<Item = &'b Field<'a>> + 'b,
+    parent_type_ref: TypeRef<'a>,
+) -> impl Iterator<Item = ValidationError<'a>> + 'b
+where
+    'a: 'b,
+{
+    fields.enumerate().filter_map(move |(i, field)| {
+        if field.name.is_empty() {
+            Some(ValidationError::InvalidFieldName(
+                parent_type_ref.clone(),
+                i,
+            ))
+        } else if field.ty.fully_qualified_type_name.is_empty() {
+            Some(ValidationError::InvalidFieldType(
+                parent_type_ref.clone(),
+                field.name,
+                field.ty.clone(),
+            ))
+        } else {
+            None
+        }
+    })
+}
+
+/// Calls the function `f` for each [Namespace] in the hierarchy. `f` will be passed the [Namespace]
+/// currently being operated on and a [TypeRef] to that namespace within the overall hierarchy.
+fn recurse_namespaces<'a, 'b, I, F>(
+    namespace: &'b Namespace<'a>,
+    type_ref: TypeRef<'a>,
+    f: F,
+) -> Vec<ValidationError<'a>>
+where
+    I: Iterator<Item = ValidationError<'a>>,
+    F: Copy + Fn(&'b Namespace<'a>, TypeRef<'a>) -> I,
+{
+    let child_errors = namespace
+        .namespaces()
+        .flat_map(|child| recurse_namespaces(child, type_ref.child(child.name), f));
+
+    child_errors
+        .chain(f(namespace, type_ref.clone()))
+        .collect_vec()
 }
 
 #[cfg(test)]
@@ -596,10 +641,10 @@ mod tests {
 
                 let result = builder.build();
                 let expected_type_ref = TypeRef::from(["ns"]);
-                let expected_position = 3;
+                let expected_index = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidDtoName(expected_type_ref, expected_position),
+                    ValidationError::InvalidDtoName(expected_type_ref, expected_index),
                 );
             }
 
@@ -626,10 +671,10 @@ mod tests {
 
                 let result = builder.build();
                 let expected_type_ref = TypeRef::from(["ns", "dto"]);
-                let expected_position = 2;
+                let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidDtoFieldName(expected_type_ref, expected_position),
+                    ValidationError::InvalidFieldName(expected_type_ref, expected_index),
                 );
             }
 
@@ -658,7 +703,7 @@ mod tests {
                 let expected_type_ref = TypeRef::from(["ns", "dto"]);
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidDtoFieldType(
+                    ValidationError::InvalidFieldType(
                         expected_type_ref,
                         "field2",
                         TypeRef::default(),
@@ -698,10 +743,10 @@ mod tests {
 
                 let result = builder.build();
                 let expected_type_ref = TypeRef::from(["ns"]);
-                let expected_position = 3;
+                let expected_index = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidRpcName(expected_type_ref, expected_position),
+                    ValidationError::InvalidRpcName(expected_type_ref, expected_index),
                 );
             }
 
@@ -711,7 +756,7 @@ mod tests {
                     r#"
                     mod ns {
                         fn rpc(param1: bool, param2: bool, param3: bool) {}
-                    "#,
+                    }"#,
                 );
                 let mut builder = test_builder(&mut input);
                 builder
@@ -724,10 +769,10 @@ mod tests {
 
                 let result = builder.build();
                 let expected_type_ref = TypeRef::from(["ns", "rpc"]);
-                let expected_position = 2;
+                let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidRpcParameterName(expected_type_ref, expected_position),
+                    ValidationError::InvalidFieldName(expected_type_ref, expected_index),
                 );
             }
 
@@ -737,12 +782,12 @@ mod tests {
                     r#"
                     mod ns {
                         fn rpc(param1: bool, param2: bool, param3: bool) {}
-                    "#,
+                    }"#,
                 );
                 let mut builder = test_builder(&mut input);
                 builder
                     .api
-                    .find_rpc_mut(&["rpc"].into())
+                    .find_rpc_mut(&["ns", "rpc"].into())
                     .unwrap()
                     .param_mut("param2")
                     .unwrap()
@@ -750,10 +795,9 @@ mod tests {
 
                 let result = builder.build();
                 let expected_type_ref = TypeRef::from(["ns", "rpc"]);
-                let expected_position = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidRpcParameterType(
+                    ValidationError::InvalidFieldType(
                         expected_type_ref,
                         "param2",
                         TypeRef::default(),
