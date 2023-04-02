@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
@@ -17,15 +17,15 @@ impl ApyxlParser for Rust {
         // let api = parse(chunk)
         // ApiBuilder.merge(api)
 
-        // let children = children(namespace())
-        //     .padded()
-        //     .then_ignore(end())
-        //     .parse(input.data())
-        //     .into_result()
-        //     .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
+        let children = namespace_children(namespace())
+            .padded()
+            .then_ignore(end())
+            .parse(input.next_chunk().unwrap())
+            .into_result()
+            .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
         Ok(Api {
             name: UNDEFINED_NAMESPACE,
-            children: vec![], // children,
+            children,
         })
     }
 }
@@ -58,9 +58,33 @@ fn dto<'a>() -> impl Parser<'a, &'a str, Dto<'a>, Error<'a>> {
     name.then(fields).map(|(name, fields)| Dto { name, fields })
 }
 
-fn ignore_fn_body<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
-    let anything = any().repeated().collect::<Vec<_>>();
-    recursive(|nested| nested.delimited_by(just('{'), just('}')).or(anything)).ignored()
+#[derive(Debug, PartialEq, Eq)]
+enum ExprBlock<'a> {
+    Comment(&'a str),
+    Body(&'a str),
+    Nested(Vec<ExprBlock<'a>>),
+}
+
+fn expr_block<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
+    let block_comment = any()
+        .and_is(just("*/").not())
+        .repeated()
+        .slice()
+        .map(&str::trim)
+        .delimited_by(just("/*"), just("*/"));
+    let line_comment = just("//").ignore_then(none_of('\n').repeated().slice().map(&str::trim));
+    let body = none_of("{}").repeated().at_least(1).slice().map(&str::trim);
+    recursive(|nested| {
+        choice((
+            block_comment.padded().map(ExprBlock::Comment),
+            line_comment.padded().map(ExprBlock::Comment),
+            nested.map(ExprBlock::Nested),
+            body.map(ExprBlock::Body),
+        ))
+        .repeated()
+        .collect::<Vec<_>>()
+        .delimited_by(just('{').padded(), just('}').padded())
+    })
 }
 
 fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
@@ -77,7 +101,7 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
     let return_type = just("->").ignore_then(whitespace()).ignore_then(type_ref());
     name.then(params)
         .then(return_type.or_not())
-        .then_ignore(ignore_fn_body().padded())
+        .then_ignore(expr_block().padded())
         .map(|((name, params), return_type)| Rpc {
             name,
             params,
@@ -120,8 +144,9 @@ mod tests {
     use chumsky::error::Simple;
     use chumsky::Parser;
 
+    use crate::model::UNDEFINED_NAMESPACE;
     use crate::parser::rust::field;
-    use crate::Parser as ApyxlParser;
+    use crate::{input, parser, Parser as ApyxlParser};
 
     type TestError = Vec<Simple<'static, char>>;
 
@@ -141,6 +166,23 @@ mod tests {
         // assert_eq!(namespace.name, UNDEFINED_NAMESPACE);
         // assert!(namespace.children.is_empty());
         todo!()
+    }
+
+    #[test]
+    fn root_namespace() -> Result<()> {
+        let mut input = input::Buffer::new(
+            r#"
+        fn rpc() {}
+        struct dto {}
+        mod namespace {}
+        "#,
+        );
+        let api = parser::Rust::default().parse(&mut input)?;
+        assert_eq!(api.name, UNDEFINED_NAMESPACE);
+        assert!(api.dto("dto").is_some());
+        assert!(api.rpc("rpc").is_some());
+        assert!(api.namespace("namespace").is_some());
+        Ok(())
     }
 
     mod namespace {
@@ -405,72 +447,99 @@ mod tests {
         }
     }
 
-    mod fn_body {
-        use chumsky::Parser;
+    mod expr_block {
+        use chumsky::{text, Parser};
 
-        use crate::parser::rust::ignore_fn_body;
+        use crate::parser::rust::{expr_block, ExprBlock};
+
+        #[test]
+        fn complex() {
+            let result = expr_block()
+                .parse("{left{inner1_left{inner1}inner1_right}middle{inner2}{inner3}right}")
+                .into_result();
+            assert_eq!(
+                result.unwrap(),
+                vec![
+                    ExprBlock::Body("left"),
+                    ExprBlock::Nested(vec![
+                        ExprBlock::Body("inner1_left"),
+                        ExprBlock::Nested(vec![ExprBlock::Body("inner1"),]),
+                        ExprBlock::Body("inner1_right"),
+                    ]),
+                    ExprBlock::Body("middle"),
+                    ExprBlock::Nested(vec![ExprBlock::Body("inner2"),]),
+                    ExprBlock::Nested(vec![ExprBlock::Body("inner3"),]),
+                    ExprBlock::Body("right"),
+                ]
+            );
+        }
 
         #[test]
         fn empty() {
-            let result = ignore_fn_body().parse("{}").into_result();
-            assert!(result.is_ok(), "content should be parsed as empty");
+            let result = expr_block().parse("{}").into_result();
+            assert_eq!(result.unwrap(), vec![]);
         }
 
         #[test]
         fn arbitrary_content() {
-            let result = ignore_fn_body()
+            let result = expr_block()
                 .parse(
                     r#"{
                 1234 !@#$%^&*()_+-= asdf
             }"#,
                 )
                 .into_result();
-            assert!(result.is_ok(), "content should be parsed as empty");
-        }
-
-        #[test]
-        fn brackets() {
-            let result = ignore_fn_body()
-                .parse(
-                    r#"{
-                {}
-                {{}}
-                {{
-                }}
-                {
-                    {
-                        {{}
-                        {}}
-                    }
-                }
-            }"#,
-                )
-                .into_result();
-            assert!(result.is_ok(), "content should be parsed as empty");
+            assert_eq!(
+                result.unwrap(),
+                vec![ExprBlock::Body("1234 !@#$%^&*()_+-= asdf")]
+            );
         }
 
         #[test]
         fn line_comment() {
-            let result = ignore_fn_body()
+            let result = expr_block()
                 .parse(
                     r#"
-                    { // don't break! {{{
+                    { // don't break! }
                     }"#,
                 )
                 .into_result();
-            assert!(result.is_ok(), "content should be parsed as empty");
+            assert_eq!(result.unwrap(), vec![ExprBlock::Comment("don't break! }")]);
         }
 
         #[test]
         fn block_comment() {
-            let result = ignore_fn_body()
+            let result = expr_block()
                 .parse(
                     r#"{
-                    { /* don't break! {{{ */
+                    { /* don't break! {{{ */ }
                     }"#,
                 )
                 .into_result();
-            assert!(result.is_ok(), "content should be parsed as empty");
+            assert_eq!(
+                result.unwrap(),
+                vec![ExprBlock::Nested(vec![ExprBlock::Comment(
+                    "don't break! {{{"
+                )]),]
+            );
+        }
+
+        #[test]
+        fn continues_parsing_after() {
+            let result = expr_block()
+                .padded()
+                .ignore_then(text::ident().padded())
+                .parse(
+                    r#"
+                {
+                  ignored stuff
+                }
+                not_ignored
+                "#,
+                )
+                .into_result();
+            assert!(result.is_ok(), "parse should not fail");
+            assert_eq!(result.unwrap(), "not_ignored");
         }
     }
 }

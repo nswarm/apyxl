@@ -26,3 +26,13 @@ impl Input for Buffer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // todo test self.read
+
+    #[test]
+    fn asdf() {
+        todo!("nyi")
+    }
+}

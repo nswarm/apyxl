@@ -134,7 +134,7 @@ impl<'a> Namespace<'a> {
     }
 
     /// Get a [Dto] within this [Namespace] by name.
-    fn dto(&self, name: &str) -> Option<&Dto<'a>> {
+    pub fn dto(&self, name: &str) -> Option<&Dto<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Dto(value) if value.name == name => Some(value),
             _ => None,
@@ -142,7 +142,7 @@ impl<'a> Namespace<'a> {
     }
 
     /// Get a [Dto] within this [Namespace] by name.
-    fn dto_mut(&mut self, name: &str) -> Option<&mut Dto<'a>> {
+    pub fn dto_mut(&mut self, name: &str) -> Option<&mut Dto<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Dto(value) if value.name == name => Some(value),
             _ => None,
@@ -150,7 +150,7 @@ impl<'a> Namespace<'a> {
     }
 
     /// Get a [Rpc] within this [Namespace] by name.
-    fn rpc(&self, name: &str) -> Option<&Rpc<'a>> {
+    pub fn rpc(&self, name: &str) -> Option<&Rpc<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Rpc(value) if value.name == name => Some(value),
             _ => None,
@@ -158,7 +158,7 @@ impl<'a> Namespace<'a> {
     }
 
     /// Get a [Rpc] within this [Namespace] by name.
-    fn rpc_mut(&mut self, name: &str) -> Option<&mut Rpc<'a>> {
+    pub fn rpc_mut(&mut self, name: &str) -> Option<&mut Rpc<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Rpc(value) if value.name == name => Some(value),
             _ => None,
@@ -166,7 +166,7 @@ impl<'a> Namespace<'a> {
     }
 
     /// Get a [Namespace] within this [Namespace] by name.
-    fn namespace(&self, name: &str) -> Option<&Namespace<'a>> {
+    pub fn namespace(&self, name: &str) -> Option<&Namespace<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Namespace(value) if value.name == name => Some(value),
             _ => None,
@@ -174,7 +174,7 @@ impl<'a> Namespace<'a> {
     }
 
     /// Get a [Namespace] within this [Namespace] by name.
-    fn namespace_mut(&mut self, name: &str) -> Option<&mut Namespace<'a>> {
+    pub fn namespace_mut(&mut self, name: &str) -> Option<&mut Namespace<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Namespace(value) if value.name == name => Some(value),
             _ => None,
@@ -305,13 +305,19 @@ impl<'a> Namespace<'a> {
 #[cfg(test)]
 pub mod tests {
     use crate::model::{Api, Dto, Namespace, Rpc};
+    use crate::parser::Parser;
+    use crate::{input, parser};
 
     #[test]
     fn merge() {
-        let mut ns0 = test_namespace(1);
-        ns0.add_rpc(test_rpc(1));
-        ns0.add_dto(test_dto(1));
-        ns0.add_namespace(test_namespace(3));
+        let mut input = input::Buffer::new(
+            r#"
+            fn rpc0() {}
+            struct dto0 {}
+            mod nested0 {}
+        "#,
+        );
+        let mut ns0 = test_api(&mut input);
 
         let mut ns1 = test_namespace(2);
         ns1.add_rpc(test_rpc(2));
@@ -322,12 +328,12 @@ pub mod tests {
         assert_eq!(ns0.dtos().count(), 2);
         assert_eq!(ns0.rpcs().count(), 2);
         assert_eq!(ns0.namespaces().count(), 2);
-        assert!(ns0.dto(test_dto(1).name).is_some());
+        assert!(ns0.dto("dto0").is_some());
         assert!(ns0.dto(test_dto(2).name).is_some());
-        assert!(ns0.dto(test_rpc(1).name).is_some());
-        assert!(ns0.dto(test_rpc(2).name).is_some());
-        assert!(ns0.dto(test_namespace(3).name).is_some());
-        assert!(ns0.dto(test_namespace(4).name).is_some());
+        assert!(ns0.rpc("rpc0").is_some());
+        assert!(ns0.rpc(test_rpc(2).name).is_some());
+        assert!(ns0.namespace("nested0").is_some());
+        assert!(ns0.namespace(test_namespace(4).name).is_some());
     }
 
     mod add_get {
@@ -497,5 +503,11 @@ pub mod tests {
             name: NAMES[i],
             ..Default::default()
         }
+    }
+
+    pub fn test_api(input: &mut input::Buffer) -> Api {
+        parser::Rust::default()
+            .parse(input)
+            .expect("test api definition failed to parse")
     }
 }

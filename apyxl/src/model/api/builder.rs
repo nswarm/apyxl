@@ -469,8 +469,9 @@ mod tests {
         mod validate_dto {
             use crate::model::api::builder::tests::build::assert_contains_error;
             use crate::model::api::builder::ValidationError;
-            use crate::model::tests::{test_dto, test_namespace};
-            use crate::model::{Builder, Dto, Field, TypeRef};
+            use crate::model::tests::{test_api, test_dto, test_namespace};
+            use crate::model::{Api, Builder, Dto, Field, TypeRef};
+            use crate::{input, parser, Parser};
 
             #[test]
             fn name_not_empty() {
@@ -490,22 +491,43 @@ mod tests {
                 );
             }
 
+            fn build_from_input(input: &mut input::Buffer) -> Result<Api, Vec<ValidationError>> {
+                test_builder(input).build()
+            }
+
+            fn test_builder(input: &mut input::Buffer) -> Builder {
+                Builder {
+                    api: test_api(input),
+                    ..Default::default()
+                }
+            }
+
             #[test]
             fn field_name_not_empty() {
-                // let mut builder = Builder::default();
-                // let mut namespace = test_namespace(1);
-                // let mut dto = test_dto(1);
-                // // dto.fields.push(Field { name: "", ty: Default::default() })
-                // // namespace.add_dto();
-                // builder.api.add_namespace(namespace);
-                //
-                // let result = builder.build();
-                // let expected_type_ref = TypeRef::from([test_namespace(1).name].as_slice());
-                // let expected_position = 3;
-                // assert_contains_error(
-                //     &result,
-                //     ValidationError::InvalidDtoName(expected_type_ref, expected_position),
-                // );
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns0 {
+                        struct Dto0 {}
+                        struct Dto1 {}
+                        struct Dto2 {}
+                    "#,
+                );
+                let mut builder = test_builder(&mut input);
+                builder
+                    .api
+                    .namespace_mut("ns0")
+                    .unwrap()
+                    .dto_mut("Dto2")
+                    .unwrap()
+                    .name = "";
+
+                let result = builder.build();
+                let expected_type_ref = TypeRef::from(["ns0"].as_slice());
+                let expected_position = 3;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidDtoName(expected_type_ref, expected_position),
+                );
             }
 
             #[test]
