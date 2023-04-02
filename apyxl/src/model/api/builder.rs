@@ -3,7 +3,7 @@ use itertools::Itertools;
 use log::info;
 use thiserror::Error;
 
-use crate::model::{Api, Namespace, NamespaceChild, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{Api, Namespace, TypeRef, UNDEFINED_NAMESPACE};
 
 /// Helper struct for parsing [Namespace]s spread across multiple chunks.
 /// After all desired [Namespace]s are merged, the [Builder] can be finalized via [Builder::build] which will
@@ -21,30 +21,28 @@ pub enum ValidationError<'a> {
     )]
     InvalidNamespaceName(TypeRef<'a>),
 
-    #[error("Invalid DTO name within namespace {0:?}, RPC #{1}. DTO names cannot be empty.")]
+    #[error("Invalid DTO name within namespace '{0:?}', RPC #{1}. DTO names cannot be empty.")]
     InvalidDtoName(TypeRef<'a>, usize),
 
-    #[error("Invalid field name within DTO {0:?}, field #{1}. Field names cannot be empty.")]
-    InvalidDtoFieldName(TypeRef<'a>, &'a str),
+    #[error("Invalid field name within DTO '{0:?}', field #{1}. Field names cannot be empty.")]
+    InvalidDtoFieldName(TypeRef<'a>, usize),
 
-    #[error("Invalid type for field {0:?}::{1}. Type '{2:?}' must be a valid DTO in the API.")]
+    #[error("Invalid type for field '{0:?}::{1}'. Type '{2:?}' must be a valid DTO in the API.")]
     InvalidDtoFieldType(TypeRef<'a>, &'a str, TypeRef<'a>),
 
-    #[error("Invalid RPC name within namespace {0:?}, RPC #{1}. RPC names cannot be empty.")]
+    #[error("Invalid RPC name within namespace '{0:?}', RPC #{1}. RPC names cannot be empty.")]
     InvalidRpcName(TypeRef<'a>, usize),
 
     #[error(
-        "Invalid field name within DTO {0:?}, parameter #{1}. Parameter names cannot be empty."
+        "Invalid field name within DTO '{0:?}', parameter #{1}. Parameter names cannot be empty."
     )]
-    InvalidRpcParameterName(TypeRef<'a>, &'a str),
+    InvalidRpcParameterName(TypeRef<'a>, usize),
 
-    #[error("Invalid type for param in RPC {0:?}::{1}, parameter {2}. Type '{3:?}' must be a valid DTO in the API.")]
-    InvalidRpcParameterType(TypeRef<'a>, &'a str, &'a str, TypeRef<'a>),
+    #[error("Invalid type for param in RPC '{0:?}', parameter '{1}'. Type '{2:?}' must be a valid DTO in the API.")]
+    InvalidRpcParameterType(TypeRef<'a>, &'a str, TypeRef<'a>),
 
-    #[error(
-        "Invalid return type for RPC {0:?}::{1}. Type '{2:?}' must be a valid DTO in the API."
-    )]
-    InvalidRpcReturnType(TypeRef<'a>, &'a str, TypeRef<'a>),
+    #[error("Invalid return type for RPC {0:?}. Type '{1:?}' must be a valid DTO in the API.")]
+    InvalidRpcReturnType(TypeRef<'a>, TypeRef<'a>),
 
     #[error("Duplicate DTO definition: {0:?}")]
     DuplicateDto(TypeRef<'a>),
@@ -111,12 +109,12 @@ impl<'a> Builder<'a> {
     }
 
     fn current_namespace(&self) -> &Namespace<'a> {
-        self.api.find_namespace(&TypeRef::from(self.namespace_stack.as_slice()))
+        self.api.find_namespace(&self.namespace_stack.as_slice().into())
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
 
     fn current_namespace_mut(&mut self) -> &mut Namespace<'a> {
-        self.api.find_namespace_mut(&TypeRef::from(self.namespace_stack.as_slice()))
+        self.api.find_namespace_mut(&self.namespace_stack.as_slice().into())
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
 }
@@ -402,88 +400,114 @@ mod tests {
     }
 
     mod build {
+        use crate::input;
         use crate::model::api::builder::ValidationError;
-        use crate::model::tests::{complex_api, complex_namespace, test_dto};
-        use crate::model::{Api, Builder, TypeRef};
+        use crate::model::tests::test_api;
+        use crate::model::{Api, Builder};
 
         mod dedupe_namespaces {
-            use crate::model::tests::test_namespace;
-            use crate::model::Builder;
+            use crate::input;
+            use crate::model::api::builder::tests::build::build_from_input;
 
             #[test]
             fn within_root() {
-                let mut builder = Builder::default();
-                builder.api.add_namespace(test_namespace(2));
-                builder.api.add_namespace(test_namespace(1));
-                builder.api.add_namespace(test_namespace(1));
-                builder.api.add_namespace(test_namespace(3));
-                builder.api.add_namespace(test_namespace(2));
-                builder.api.add_namespace(test_namespace(1));
-                let api = builder.build().expect("build failed");
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns2 {}
+                    mod ns1 {}
+                    mod ns1 {}
+                    mod ns3 {}
+                    mod ns2 {}
+                    mod ns1 {}
+                "#,
+                );
+                let api = build_from_input(&mut input).unwrap();
+
                 assert_eq!(api.namespaces().count(), 3);
-                assert!(api.namespace(test_namespace(1).name).is_some());
-                assert!(api.namespace(test_namespace(2).name).is_some());
-                assert!(api.namespace(test_namespace(3).name).is_some());
+                assert!(api.namespace("ns1").is_some());
+                assert!(api.namespace("ns2").is_some());
+                assert!(api.namespace("ns3").is_some());
             }
 
             #[test]
             fn within_sub_namespace() {
-                let mut builder = Builder::default();
-                let mut nested_namespace = test_namespace(4);
-                nested_namespace.add_namespace(test_namespace(2));
-                nested_namespace.add_namespace(test_namespace(1));
-                nested_namespace.add_namespace(test_namespace(1));
-                nested_namespace.add_namespace(test_namespace(3));
-                nested_namespace.add_namespace(test_namespace(2));
-                nested_namespace.add_namespace(test_namespace(1));
-                builder.api.add_namespace(nested_namespace);
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        mod ns2 {}
+                        mod ns1 {}
+                        mod ns1 {}
+                        mod ns3 {}
+                        mod ns2 {}
+                        mod ns1 {}
+                    }
+                "#,
+                );
+                let api = build_from_input(&mut input).unwrap();
 
-                let api = builder.build().expect("build failed");
                 assert_eq!(api.namespaces().count(), 1);
-                assert!(api.namespace(test_namespace(4).name).is_some());
+                assert!(api.namespace("ns").is_some());
 
-                let nested = api.namespace(test_namespace(4).name).unwrap();
+                let nested = api.namespace("ns").unwrap();
                 assert_eq!(nested.namespaces().count(), 3);
-                assert!(nested.namespace(test_namespace(1).name).is_some());
-                assert!(nested.namespace(test_namespace(2).name).is_some());
-                assert!(nested.namespace(test_namespace(3).name).is_some());
+                assert!(nested.namespace("ns1").is_some());
+                assert!(nested.namespace("ns2").is_some());
+                assert!(nested.namespace("ns3").is_some());
             }
 
             #[test]
             fn across_sub_namespaces_with_same_name() {
-                let mut builder = Builder::default();
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        mod ns1 {}
+                        mod ns2 {}
+                        mod ns3 {}
+                    }
+                    mod ns {
+                        mod ns1 {}
+                        mod ns2 {}
+                        mod ns3 {}
+                    }
+                "#,
+                );
+                let api = build_from_input(&mut input).unwrap();
 
-                for _ in 0..2 {
-                    let mut nested_namespace = test_namespace(1);
-                    nested_namespace.add_namespace(test_namespace(2));
-                    builder.api.add_namespace(nested_namespace);
-                }
-
-                let api = builder.build().expect("build failed");
                 assert_eq!(api.namespaces().count(), 1);
-                let nested = api.namespace(test_namespace(1).name).unwrap();
-                assert_eq!(nested.namespaces().count(), 1);
+                let nested = api.namespace("ns").unwrap();
+                assert_eq!(nested.namespaces().count(), 3);
+                assert!(nested.namespace("ns1").is_some());
+                assert!(nested.namespace("ns2").is_some());
+                assert!(nested.namespace("ns3").is_some());
             }
         }
 
         mod validate_dto {
-            use crate::model::api::builder::tests::build::assert_contains_error;
+            use crate::input;
+            use crate::model::api::builder::tests::build::{assert_contains_error, test_builder};
             use crate::model::api::builder::ValidationError;
-            use crate::model::tests::{test_api, test_dto, test_namespace};
-            use crate::model::{Api, Builder, Dto, Field, TypeRef};
-            use crate::{input, parser, Parser};
+            use crate::model::TypeRef;
 
             #[test]
-            fn name_not_empty() {
-                let mut builder = Builder::default();
-                let mut namespace = test_namespace(1);
-                namespace.add_dto(test_dto(1));
-                namespace.add_dto(test_dto(2));
-                namespace.add_dto(Dto::default());
-                builder.api.add_namespace(namespace);
+            fn name_empty() {
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        struct dto1 {}
+                        struct dto2 {}
+                        struct dto3 {}
+                    }
+                "#,
+                );
+                let mut builder = test_builder(&mut input);
+                builder
+                    .api
+                    .find_dto_mut(&["ns", "dto3"].into())
+                    .unwrap()
+                    .name = "";
 
                 let result = builder.build();
-                let expected_type_ref = TypeRef::from([test_namespace(1).name].as_slice());
+                let expected_type_ref = TypeRef::from(["ns"]);
                 let expected_position = 3;
                 assert_contains_error(
                     &result,
@@ -491,48 +515,68 @@ mod tests {
                 );
             }
 
-            fn build_from_input(input: &mut input::Buffer) -> Result<Api, Vec<ValidationError>> {
-                test_builder(input).build()
-            }
-
-            fn test_builder(input: &mut input::Buffer) -> Builder {
-                Builder {
-                    api: test_api(input),
-                    ..Default::default()
-                }
-            }
-
             #[test]
-            fn field_name_not_empty() {
+            fn field_name_empty() {
                 let mut input = input::Buffer::new(
                     r#"
-                    mod ns0 {
-                        struct Dto0 {}
-                        struct Dto1 {}
-                        struct Dto2 {}
+                    mod ns {
+                        struct dto {
+                            field1: bool,
+                            field2: bool,
+                            field3: bool,
+                        }
                     "#,
                 );
                 let mut builder = test_builder(&mut input);
                 builder
                     .api
-                    .namespace_mut("ns0")
+                    .find_dto_mut(&["ns", "dto"].into())
                     .unwrap()
-                    .dto_mut("Dto2")
+                    .field_mut("field2")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_type_ref = TypeRef::from(["ns0"].as_slice());
-                let expected_position = 3;
+                let expected_type_ref = TypeRef::from(["ns", "dto"]);
+                let expected_position = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidDtoName(expected_type_ref, expected_position),
+                    ValidationError::InvalidDtoFieldName(expected_type_ref, expected_position),
                 );
             }
 
             #[test]
-            fn field_type_not_empty() {
-                todo!("nyi");
+            fn field_type_empty() {
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        struct dto {
+                            field1: bool,
+                            field2: bool,
+                            field3: bool,
+                        }
+                    "#,
+                );
+                let mut builder = test_builder(&mut input);
+                builder
+                    .api
+                    .find_dto_mut(&["ns", "dto"].into())
+                    .unwrap()
+                    .field_mut("field2")
+                    .unwrap()
+                    .ty = TypeRef::default();
+
+                let result = builder.build();
+                let expected_type_ref = TypeRef::from(["ns"]);
+                let expected_position = 2;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidDtoFieldType(
+                        expected_type_ref,
+                        "field2",
+                        TypeRef::default(),
+                    ),
+                );
             }
 
             #[test]
@@ -542,19 +586,92 @@ mod tests {
         }
 
         mod validate_rpc {
+            use crate::input;
+            use crate::model::api::builder::tests::build::{assert_contains_error, test_builder};
+            use crate::model::api::builder::ValidationError;
+            use crate::model::TypeRef;
+
             #[test]
-            fn name_not_empty() {
-                todo!("nyi");
+            fn name_empty() {
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        fn rpc1() {}
+                        fn rpc2() {}
+                        fn rpc3() {}
+                    }
+                "#,
+                );
+                let mut builder = test_builder(&mut input);
+                builder
+                    .api
+                    .find_rpc_mut(&["ns", "rpc3"].into())
+                    .unwrap()
+                    .name = "";
+
+                let result = builder.build();
+                let expected_type_ref = TypeRef::from(["ns"]);
+                let expected_position = 3;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidRpcName(expected_type_ref, expected_position),
+                );
             }
 
             #[test]
-            fn param_name_not_empty() {
-                todo!("nyi");
+            fn param_name_empty() {
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        fn rpc(param1: bool, param2: bool, param3: bool) {}
+                    "#,
+                );
+                let mut builder = test_builder(&mut input);
+                builder
+                    .api
+                    .find_rpc_mut(&["ns", "rpc"].into())
+                    .unwrap()
+                    .param_mut("param2")
+                    .unwrap()
+                    .name = "";
+
+                let result = builder.build();
+                let expected_type_ref = TypeRef::from(["ns", "rpc"]);
+                let expected_position = 2;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidRpcParameterName(expected_type_ref, expected_position),
+                );
             }
 
             #[test]
-            fn param_type_not_empty() {
-                todo!("nyi");
+            fn param_type_empty() {
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        fn rpc(param1: bool, param2: bool, param3: bool) {}
+                    "#,
+                );
+                let mut builder = test_builder(&mut input);
+                builder
+                    .api
+                    .find_rpc_mut(&["rpc"].into())
+                    .unwrap()
+                    .param_mut("param2")
+                    .unwrap()
+                    .ty = TypeRef::default();
+
+                let result = builder.build();
+                let expected_type_ref = TypeRef::from(["ns", "rpc"]);
+                let expected_position = 2;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidRpcParameterType(
+                        expected_type_ref,
+                        "param2",
+                        TypeRef::default(),
+                    ),
+                );
             }
 
             #[test]
@@ -569,49 +686,53 @@ mod tests {
         }
 
         mod validate_namespace {
-            use crate::model::api::builder::tests::build::{assert_contains_error, test_builder};
+            use crate::input;
+            use crate::model::api::builder::tests::build::{
+                assert_contains_error, build_from_input,
+            };
             use crate::model::api::builder::ValidationError;
-            use crate::model::tests::{complex_namespace, test_namespace};
-            use crate::model::{TypeRef, UNDEFINED_NAMESPACE};
+            use crate::model::{Builder, UNDEFINED_NAMESPACE};
 
             #[test]
             fn root_namespace_undefined_allowed() {
-                let builder = test_builder();
+                let mut builder = Builder::default();
                 assert!(builder.build().is_ok());
             }
 
             #[test]
             fn name_within_root_not_undefined() {
-                let mut builder = test_builder();
-                builder
-                    .api
-                    .namespace_mut(complex_namespace(1).name)
-                    .unwrap()
-                    .name = UNDEFINED_NAMESPACE;
+                let mut input =
+                    input::Buffer::new("mod zzzz {}".replace("zzzz", UNDEFINED_NAMESPACE));
                 assert_contains_error(
-                    &builder.build(),
-                    ValidationError::InvalidNamespaceName(TypeRef::from(
-                        [UNDEFINED_NAMESPACE].as_slice(),
-                    )),
+                    &build_from_input(&mut input),
+                    ValidationError::InvalidNamespaceName([UNDEFINED_NAMESPACE].into()),
                 );
             }
 
             #[test]
             fn name_below_root_not_undefined() {
-                let mut builder = test_builder();
-                builder
-                    .api
-                    .namespace_mut(complex_namespace(1).name)
-                    .unwrap()
-                    .namespace_mut(test_namespace(3).name)
-                    .unwrap()
-                    .name = UNDEFINED_NAMESPACE;
-                assert_contains_error(
-                    &builder.build(),
-                    ValidationError::InvalidNamespaceName(TypeRef::from(
-                        [complex_namespace(1).name, UNDEFINED_NAMESPACE].as_slice(),
-                    )),
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        mod zzzz {}
+                    }"#
+                    .replace("zzzz", UNDEFINED_NAMESPACE),
                 );
+                assert_contains_error(
+                    &build_from_input(&mut input),
+                    ValidationError::InvalidNamespaceName(["ns", UNDEFINED_NAMESPACE].into()),
+                );
+            }
+        }
+
+        fn build_from_input(input: &mut input::Buffer) -> Result<Api, Vec<ValidationError>> {
+            test_builder(input).build()
+        }
+
+        fn test_builder(input: &mut input::Buffer) -> Builder {
+            Builder {
+                api: test_api(input),
+                ..Default::default()
             }
         }
 
@@ -624,21 +745,6 @@ mod tests {
                 .map(|_| "...but it passed!")
                 .expect_err("expected Builder::build to fail");
             assert!(errors.contains(&error), "actual: {:?}", errors);
-        }
-
-        fn test_builder() -> Builder<'static> {
-            Builder {
-                api: complex_api(),
-                ..Default::default()
-            }
-        }
-
-        fn valid_dto_ref() -> TypeRef<'static> {
-            TypeRef::from([complex_namespace(1).name, test_dto(3).name].as_slice())
-        }
-
-        fn invalid_dto_ref() -> TypeRef<'static> {
-            TypeRef::from([complex_namespace(1).name, "i_dont_exist"].as_slice())
         }
     }
 }

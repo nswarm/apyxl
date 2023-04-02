@@ -53,6 +53,26 @@ pub struct TypeRef<'a> {
     pub fully_qualified_type_name: Vec<&'a str>,
 }
 
+impl<'a> Dto<'a> {
+    pub fn field(&self, name: &str) -> Option<&Field<'a>> {
+        self.fields.iter().find(|field| field.name == name)
+    }
+
+    pub fn field_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
+        self.fields.iter_mut().find(|field| field.name == name)
+    }
+}
+
+impl<'a> Rpc<'a> {
+    pub fn param(&self, name: &str) -> Option<&Field<'a>> {
+        self.params.iter().find(|param| param.name == name)
+    }
+
+    pub fn param_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
+        self.params.iter_mut().find(|param| param.name == name)
+    }
+}
+
 impl<'a> TypeRef<'a> {
     pub fn new(fqtn: &[&'a str]) -> Self {
         Self {
@@ -88,21 +108,32 @@ impl<'a> TypeRef<'a> {
     }
 }
 
-impl<'a> From<&[&'a str]> for TypeRef<'a> {
-    fn from(value: &[&'a str]) -> Self {
+impl<'a, T> From<T> for TypeRef<'a>
+where
+    T: AsRef<[&'a str]>,
+{
+    fn from(value: T) -> Self {
         Self {
-            fully_qualified_type_name: value.to_vec(),
+            fully_qualified_type_name: value.as_ref().to_vec(),
         }
     }
 }
 
-impl<'a> From<Vec<&'a str>> for TypeRef<'a> {
-    fn from(value: Vec<&'a str>) -> Self {
-        Self {
-            fully_qualified_type_name: value,
-        }
-    }
-}
+// impl<'a> From<&[&'a str]> for TypeRef<'a> {
+//     fn from(value: &[&'a str]) -> Self {
+//         Self {
+//             fully_qualified_type_name: value.to_vec(),
+//         }
+//     }
+// }
+
+// impl<'a> From<Vec<&'a str>> for TypeRef<'a> {
+//     fn from(value: Vec<&'a str>) -> Self {
+//         Self {
+//             fully_qualified_type_name: value,
+//         }
+//     }
+// }
 
 impl<'a> Namespace<'a> {
     /// Perform a simple merge of [Namespace] `other` into this [Namespace] by adding all of
@@ -310,30 +341,34 @@ pub mod tests {
 
     #[test]
     fn merge() {
-        let mut input = input::Buffer::new(
+        let mut input0 = input::Buffer::new(
             r#"
             fn rpc0() {}
             struct dto0 {}
             mod nested0 {}
         "#,
         );
-        let mut ns0 = test_api(&mut input);
+        let mut ns0 = test_api(&mut input0);
 
-        let mut ns1 = test_namespace(2);
-        ns1.add_rpc(test_rpc(2));
-        ns1.add_dto(test_dto(2));
-        ns1.add_namespace(test_namespace(4));
+        let mut input1 = input::Buffer::new(
+            r#"
+            fn rpc1() {}
+            struct dto1 {}
+            mod nested1 {}
+        "#,
+        );
+        let ns1 = test_api(&mut input1);
 
         ns0.merge(ns1);
         assert_eq!(ns0.dtos().count(), 2);
         assert_eq!(ns0.rpcs().count(), 2);
         assert_eq!(ns0.namespaces().count(), 2);
         assert!(ns0.dto("dto0").is_some());
-        assert!(ns0.dto(test_dto(2).name).is_some());
+        assert!(ns0.dto("dto1").is_some());
         assert!(ns0.rpc("rpc0").is_some());
-        assert!(ns0.rpc(test_rpc(2).name).is_some());
+        assert!(ns0.rpc("rpc1").is_some());
         assert!(ns0.namespace("nested0").is_some());
-        assert!(ns0.namespace(test_namespace(4).name).is_some());
+        assert!(ns0.namespace("nested1").is_some());
     }
 
     mod add_get {
@@ -460,7 +495,7 @@ pub mod tests {
 
     const NAMES: &[&str] = &["name0", "name1", "name2", "name3", "name4", "name5"];
 
-    pub fn complex_api() -> Api<'static> {
+    fn complex_api() -> Api<'static> {
         let mut api = Api::default();
         api.add_dto(test_dto(1));
         api.add_dto(test_dto(2));
@@ -471,7 +506,7 @@ pub mod tests {
         api
     }
 
-    pub fn complex_namespace(i: usize) -> Namespace<'static> {
+    fn complex_namespace(i: usize) -> Namespace<'static> {
         let mut namespace = test_namespace(i);
         namespace.add_dto(test_dto(i + 2));
         namespace.add_dto(test_dto(i + 3));

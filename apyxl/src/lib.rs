@@ -1,7 +1,5 @@
 #![feature(drain_filter)]
 
-extern crate core;
-
 pub use crate::executor::Executor;
 pub use crate::generator::Generator;
 pub use crate::input::Input;
