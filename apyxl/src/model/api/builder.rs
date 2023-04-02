@@ -101,7 +101,7 @@ impl<'a> Builder<'a> {
     pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespace_children(&mut self.api);
 
-        let mut errors = [
+        let errors = [
             validate_namespace_names(&self.api, &TypeRef::default()),
             validate_dtos(&self.api, &TypeRef::default()),
             validate_rpcs(&self.api, &TypeRef::default()),
@@ -171,18 +171,24 @@ fn validate_no_duplicates<'a>(
     type_ref: &TypeRef<'a>,
 ) -> Vec<ValidationError<'a>> {
     info!("validating no duplicate definitions...");
-    let mut errors = Vec::new();
-    for child in namespace.namespaces() {
-        let mut child_errors = validate_no_duplicates(child, &type_ref.child(child.name));
-        errors.append(&mut child_errors);
-    }
-    for dto in namespace.dtos().duplicates_by(|dto| dto.name) {
-        errors.push(ValidationError::DuplicateDto(type_ref.child(dto.name)))
-    }
-    for rpc in namespace.rpcs().duplicates_by(|rpc| rpc.name) {
-        errors.push(ValidationError::DuplicateRpc(type_ref.child(rpc.name)))
-    }
-    errors
+    let dupe_dto_errors = namespace
+        .dtos()
+        .duplicates_by(|dto| dto.name)
+        .map(|dto| ValidationError::DuplicateDto(type_ref.child(dto.name)));
+
+    let dupe_rpc_errors = namespace
+        .rpcs()
+        .duplicates_by(|rpc| rpc.name)
+        .map(|rpc| ValidationError::DuplicateRpc(type_ref.child(rpc.name)));
+
+    let child_errors = namespace
+        .namespaces()
+        .flat_map(|child| validate_no_duplicates(child, &type_ref.child(child.name)));
+
+    child_errors
+        .chain(dupe_dto_errors)
+        .chain(dupe_rpc_errors)
+        .collect_vec()
 }
 
 fn validate_dtos<'a>(
@@ -190,7 +196,44 @@ fn validate_dtos<'a>(
     type_ref: &TypeRef<'a>,
 ) -> Vec<ValidationError<'a>> {
     info!("validating type refs...");
-    vec![]
+
+    let empty_name_errors = namespace.dtos().enumerate().filter_map(|(i, dto)| {
+        if dto.name.is_empty() {
+            Some(ValidationError::InvalidDtoName(type_ref.clone(), i + 1))
+        } else {
+            None
+        }
+    });
+
+    let empty_field_name_errors = namespace.dtos().flat_map(|dto| {
+        dto.fields.iter().enumerate().filter_map(|(i, field)| {
+            if field.name.is_empty() {
+                Some(ValidationError::InvalidDtoFieldName(
+                    type_ref.child(dto.name),
+                    i + 1,
+                ))
+            } else if field.ty.fully_qualified_type_name.is_empty() {
+                Some(ValidationError::InvalidDtoFieldType(
+                    type_ref.child(dto.name),
+                    field.name,
+                    field.ty.clone(),
+                ))
+            } else {
+                None
+            }
+        })
+    });
+
+    // todo type
+
+    let child_errors = namespace
+        .namespaces()
+        .flat_map(|child| validate_dtos(child, &type_ref.child(child.name)));
+
+    child_errors
+        .chain(empty_name_errors)
+        .chain(empty_field_name_errors)
+        .collect_vec()
 }
 
 fn validate_rpcs<'a>(
@@ -612,8 +655,7 @@ mod tests {
                     .ty = TypeRef::default();
 
                 let result = builder.build();
-                let expected_type_ref = TypeRef::from(["ns"]);
-                let expected_position = 2;
+                let expected_type_ref = TypeRef::from(["ns", "dto"]);
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidDtoFieldType(
@@ -789,7 +831,12 @@ mod tests {
                 .as_ref()
                 .map(|_| "...but it passed!")
                 .expect_err("expected Builder::build to fail");
-            assert!(errors.contains(&error), "actual: {:?}", errors);
+            assert!(
+                errors.contains(&error),
+                "missing: {:?}\nactual: {:?}",
+                error,
+                errors
+            );
         }
     }
 }
