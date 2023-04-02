@@ -2,9 +2,12 @@ pub use builder::Builder;
 use itertools::Itertools;
 
 mod builder;
+mod metadata;
+mod validate;
 
-/// A complete set of components that make up an API. The root [Namespace] of the entire API.
-/// The name will always be [UNDEFINED_NAMESPACE]
+pub use validate::ValidationError;
+
+/// A complete set of components that make up an API.
 pub type Api<'a> = Namespace<'a>;
 
 /// The root namespace of the entire API.
@@ -46,8 +49,9 @@ pub struct Rpc<'a> {
     pub return_type: Option<TypeRef<'a>>,
 }
 
-/// A type such as a language primitive or a reference to a [Dto]. A [Dto] reference will contain
-/// all necessary information to find the exact [Dto] within the API.
+/// A type such as a language primitive or a reference to a type within the API. Typically when used
+/// within model types, it refers to a [Dto], but can be used as a reference to other types
+/// like [Rpc]s or [Namespace]s as well.
 #[derive(Default, Debug, Eq, PartialEq, Clone)]
 pub struct TypeRef<'a> {
     pub fully_qualified_type_name: Vec<&'a str>,

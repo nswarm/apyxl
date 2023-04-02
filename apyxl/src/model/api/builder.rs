@@ -1,9 +1,8 @@
 use anyhow::Result;
 use itertools::Itertools;
-use log::info;
-use thiserror::Error;
 
-use crate::model::{Api, Field, Namespace, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::api::validate;
+use crate::model::{Api, Namespace, TypeRef, ValidationError, UNDEFINED_NAMESPACE};
 
 /// Helper struct for parsing [Namespace]s spread across multiple chunks.
 /// After all desired [Namespace]s are merged, the [Builder] can be finalized via [Builder::build] which will
@@ -11,36 +10,6 @@ use crate::model::{Api, Field, Namespace, TypeRef, UNDEFINED_NAMESPACE};
 pub struct Builder<'a> {
     api: Api<'a>,
     namespace_stack: Vec<&'a str>,
-}
-
-#[derive(Error, Debug, Eq, PartialEq)]
-pub enum ValidationError<'a> {
-    #[error(
-        "Invalid namespace found at path {0:?}. Only the root namespace can be named {}.",
-        UNDEFINED_NAMESPACE
-    )]
-    InvalidNamespaceName(TypeRef<'a>),
-
-    #[error("Invalid DTO name within namespace '{0:?}', index #{1}. DTO names cannot be empty.")]
-    InvalidDtoName(TypeRef<'a>, usize),
-
-    #[error("Invalid RPC name within namespace '{0:?}', index #{1}. RPC names cannot be empty.")]
-    InvalidRpcName(TypeRef<'a>, usize),
-
-    #[error("Invalid field name at '{0:?}', index {1}. Field names cannot be empty.")]
-    InvalidFieldName(TypeRef<'a>, usize),
-
-    #[error("Invalid field type '{0:?}::{1}'. Type '{2:?}' must be a valid DTO in the API.")]
-    InvalidFieldType(TypeRef<'a>, &'a str, TypeRef<'a>),
-
-    #[error("Invalid return type for RPC {0:?}. Type '{1:?}' must be a valid DTO in the API.")]
-    InvalidRpcReturnType(TypeRef<'a>, TypeRef<'a>),
-
-    #[error("Duplicate DTO definition: {0:?}")]
-    DuplicateDto(TypeRef<'a>),
-
-    #[error("Duplicate RPC definition: {0:?}")]
-    DuplicateRpc(TypeRef<'a>),
 }
 
 impl Default for Builder<'_> {
@@ -88,16 +57,24 @@ impl<'a> Builder<'a> {
 
     /// Finalize and validate the API.
     /// - Dedupes namespaces recursively.
-    /// - Errors for [Dto]s and [Rpc]s with identical paths (aka duplicate definitions).
-    /// - Errors for TypeRefs with missing types not specified in list of assumed types.
-    pub fn build<'b>(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
+    /// - Errors for [Dto]s or [Rpc]s with empty names.
+    /// - Errors for [Dto]s with identical paths (aka duplicate definitions).
+    /// - Errors for [Rpc]s with identical paths (aka duplicate definitions).
+    /// - Errors for TypeRefs with missing types.
+    pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespace_children(&mut self.api);
 
         let errors = [
-            recurse_namespaces(&self.api, TypeRef::default(), validate_namespace_names),
-            recurse_namespaces(&self.api, TypeRef::default(), validate_dtos),
-            recurse_namespaces(&self.api, TypeRef::default(), validate_rpcs),
-            recurse_namespaces(&self.api, TypeRef::default(), validate_no_duplicates),
+            recurse_api(&self.api, validate::namespace_names),
+            recurse_api(&self.api, validate::dto_names),
+            recurse_api(&self.api, validate::dto_field_names),
+            recurse_api(&self.api, validate::dto_field_types),
+            recurse_api(&self.api, validate::rpc_names),
+            recurse_api(&self.api, validate::rpc_param_names),
+            recurse_api(&self.api, validate::rpc_param_types),
+            recurse_api(&self.api, validate::rpc_return_types),
+            recurse_api(&self.api, validate::no_duplicate_dtos),
+            recurse_api(&self.api, validate::no_duplicate_rpcs),
         ]
         .into_iter()
         .flatten()
@@ -140,152 +117,35 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
         });
 }
 
-fn validate_namespace_names<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    namespace.namespaces().filter_map(move |child| {
-        if child.name == UNDEFINED_NAMESPACE {
-            Some(ValidationError::InvalidNamespaceName(
-                type_ref.child(child.name),
-            ))
-        } else {
-            None
-        }
-    })
-}
-
-fn validate_no_duplicates<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    let namespace_type_ref = type_ref.clone();
-    let dupe_dto_errors = namespace
-        .dtos()
-        .duplicates_by(|dto| dto.name)
-        .map(move |dto| ValidationError::DuplicateDto(namespace_type_ref.child(dto.name)));
-
-    let namespace_type_ref = type_ref.clone();
-    let dupe_rpc_errors = namespace
-        .rpcs()
-        .duplicates_by(|rpc| rpc.name)
-        .map(move |rpc| ValidationError::DuplicateRpc(namespace_type_ref.child(rpc.name)));
-
-    dupe_dto_errors.chain(dupe_rpc_errors)
-}
-
-fn validate_dtos<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    let dto_name_errors = validate_dto_names(namespace, type_ref.clone());
-    let field_errors = validate_dto_fields(namespace, type_ref.clone());
-    dto_name_errors.chain(field_errors)
-}
-
-fn validate_dto_names<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    namespace.dtos().enumerate().filter_map(move |(i, dto)| {
-        if dto.name.is_empty() {
-            Some(ValidationError::InvalidDtoName(type_ref.clone(), i))
-        } else {
-            None
-        }
-    })
-}
-
-fn validate_dto_fields<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    namespace
-        .dtos()
-        .flat_map(move |dto| validate_fields(dto.fields.iter(), type_ref.child(dto.name)))
-}
-
-fn validate_rpcs<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    let rpc_name_errors = validate_rpc_names(namespace, type_ref.clone());
-    let param_errors = validate_rpc_params(namespace, type_ref.clone());
-    let ret_type_errors = validate_rpc_return_types(namespace, type_ref.clone());
-    rpc_name_errors.chain(param_errors).chain(ret_type_errors)
-}
-
-fn validate_rpc_names<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    namespace.rpcs().enumerate().filter_map(move |(i, rpc)| {
-        if rpc.name.is_empty() {
-            Some(ValidationError::InvalidRpcName(type_ref.clone(), i))
-        } else {
-            None
-        }
-    })
-}
-
-fn validate_rpc_params<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    namespace
-        .rpcs()
-        .flat_map(move |rpc| validate_fields(rpc.params.iter(), type_ref.child(rpc.name)))
-}
-
-fn validate_rpc_return_types<'a, 'b>(
-    namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b {
-    namespace.rpcs().filter_map(|x| None)
-}
-
-fn validate_fields<'a, 'b>(
-    fields: impl Iterator<Item = &'b Field<'a>> + 'b,
-    parent_type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b
-where
-    'a: 'b,
-{
-    fields.enumerate().filter_map(move |(i, field)| {
-        if field.name.is_empty() {
-            Some(ValidationError::InvalidFieldName(
-                parent_type_ref.clone(),
-                i,
-            ))
-        } else if field.ty.fully_qualified_type_name.is_empty() {
-            Some(ValidationError::InvalidFieldType(
-                parent_type_ref.clone(),
-                field.name,
-                field.ty.clone(),
-            ))
-        } else {
-            None
-        }
-    })
-}
-
-/// Calls the function `f` for each [Namespace] in the hierarchy. `f` will be passed the [Namespace]
+/// Calls the function `f` for each [Namespace] in the `api`. `f` will be passed the [Namespace]
 /// currently being operated on and a [TypeRef] to that namespace within the overall hierarchy.
+///
+/// `'a` is the lifetime of the [Api] bound.
+/// `'b` is the lifetime of the [Builder::build] process.
+fn recurse_api<'a, 'b, I, F>(api: &'b Api<'a>, f: F) -> Vec<ValidationError<'a>>
+where
+    I: Iterator<Item = ValidationError<'a>>,
+    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, TypeRef<'a>) -> I,
+{
+    recurse_namespaces(api, api, TypeRef::default(), f)
+}
+
 fn recurse_namespaces<'a, 'b, I, F>(
+    api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
     type_ref: TypeRef<'a>,
     f: F,
 ) -> Vec<ValidationError<'a>>
 where
     I: Iterator<Item = ValidationError<'a>>,
-    F: Copy + Fn(&'b Namespace<'a>, TypeRef<'a>) -> I,
+    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, TypeRef<'a>) -> I,
 {
     let child_errors = namespace
         .namespaces()
-        .flat_map(|child| recurse_namespaces(child, type_ref.child(child.name), f));
+        .flat_map(|child| recurse_namespaces(api, child, type_ref.child(child.name), f));
 
     child_errors
-        .chain(f(namespace, type_ref.clone()))
+        .chain(f(api, namespace, type_ref.clone()))
         .collect_vec()
 }
 
@@ -617,7 +477,9 @@ mod tests {
 
         mod validate_dto {
             use crate::input;
-            use crate::model::api::builder::tests::build::{assert_contains_error, test_builder};
+            use crate::model::api::builder::tests::build::{
+                assert_contains_error, build_from_input, test_builder,
+            };
             use crate::model::api::builder::ValidationError;
             use crate::model::TypeRef;
 
@@ -626,16 +488,16 @@ mod tests {
                 let mut input = input::Buffer::new(
                     r#"
                     mod ns {
+                        struct dto0 {}
                         struct dto1 {}
                         struct dto2 {}
-                        struct dto3 {}
                     }
                 "#,
                 );
                 let mut builder = test_builder(&mut input);
                 builder
                     .api
-                    .find_dto_mut(&["ns", "dto3"].into())
+                    .find_dto_mut(&["ns", "dto2"].into())
                     .unwrap()
                     .name = "";
 
@@ -654,9 +516,9 @@ mod tests {
                     r#"
                     mod ns {
                         struct dto {
+                            field0: bool,
                             field1: bool,
                             field2: bool,
-                            field3: bool,
                         }
                     }"#,
                 );
@@ -665,7 +527,7 @@ mod tests {
                     .api
                     .find_dto_mut(&["ns", "dto"].into())
                     .unwrap()
-                    .field_mut("field2")
+                    .field_mut("field1")
                     .unwrap()
                     .name = "";
 
@@ -684,9 +546,9 @@ mod tests {
                     r#"
                     mod ns {
                         struct dto {
+                            field0: bool,
                             field1: bool,
                             field2: bool,
-                            field3: bool,
                         }
                     }"#,
                 );
@@ -695,17 +557,19 @@ mod tests {
                     .api
                     .find_dto_mut(&["ns", "dto"].into())
                     .unwrap()
-                    .field_mut("field2")
+                    .field_mut("field1")
                     .unwrap()
                     .ty = TypeRef::default();
 
                 let result = builder.build();
                 let expected_type_ref = TypeRef::from(["ns", "dto"]);
+                let expected_index = 1;
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
                         expected_type_ref,
-                        "field2",
+                        "field1",
+                        expected_index,
                         TypeRef::default(),
                     ),
                 );
@@ -713,13 +577,35 @@ mod tests {
 
             #[test]
             fn field_type_valid_linkage() {
-                todo!("nyi");
+                let mut input = input::Buffer::new(
+                    r#"
+                    struct dto {
+                        field0: bool,
+                        field1: ns::dto
+                    }
+                    mod ns {
+                        struct definitely_not_dto {}
+                    }"#,
+                );
+                let result = build_from_input(&mut input);
+                let expected_index = 1;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidFieldType(
+                        ["dto"].into(),
+                        "field1",
+                        expected_index,
+                        ["ns", "dto"].into(),
+                    ),
+                );
             }
         }
 
         mod validate_rpc {
             use crate::input;
-            use crate::model::api::builder::tests::build::{assert_contains_error, test_builder};
+            use crate::model::api::builder::tests::build::{
+                assert_contains_error, build_from_input, test_builder,
+            };
             use crate::model::api::builder::ValidationError;
             use crate::model::TypeRef;
 
@@ -728,16 +614,16 @@ mod tests {
                 let mut input = input::Buffer::new(
                     r#"
                     mod ns {
+                        fn rpc0() {}
                         fn rpc1() {}
                         fn rpc2() {}
-                        fn rpc3() {}
                     }
                 "#,
                 );
                 let mut builder = test_builder(&mut input);
                 builder
                     .api
-                    .find_rpc_mut(&["ns", "rpc3"].into())
+                    .find_rpc_mut(&["ns", "rpc2"].into())
                     .unwrap()
                     .name = "";
 
@@ -755,7 +641,7 @@ mod tests {
                 let mut input = input::Buffer::new(
                     r#"
                     mod ns {
-                        fn rpc(param1: bool, param2: bool, param3: bool) {}
+                        fn rpc(param0: bool, param1: bool, param2: bool) {}
                     }"#,
                 );
                 let mut builder = test_builder(&mut input);
@@ -763,7 +649,7 @@ mod tests {
                     .api
                     .find_rpc_mut(&["ns", "rpc"].into())
                     .unwrap()
-                    .param_mut("param2")
+                    .param_mut("param1")
                     .unwrap()
                     .name = "";
 
@@ -781,7 +667,7 @@ mod tests {
                 let mut input = input::Buffer::new(
                     r#"
                     mod ns {
-                        fn rpc(param1: bool, param2: bool, param3: bool) {}
+                        fn rpc(param0: bool, param1: bool, param2: bool) {}
                     }"#,
                 );
                 let mut builder = test_builder(&mut input);
@@ -789,17 +675,19 @@ mod tests {
                     .api
                     .find_rpc_mut(&["ns", "rpc"].into())
                     .unwrap()
-                    .param_mut("param2")
+                    .param_mut("param1")
                     .unwrap()
                     .ty = TypeRef::default();
 
                 let result = builder.build();
                 let expected_type_ref = TypeRef::from(["ns", "rpc"]);
+                let expected_index = 1;
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
                         expected_type_ref,
-                        "param2",
+                        "param1",
+                        expected_index,
                         TypeRef::default(),
                     ),
                 );
@@ -807,12 +695,40 @@ mod tests {
 
             #[test]
             fn param_type_valid_linkage() {
-                todo!("nyi");
+                let mut input = input::Buffer::new(
+                    r#"
+                    fn rpc(param0: bool, param1: ns::dto) {}
+                    mod ns {
+                        struct definitely_not_dto {}
+                    }"#,
+                );
+                let result = build_from_input(&mut input);
+                let expected_index = 1;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidFieldType(
+                        ["rpc"].into(),
+                        "param1",
+                        expected_index,
+                        ["ns", "dto"].into(),
+                    ),
+                );
             }
 
             #[test]
             fn return_type_valid_linkage() {
-                todo!("nyi");
+                let mut input = input::Buffer::new(
+                    r#"
+                    fn rpc() -> ns::dto {}
+                    mod ns {
+                        struct definitely_not_dto {}
+                    }"#,
+                );
+                let result = build_from_input(&mut input);
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidRpcReturnType(["rpc"].into(), ["ns", "dto"].into()),
+                );
             }
         }
 
