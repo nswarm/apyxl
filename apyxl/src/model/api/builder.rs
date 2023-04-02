@@ -100,12 +100,21 @@ impl<'a> Builder<'a> {
     /// - Errors for TypeRefs with missing types not specified in list of assumed types.
     pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespace_children(&mut self.api);
-        validate_namespace_names(&self.api, &TypeRef::default())?;
-        validate_dtos(&self.api, &TypeRef::default())?;
-        validate_rpcs(&self.api, &TypeRef::default())?;
-        validate_no_duplicate_dtos(&self.api, &TypeRef::default())?;
-        validate_no_duplicate_rpcs(&self.api, &TypeRef::default())?;
-        Ok(self.api)
+
+        let mut errors = [
+            validate_namespace_names(&self.api, &TypeRef::default()),
+            validate_dtos(&self.api, &TypeRef::default()),
+            validate_rpcs(&self.api, &TypeRef::default()),
+            validate_no_duplicates(&self.api, &TypeRef::default()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect_vec();
+        if errors.is_empty() {
+            Ok(self.api)
+        } else {
+            Err(errors)
+        }
     }
 
     fn current_namespace(&self) -> &Namespace<'a> {
@@ -141,69 +150,55 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
 
 fn validate_namespace_names<'a>(
     namespace: &Namespace<'a>,
-    parent: &TypeRef<'a>,
-) -> Result<(), Vec<ValidationError<'a>>> {
+    parent_ref: &TypeRef<'a>,
+) -> Vec<ValidationError<'a>> {
     info!("validating namespace names...");
     let mut errors = Vec::new();
-    for namespace in namespace.namespaces() {
-        let type_ref = parent.child(namespace.name);
-        if namespace.name == UNDEFINED_NAMESPACE {
+    for child in namespace.namespaces() {
+        let type_ref = parent_ref.child(child.name);
+        if child.name == UNDEFINED_NAMESPACE {
             errors.push(ValidationError::InvalidNamespaceName(type_ref));
             continue;
         }
-        let result = validate_namespace_names(namespace, &type_ref);
-        append_errors(&mut errors, result)
+        let mut child_errors = validate_namespace_names(child, &type_ref);
+        errors.append(&mut child_errors);
     }
-    errors_to_result(errors)
+    errors
 }
 
-fn validate_no_duplicate_dtos<'a>(
+fn validate_no_duplicates<'a>(
     namespace: &Namespace<'a>,
     type_ref: &TypeRef<'a>,
-) -> Result<(), Vec<ValidationError<'a>>> {
+) -> Vec<ValidationError<'a>> {
     info!("validating no duplicate definitions...");
-    Ok(())
-}
-
-fn validate_no_duplicate_rpcs<'a>(
-    namespace: &Namespace<'a>,
-    type_ref: &TypeRef<'a>,
-) -> Result<(), Vec<ValidationError<'a>>> {
-    info!("validating no duplicate definitions...");
-    Ok(())
+    let mut errors = Vec::new();
+    for child in namespace.namespaces() {
+        let mut child_errors = validate_no_duplicates(child, &type_ref.child(child.name));
+        errors.append(&mut child_errors);
+    }
+    for dto in namespace.dtos().duplicates_by(|dto| dto.name) {
+        errors.push(ValidationError::DuplicateDto(type_ref.child(dto.name)))
+    }
+    for rpc in namespace.rpcs().duplicates_by(|rpc| rpc.name) {
+        errors.push(ValidationError::DuplicateRpc(type_ref.child(rpc.name)))
+    }
+    errors
 }
 
 fn validate_dtos<'a>(
     namespace: &Namespace<'a>,
     type_ref: &TypeRef<'a>,
-) -> Result<(), Vec<ValidationError<'a>>> {
+) -> Vec<ValidationError<'a>> {
     info!("validating type refs...");
-    Ok(())
+    vec![]
 }
 
 fn validate_rpcs<'a>(
     namespace: &Namespace<'a>,
     type_ref: &TypeRef<'a>,
-) -> Result<(), Vec<ValidationError<'a>>> {
+) -> Vec<ValidationError<'a>> {
     info!("validating type refs...");
-    Ok(())
-}
-
-fn append_errors<'a>(
-    errors: &mut Vec<ValidationError<'a>>,
-    result: Result<(), Vec<ValidationError<'a>>>,
-) {
-    if let Err(mut child_errors) = result {
-        errors.append(&mut child_errors)
-    }
-}
-
-fn errors_to_result(errors: Vec<ValidationError>) -> Result<(), Vec<ValidationError>> {
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
+    vec![]
 }
 
 #[cfg(test)]
@@ -482,6 +477,56 @@ mod tests {
             }
         }
 
+        mod validate_duplicates {
+            use crate::input;
+            use crate::model::api::builder::tests::build::{
+                assert_contains_error, build_from_input,
+            };
+            use crate::model::api::builder::ValidationError;
+
+            #[test]
+            fn dtos() {
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        struct dto {}
+                        struct dto {}
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut input);
+                assert_contains_error(&result, ValidationError::DuplicateDto(["ns", "dto"].into()));
+            }
+
+            #[test]
+            fn rpcs() {
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        fn rpc() {}
+                        fn rpc() {}
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut input);
+                assert_contains_error(&result, ValidationError::DuplicateRpc(["ns", "rpc"].into()));
+            }
+
+            #[test]
+            fn rpc_dto_with_same_name_ok() {
+                let mut input = input::Buffer::new(
+                    r#"
+                    mod ns {
+                        fn thing() {}
+                        struct thing {}
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut input);
+                assert!(result.is_ok());
+            }
+        }
+
         mod validate_dto {
             use crate::input;
             use crate::model::api::builder::tests::build::{assert_contains_error, test_builder};
@@ -525,7 +570,7 @@ mod tests {
                             field2: bool,
                             field3: bool,
                         }
-                    "#,
+                    }"#,
                 );
                 let mut builder = test_builder(&mut input);
                 builder
@@ -555,7 +600,7 @@ mod tests {
                             field2: bool,
                             field3: bool,
                         }
-                    "#,
+                    }"#,
                 );
                 let mut builder = test_builder(&mut input);
                 builder
