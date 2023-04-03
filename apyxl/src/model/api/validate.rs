@@ -1,4 +1,5 @@
 use crate::model::{Api, Field, Namespace, TypeRef, UNDEFINED_NAMESPACE};
+use anyhow::anyhow;
 use itertools::Itertools;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
@@ -7,67 +8,34 @@ use thiserror::Error;
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError<'a> {
     #[error(
-        "Invalid namespace found at path {0:?}. Only the root namespace can be named {}.",
+        "Invalid namespace found at path {0}. Only the root namespace can be named {}.",
         UNDEFINED_NAMESPACE
     )]
     InvalidNamespaceName(TypeRef<'a>),
 
-    #[error("Invalid DTO name within namespace '{0:?}', index #{1}. DTO names cannot be empty.")]
+    #[error("Invalid DTO name within namespace '{0}', index #{1}. DTO names cannot be empty.")]
     InvalidDtoName(TypeRef<'a>, usize),
 
-    #[error("Invalid RPC name within namespace '{0:?}', index #{1}. RPC names cannot be empty.")]
+    #[error("Invalid RPC name within namespace '{0}', index #{1}. RPC names cannot be empty.")]
     InvalidRpcName(TypeRef<'a>, usize),
 
-    #[error("Invalid field name at '{0:?}', index {1}. Field names cannot be empty.")]
+    #[error("Invalid field name at '{0}', index {1}. Field names cannot be empty.")]
     InvalidFieldName(TypeRef<'a>, usize),
 
     #[error(
-        "Invalid field type '{0:?}::{1}', index {2}. Type '{3:?}' must be a valid DTO in the API."
+        "Invalid field type '{0}::{1}', index {2}. Type '{3}' must be a valid DTO in the API."
     )]
     InvalidFieldType(TypeRef<'a>, &'a str, usize, TypeRef<'a>),
 
-    #[error("Invalid return type for RPC {0:?}. Type '{1:?}' must be a valid DTO in the API.")]
+    #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO in the API.")]
     InvalidRpcReturnType(TypeRef<'a>, TypeRef<'a>),
 
-    #[error("Duplicate DTO definition: {0:?}")]
+    #[error("Duplicate DTO definition: '{0}'")]
     DuplicateDto(TypeRef<'a>),
 
-    #[error("Duplicate RPC definition: {0:?}")]
+    #[error("Duplicate RPC definition: '{0}'")]
     DuplicateRpc(TypeRef<'a>),
 }
-
-pub struct ValidationErrors<'a> {
-    errors: Vec<ValidationError<'a>>,
-}
-
-impl ValidationErrors<'_> {
-    pub fn get(&self) -> &Vec<ValidationError<'_>> {
-        &self.errors
-    }
-}
-
-impl<'a> From<Vec<ValidationError<'a>>> for ValidationErrors<'a> {
-    fn from(value: Vec<ValidationError<'a>>) -> Self {
-        Self { errors: value }
-    }
-}
-
-impl Debug for ValidationErrors<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for error in &self.errors {
-            write!(f, "  {:?}", error)?;
-        }
-        Ok(())
-    }
-}
-
-impl Display for ValidationErrors<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl Error for ValidationErrors<'_> {}
 
 pub fn namespace_names<'a, 'b>(
     _: &'b Api<'a>,
@@ -199,10 +167,7 @@ pub fn field_names<'a, 'b>(
     _: &'b Api<'a>,
     fields: impl Iterator<Item = &'b Field<'a>> + 'b,
     type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b
-where
-    'a: 'b,
-{
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
         if field.name.is_empty() {
             Some(ValidationError::InvalidFieldName(type_ref.clone(), i))
@@ -216,10 +181,7 @@ pub fn field_types<'a, 'b>(
     api: &'b Api<'a>,
     fields: impl Iterator<Item = &'b Field<'a>> + 'b,
     parent_type_ref: TypeRef<'a>,
-) -> impl Iterator<Item = ValidationError<'a>> + 'b
-where
-    'a: 'b,
-{
+) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
         if api.find_dto(&field.ty).is_none() {
             Some(ValidationError::InvalidFieldType(

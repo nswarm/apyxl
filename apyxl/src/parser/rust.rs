@@ -182,7 +182,7 @@ mod tests {
         mod namespace {}
         "#,
         );
-        let api = parser::Rust::default().parse(&mut input)?.build()?;
+        let api = parser::Rust::default().parse(&mut input)?.build().unwrap();
         assert_eq!(api.name, UNDEFINED_NAMESPACE);
         assert!(api.dto("dto").is_some());
         assert!(api.rpc("rpc").is_some());

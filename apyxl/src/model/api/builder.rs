@@ -2,7 +2,6 @@ use anyhow::Result;
 use itertools::Itertools;
 
 use crate::model::api::validate;
-use crate::model::api::validate::ValidationErrors;
 use crate::model::{Api, Namespace, TypeRef, ValidationError, UNDEFINED_NAMESPACE};
 
 /// Helper struct for parsing [Namespace]s spread across multiple chunks.
@@ -62,7 +61,7 @@ impl<'a> Builder<'a> {
     /// - Errors for [Dto]s with identical paths (aka duplicate definitions).
     /// - Errors for [Rpc]s with identical paths (aka duplicate definitions).
     /// - Errors for TypeRefs with missing types.
-    pub fn build(mut self) -> Result<Api<'a>, ValidationErrors<'a>> {
+    pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespace_children(&mut self.api);
 
         let errors = [
@@ -84,7 +83,7 @@ impl<'a> Builder<'a> {
         if errors.is_empty() {
             Ok(self.api)
         } else {
-            Err(errors.into())
+            Err(errors)
         }
     }
 
@@ -96,6 +95,11 @@ impl<'a> Builder<'a> {
     pub fn current_namespace_mut(&mut self) -> &mut Namespace<'a> {
         self.api.find_namespace_mut(&self.namespace_stack.as_slice().into())
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
+    }
+
+    #[cfg(test)]
+    pub fn consume(self) -> Api<'a> {
+        self.api
     }
 }
 
@@ -346,7 +350,6 @@ mod tests {
     mod build {
         use crate::input;
         use crate::model::api::builder::ValidationError;
-        use crate::model::api::validate::ValidationErrors;
         use crate::model::tests::test_api;
         use crate::model::{Api, Builder};
 
@@ -774,7 +777,7 @@ mod tests {
             }
         }
 
-        fn build_from_input(input: &mut input::Buffer) -> Result<Api, ValidationErrors> {
+        fn build_from_input(input: &mut input::Buffer) -> Result<Api, Vec<ValidationError<'_>>> {
             test_builder(input).build()
         }
 
@@ -786,7 +789,7 @@ mod tests {
         }
 
         fn assert_contains_error(
-            build_result: &Result<Api, ValidationErrors>,
+            build_result: &Result<Api, Vec<ValidationError<'_>>>,
             error: ValidationError,
         ) {
             let errors = build_result
@@ -794,7 +797,7 @@ mod tests {
                 .map(|_| "...but it passed!")
                 .expect_err("expected Builder::build to fail");
             assert!(
-                errors.get().contains(&error),
+                errors.contains(&error),
                 "missing: {:?}\nactual: {:?}",
                 error,
                 errors

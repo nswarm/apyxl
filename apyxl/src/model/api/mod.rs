@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use std::fmt::{Display, Formatter};
 
 pub use builder::Builder;
 pub use validate::ValidationError;
@@ -120,6 +121,12 @@ where
         Self {
             fully_qualified_type_name: value.as_ref().to_vec(),
         }
+    }
+}
+
+impl Display for TypeRef<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.fully_qualified_type_name.iter().join("."))
     }
 }
 
@@ -548,8 +555,6 @@ pub mod tests {
         parser::Rust::default()
             .parse(input)
             .expect("test api definition failed to parse")
-            // ---------- todo this might mess with validation tests lol...
-            .build()
-            .expect("test api definition failed to build")
+            .consume()
     }
 }

@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Result};
+use itertools::Itertools;
 
 use crate::generator::Generator;
 use crate::input::Input;
+use crate::model::ValidationError;
 use crate::output::Output;
 use crate::parser::Parser;
 
@@ -54,7 +56,15 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
         }
 
         let api_builder = parser.parse(input)?;
-        let api = api_builder.build()?;
+        let api = match api_builder.build() {
+            Ok(api) => api,
+            Err(errors) => {
+                return Err(anyhow!(
+                    "API validation failed.\n{}",
+                    errors_to_string(&errors)
+                ))
+            }
+        };
 
         for info in self.generator_infos {
             for output in info.outputs {
@@ -64,6 +74,10 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
         }
         Ok(())
     }
+}
+
+fn errors_to_string(errors: &[ValidationError<'_>]) -> String {
+    errors.iter().map(|e| format!("{}", e)).join("\n")
 }
 
 #[cfg(test)]
@@ -204,6 +218,7 @@ mod tests {
                     data.push_str(&self.delimiter);
                 }
             }
+            println!("{}", data);
             data
         }
     }
@@ -216,10 +231,15 @@ mod tests {
                     .next_chunk()
                     .ok_or_else(|| anyhow!("no input data!"))?
                     .split(&self.delimiter)
-                    .into_iter()
-                    .map(|name| Dto {
-                        name,
-                        ..Default::default()
+                    .filter_map(|name| {
+                        if name.is_empty() {
+                            None
+                        } else {
+                            Some(Dto {
+                                name,
+                                ..Default::default()
+                            })
+                        }
                     })
                     .map(NamespaceChild::Dto)
                     .collect::<Vec<NamespaceChild>>(),
