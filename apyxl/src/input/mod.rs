@@ -21,5 +21,5 @@ pub use stdin::StdIn;
 /// parsing or generating by default.
 pub trait Input {
     /// This will be called when the parser is ready to parse the next `chunk`.
-    fn next_chunk(&mut self) -> Option<&str>;
+    fn next_chunk(&self) -> Option<&str>;
 }

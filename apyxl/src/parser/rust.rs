@@ -15,22 +15,22 @@ pub struct Rust {}
 
 impl ApyxlParser for Rust {
     fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<api::Builder<'a>> {
-        // while next_chunk
-        // let api = parse(chunk)
-        // ApiBuilder.merge(api)
-
-        let children = namespace_children(namespace())
-            .padded()
-            .then_ignore(end())
-            .parse(input.next_chunk().unwrap())
-            .into_result()
-            .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
-
         let mut builder = api::Builder::default();
-        builder.merge(Api {
-            name: UNDEFINED_NAMESPACE,
-            children,
-        });
+
+        while let Some(chunk) = input.next_chunk() {
+            let children = namespace_children(namespace())
+                .padded()
+                .then_ignore(end())
+                .parse(chunk)
+                .into_result()
+                .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
+
+            builder.merge(Api {
+                name: UNDEFINED_NAMESPACE,
+                children,
+            });
+        }
+
         Ok(builder)
     }
 }

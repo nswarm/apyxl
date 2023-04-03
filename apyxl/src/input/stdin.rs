@@ -1,18 +1,25 @@
 use std::io::{stdin, Read};
 
 use crate::input::Input;
+use anyhow::Result;
 
-#[derive(Default)]
 pub struct StdIn {
-    data: Vec<String>,
+    data: String,
+}
+
+impl StdIn {
+    /// Pulls all available data from stdin immediately on creation.
+    pub fn new() -> Result<Self> {
+        let mut s = Self {
+            data: String::new(),
+        };
+        stdin().read_to_string(&mut s.data)?;
+        Ok(s)
+    }
 }
 
 impl Input for StdIn {
-    fn next_chunk(&mut self) -> Option<&str> {
-        self.data.push(String::new());
-        match stdin().read_to_string(self.data.last_mut().unwrap()) {
-            Ok(len) if len > 0 => Some(self.data.last().unwrap()),
-            _ => None,
-        }
+    fn next_chunk(&self) -> Option<&str> {
+        Some(&self.data)
     }
 }
