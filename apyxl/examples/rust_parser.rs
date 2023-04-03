@@ -5,6 +5,9 @@ use apyxl::{generator, output, parser, Executor};
 fn main() -> Result<()> {
     let mut input = input::Buffer::new(
         r#"
+
+        struct String {}
+
         struct GetDataRequest {
             id: String,
         }
