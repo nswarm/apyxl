@@ -85,6 +85,17 @@ impl<'a> TypeRef<'a> {
         }
     }
 
+    pub fn parent(&self) -> Option<Self> {
+        let fqtn = &self.fully_qualified_type_name;
+        if fqtn.is_empty() {
+            return None;
+        }
+        let len = fqtn.len() - 1;
+        Some(Self {
+            fully_qualified_type_name: fqtn[..len].to_vec(),
+        })
+    }
+
     pub fn child(&self, name: &'a str) -> Self {
         let mut child = self.clone();
         child.fully_qualified_type_name.push(name);
@@ -501,6 +512,30 @@ pub mod tests {
             let type_ref =
                 TypeRef::new(&[complex_namespace(1).name, test_namespace(4).name, NAMES[5]]);
             assert_eq!(api.find_dto(&type_ref), Some(&test_dto(5)));
+        }
+    }
+
+    mod parent {
+        use crate::model::TypeRef;
+
+        #[test]
+        fn no_parent() {
+            let ty = TypeRef::from([]);
+            assert_eq!(ty.parent(), None);
+        }
+
+        #[test]
+        fn parent_is_root() {
+            let ty = TypeRef::from(["dto"]);
+            assert_eq!(ty.parent(), Some([].into()));
+        }
+
+        #[test]
+        fn typical() {
+            let ty = TypeRef::from(["ns0", "ns1", "dto"]);
+            let parent = ty.parent();
+            assert_eq!(parent, Some(["ns0", "ns1"].into()));
+            assert_eq!(parent.unwrap().parent(), Some(["ns0"].into()));
         }
     }
 

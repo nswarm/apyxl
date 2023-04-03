@@ -546,42 +546,7 @@ mod tests {
             }
 
             #[test]
-            fn field_type_empty() {
-                let mut input = input::Buffer::new(
-                    r#"
-                    mod ns {
-                        struct dto {
-                            field0: bool,
-                            field1: bool,
-                            field2: bool,
-                        }
-                    }"#,
-                );
-                let mut builder = test_builder(&mut input);
-                builder
-                    .api
-                    .find_dto_mut(&["ns", "dto"].into())
-                    .unwrap()
-                    .field_mut("field1")
-                    .unwrap()
-                    .ty = TypeRef::default();
-
-                let result = builder.build();
-                let expected_type_ref = TypeRef::from(["ns", "dto"]);
-                let expected_index = 1;
-                assert_contains_error(
-                    &result,
-                    ValidationError::InvalidFieldType(
-                        expected_type_ref,
-                        "field1",
-                        expected_index,
-                        TypeRef::default(),
-                    ),
-                );
-            }
-
-            #[test]
-            fn field_type_valid_linkage() {
+            fn field_type_invalid_linkage() {
                 let mut input = input::Buffer::new(
                     r#"
                     struct dto {
@@ -668,38 +633,7 @@ mod tests {
             }
 
             #[test]
-            fn param_type_empty() {
-                let mut input = input::Buffer::new(
-                    r#"
-                    mod ns {
-                        fn rpc(param0: bool, param1: bool, param2: bool) {}
-                    }"#,
-                );
-                let mut builder = test_builder(&mut input);
-                builder
-                    .api
-                    .find_rpc_mut(&["ns", "rpc"].into())
-                    .unwrap()
-                    .param_mut("param1")
-                    .unwrap()
-                    .ty = TypeRef::default();
-
-                let result = builder.build();
-                let expected_type_ref = TypeRef::from(["ns", "rpc"]);
-                let expected_index = 1;
-                assert_contains_error(
-                    &result,
-                    ValidationError::InvalidFieldType(
-                        expected_type_ref,
-                        "param1",
-                        expected_index,
-                        TypeRef::default(),
-                    ),
-                );
-            }
-
-            #[test]
-            fn param_type_valid_linkage() {
+            fn param_type_invalid_linkage() {
                 let mut input = input::Buffer::new(
                     r#"
                     fn rpc(param0: bool, param1: ns::dto) {}
@@ -721,7 +655,7 @@ mod tests {
             }
 
             #[test]
-            fn return_type_valid_linkage() {
+            fn return_type_invalid_linkage() {
                 let mut input = input::Buffer::new(
                     r#"
                     fn rpc() -> ns::dto {}

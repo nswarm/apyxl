@@ -183,15 +183,207 @@ pub fn field_types<'a, 'b>(
     parent_type_ref: TypeRef<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
-        if api.find_dto(&field.ty).is_none() {
-            Some(ValidationError::InvalidFieldType(
-                parent_type_ref.clone(),
-                field.name,
-                i,
-                field.ty.clone(),
-            ))
-        } else {
-            None
+        let mut iter_ty = parent_type_ref.clone();
+
+        loop {
+            let parent = iter_ty.parent();
+            if find_type_relative(&field.ty, api, iter_ty) {
+                return None;
+            }
+            iter_ty = match parent {
+                None => {
+                    return Some(ValidationError::InvalidFieldType(
+                        parent_type_ref.clone(),
+                        field.name,
+                        i,
+                        field.ty.clone(),
+                    ))
+                }
+                Some(ty) => ty,
+            }
         }
     })
+}
+
+fn find_type_relative(find_ty: &TypeRef, api: &Api, namespace_ty: TypeRef) -> bool {
+    let namespace = match api.find_namespace(&namespace_ty) {
+        None => return false,
+        Some(namespace) => namespace,
+    };
+    namespace.find_dto(find_ty).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    // note: many tested via actual code paths in builder.
+
+    mod field_types {
+        use crate::input;
+        use crate::model::api::validate::field_types;
+        use crate::model::tests::test_api;
+        use crate::model::TypeRef;
+        use itertools::Itertools;
+
+        #[test]
+        fn absolute_path_from_top() {
+            run_test(
+                r#"
+                struct dto0 {
+                    field: ns0::ns1::dto1,
+                    field: ns0::dto2,
+                }
+                mod ns0 {
+                    mod ns1 {
+                        struct dto1 {}
+                    }
+                    struct dto2 {}
+                }
+                "#,
+                &["dto0"].into(),
+            );
+        }
+
+        #[test]
+        fn absolute_path_within_ns() {
+            run_test(
+                r#"
+                mod ns0 {
+                    mod ns1 {
+                        struct dto0 {
+                            field: ns0::ns1::dto1,
+                            field: ns1::dto1,
+                        }
+                        struct dto1 {}
+                    }
+                }
+                "#,
+                &["ns0", "ns1", "dto0"].into(),
+            );
+        }
+
+        #[test]
+        fn relative_path_local() {
+            run_test(
+                r#"
+                mod ns0 {
+                    mod ns1 {
+                        struct dto0 {
+                            field: dto1,
+                        }
+                        struct dto1 {}
+                    }
+                }
+                "#,
+                &["ns0", "ns1", "dto0"].into(),
+            );
+        }
+
+        #[test]
+        fn relative_path_up() {
+            run_test(
+                r#"
+                mod ns0 {
+                    mod ns1 {
+                        struct dto0 {
+                            field: dto1,
+                            field: dto2,
+                        }
+                    }
+                    struct dto1 {}
+                }
+                struct dto2 {}
+                "#,
+                &["ns0", "ns1", "dto0"].into(),
+            );
+        }
+
+        #[test]
+        fn relative_path_down() {
+            run_test(
+                r#"
+                mod ns0 {
+                    struct dto0 {
+                        field: ns1::dto1,
+                        field: ns1::ns2::dto2,
+                    }
+                    mod ns1 {
+                        struct dto1 {}
+                        mod ns2 {
+                            struct dto2 {}
+                        }
+                    }
+                }
+                "#,
+                &["ns0", "dto0"].into(),
+            );
+        }
+
+        #[test]
+        fn relative_path_sibling() {
+            run_test(
+                r#"
+                mod ns0 {
+                    mod ns1 {
+                        struct dto0 {
+                            field: ns2::dto1,
+                            field: ns3::ns4::dto2,
+                        }
+                    }
+                    mod ns2 {
+                        struct dto1 {}
+                    }
+                    mod ns3 {
+                        mod ns4 {
+                            struct dto2 {}
+                        }
+                    }
+                }
+                "#,
+                &["ns0", "ns1", "dto0"].into(),
+            );
+        }
+
+        #[test]
+        fn relative_path_cousin() {
+            run_test(
+                r#"
+                mod ns0 {
+                    mod ns1 {
+                        mod ns2 {
+                            struct dto0 {
+                                field: other0::other1::dto1,
+                                field: other0::dto2,
+                            }
+                        }
+                    }
+                    mod other0 {
+                        mod other1 {
+                            struct dto1 {}
+                        }
+                        struct dto2 {}
+                    }
+                }
+                "#,
+                &["ns0", "ns1", "ns2", "dto0"].into(),
+            );
+        }
+
+        fn run_test(input_data: &str, source_dto: &TypeRef) {
+            let mut input = input::Buffer::new(input_data);
+            let api = test_api(&mut input);
+
+            assert_eq!(
+                field_types(
+                    &api,
+                    api.find_dto(source_dto)
+                        .expect("couldn't find source dto")
+                        .fields
+                        .iter(),
+                    source_dto.parent().expect("dto has no parent"),
+                )
+                .collect_vec(),
+                vec![]
+            );
+        }
+    }
 }
