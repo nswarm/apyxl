@@ -1,11 +1,11 @@
-pub use builder::Builder;
 use itertools::Itertools;
+
+pub use builder::Builder;
+pub use validate::ValidationError;
 
 mod builder;
 mod metadata;
 mod validate;
-
-pub use validate::ValidationError;
 
 /// A complete set of components that make up an API.
 pub type Api<'a> = Namespace<'a>;
@@ -548,5 +548,8 @@ pub mod tests {
         parser::Rust::default()
             .parse(input)
             .expect("test api definition failed to parse")
+            // ---------- todo this might mess with validation tests lol...
+            .build()
+            .expect("test api definition failed to build")
     }
 }

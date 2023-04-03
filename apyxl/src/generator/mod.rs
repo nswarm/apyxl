@@ -10,5 +10,5 @@ mod dbg;
 mod rust;
 
 pub trait Generator {
-    fn generate(&mut self, api: &Api, output: &mut dyn Output) -> Result<()>;
+    fn generate<O: Output>(&mut self, api: &Api, output: &mut O) -> Result<()>;
 }

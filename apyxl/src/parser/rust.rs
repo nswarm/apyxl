@@ -2,7 +2,9 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{
+    api, Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE,
+};
 use crate::Input;
 use crate::Parser as ApyxlParser;
 
@@ -12,7 +14,7 @@ type Error<'a> = extra::Err<Simple<'a, char>>;
 pub struct Rust {}
 
 impl ApyxlParser for Rust {
-    fn parse<'a>(&self, input: &'a mut dyn Input) -> Result<Api<'a>> {
+    fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<api::Builder<'a>> {
         // while next_chunk
         // let api = parse(chunk)
         // ApiBuilder.merge(api)
@@ -23,10 +25,13 @@ impl ApyxlParser for Rust {
             .parse(input.next_chunk().unwrap())
             .into_result()
             .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
-        Ok(Api {
+
+        let mut builder = api::Builder::default();
+        builder.merge(Api {
             name: UNDEFINED_NAMESPACE,
             children,
-        })
+        });
+        Ok(builder)
     }
 }
 
@@ -177,7 +182,7 @@ mod tests {
         mod namespace {}
         "#,
         );
-        let api = parser::Rust::default().parse(&mut input)?;
+        let api = parser::Rust::default().parse(&mut input)?.build()?;
         assert_eq!(api.name, UNDEFINED_NAMESPACE);
         assert!(api.dto("dto").is_some());
         assert!(api.rpc("rpc").is_some());

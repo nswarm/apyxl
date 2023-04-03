@@ -1,5 +1,7 @@
 use crate::model::{Api, Field, Namespace, TypeRef, UNDEFINED_NAMESPACE};
 use itertools::Itertools;
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
 use thiserror::Error;
 
 #[derive(Error, Debug, Eq, PartialEq)]
@@ -33,6 +35,39 @@ pub enum ValidationError<'a> {
     #[error("Duplicate RPC definition: {0:?}")]
     DuplicateRpc(TypeRef<'a>),
 }
+
+pub struct ValidationErrors<'a> {
+    errors: Vec<ValidationError<'a>>,
+}
+
+impl ValidationErrors<'_> {
+    pub fn get(&self) -> &Vec<ValidationError<'_>> {
+        &self.errors
+    }
+}
+
+impl<'a> From<Vec<ValidationError<'a>>> for ValidationErrors<'a> {
+    fn from(value: Vec<ValidationError<'a>>) -> Self {
+        Self { errors: value }
+    }
+}
+
+impl Debug for ValidationErrors<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for error in &self.errors {
+            write!(f, "  {:?}", error)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for ValidationErrors<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Error for ValidationErrors<'_> {}
 
 pub fn namespace_names<'a, 'b>(
     _: &'b Api<'a>,

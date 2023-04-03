@@ -6,33 +6,29 @@ use crate::output::Output;
 use crate::parser::Parser;
 
 #[derive(Default)]
-pub struct Executor<'a> {
-    input: Option<&'a mut dyn Input>,
-    parser: Option<&'a dyn Parser>,
-    generator_infos: Vec<GeneratorInfo<'a>>,
+pub struct Executor<'a, I: Input, P: Parser, G: Generator, O: Output> {
+    input: Option<&'a mut I>,
+    parser: Option<&'a P>,
+    generator_infos: Vec<GeneratorInfo<'a, G, O>>,
 }
 
-pub struct GeneratorInfo<'a> {
-    generator: &'a mut dyn Generator,
-    outputs: Vec<&'a mut dyn Output>,
+pub struct GeneratorInfo<'a, G: Generator, O: Output> {
+    generator: &'a mut G,
+    outputs: Vec<&'a mut O>,
 }
 
-impl<'a> Executor<'a> {
-    pub fn input(mut self, input: &'a mut dyn Input) -> Self {
+impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> {
+    pub fn input(mut self, input: &'a mut I) -> Self {
         self.input = Some(input);
         self
     }
 
-    pub fn parser(mut self, parser: &'a dyn Parser) -> Self {
+    pub fn parser(mut self, parser: &'a P) -> Self {
         self.parser = Some(parser);
         self
     }
 
-    pub fn generator(
-        mut self,
-        generator: &'a mut dyn Generator,
-        outputs: Vec<&'a mut dyn Output>,
-    ) -> Self {
+    pub fn generator(mut self, generator: &'a mut G, outputs: Vec<&'a mut O>) -> Self {
         self.generator_infos
             .push(GeneratorInfo { generator, outputs });
         self
@@ -57,12 +53,13 @@ impl<'a> Executor<'a> {
             }
         }
 
-        let model = parser.parse(input)?;
+        let api_builder = parser.parse(input)?;
+        let api = api_builder.build()?;
 
         for info in self.generator_infos {
             for output in info.outputs {
                 // todo log generating for abc to output xyz
-                info.generator.generate(&model, output)?;
+                info.generator.generate(&api, output)?;
             }
         }
         Ok(())
@@ -75,7 +72,7 @@ mod tests {
 
     use crate::generator::Generator;
     use crate::input::Input;
-    use crate::model::{Api, Dto, NamespaceChild, UNDEFINED_NAMESPACE};
+    use crate::model::{api, Api, Dto, NamespaceChild, UNDEFINED_NAMESPACE};
     use crate::output::Output;
     use crate::parser::Parser;
 
@@ -127,55 +124,59 @@ mod tests {
 
         #[test]
         fn missing_input() {
-            let result = Executor::default()
-                // no input
-                .parser(&FakeParser::default())
-                .generator(
-                    &mut FakeGenerator::default(),
-                    vec![&mut output::Buffer::default()],
-                )
-                .execute();
+            let result =
+                Executor::<input::Buffer, FakeParser, FakeGenerator, output::Buffer>::default()
+                    // no input
+                    .parser(&FakeParser::default())
+                    .generator(
+                        &mut FakeGenerator::default(),
+                        vec![&mut output::Buffer::default()],
+                    )
+                    .execute();
             assert!(result.is_err())
         }
 
         #[test]
         fn missing_parser() {
             let parser = FakeParser::default();
-            let result = Executor::default()
-                .input(&mut input::Buffer::new(parser.test_data(1)))
-                // no parser
-                .generator(
-                    &mut FakeGenerator::default(),
-                    vec![&mut output::Buffer::default()],
-                )
-                .execute();
+            let result =
+                Executor::<input::Buffer, FakeParser, FakeGenerator, output::Buffer>::default()
+                    .input(&mut input::Buffer::new(parser.test_data(1)))
+                    // no parser
+                    .generator(
+                        &mut FakeGenerator::default(),
+                        vec![&mut output::Buffer::default()],
+                    )
+                    .execute();
             assert!(result.is_err())
         }
 
         #[test]
         fn missing_generator() {
             let parser = FakeParser::default();
-            let result = Executor::default()
-                .input(&mut input::Buffer::new(parser.test_data(1)))
-                .parser(&parser)
-                // no generator
-                .execute();
+            let result =
+                Executor::<input::Buffer, FakeParser, FakeGenerator, output::Buffer>::default()
+                    .input(&mut input::Buffer::new(parser.test_data(1)))
+                    .parser(&parser)
+                    // no generator
+                    .execute();
             assert!(result.is_err())
         }
 
         #[test]
         fn missing_output() {
             let parser = FakeParser::default();
-            let result = Executor::default()
-                .input(&mut input::Buffer::new(parser.test_data(1)))
-                .parser(&FakeParser::default())
-                .generator(
-                    &mut FakeGenerator::default(),
-                    vec![
-                        /* no outputs */
-                    ],
-                )
-                .execute();
+            let result =
+                Executor::<input::Buffer, FakeParser, FakeGenerator, output::Buffer>::default()
+                    .input(&mut input::Buffer::new(parser.test_data(1)))
+                    .parser(&FakeParser::default())
+                    .generator(
+                        &mut FakeGenerator::default(),
+                        vec![
+                            /* no outputs */
+                        ],
+                    )
+                    .execute();
             assert!(result.is_err())
         }
     }
@@ -207,8 +208,9 @@ mod tests {
         }
     }
     impl Parser for FakeParser {
-        fn parse<'a>(&self, input: &'a mut dyn Input) -> Result<Api<'a>> {
-            Ok(Api {
+        fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<api::Builder<'a>> {
+            let mut builder = api::Builder::default();
+            builder.merge(Api {
                 name: UNDEFINED_NAMESPACE,
                 children: input
                     .next_chunk()
@@ -221,7 +223,8 @@ mod tests {
                     })
                     .map(NamespaceChild::Dto)
                     .collect::<Vec<NamespaceChild>>(),
-            })
+            });
+            Ok(builder)
         }
     }
 
@@ -246,7 +249,7 @@ mod tests {
     }
 
     impl Generator for FakeGenerator {
-        fn generate(&mut self, model: &Api, output: &mut dyn Output) -> Result<()> {
+        fn generate<O: Output>(&mut self, model: &Api, output: &mut O) -> Result<()> {
             let dto_names = model.dtos().map(|dto| dto.name).collect::<Vec<&str>>();
             output.write_str(&dto_names.join(&self.delimiter))?;
             Ok(())

@@ -8,15 +8,15 @@ use log::error;
 /// call at which point the indentation will be applied before the new characters. This allows more
 /// intuitive usage of [Indented::indent], in particular: the order in which you call [Output::newline]
 /// and [Indented::indent] does not matter.
-pub struct Indented<'a> {
+pub struct Indented<'a, O: Output> {
     depth: u32,
     has_pending_indent: bool,
     indent: &'a str,
-    output: &'a mut dyn Output,
+    output: &'a mut O,
 }
 
-impl<'a> Indented<'_> {
-    pub fn new(output: &'a mut dyn Output, indent: &'a str) -> Indented<'a> {
+impl<'a, O: Output> Indented<'_, O> {
+    pub fn new(output: &'a mut O, indent: &'a str) -> Indented<'a, O> {
         Indented {
             depth: 0,
             // Start true in case indent is modified before the first write, it would be expected
@@ -67,7 +67,7 @@ impl<'a> Indented<'_> {
     }
 }
 
-impl Output for Indented<'_> {
+impl<O: Output> Output for Indented<'_, O> {
     fn write_str(&mut self, data: &str) -> Result<()> {
         self.write_pending_indent()?;
         self.output.write_str(data)

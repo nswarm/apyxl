@@ -10,13 +10,13 @@ pub struct Rust {}
 const INDENT: &str = "    ";
 
 impl Generator for Rust {
-    fn generate(&mut self, api: &Api, output: &mut dyn Output) -> Result<()> {
+    fn generate<O: Output>(&mut self, api: &Api, output: &mut O) -> Result<()> {
         let mut o = Indented::new(output, INDENT);
         write_namespace_contents(api, &mut o)
     }
 }
 
-fn write_namespace(namespace: &Namespace, o: &mut Indented) -> Result<()> {
+fn write_namespace<O: Output>(namespace: &Namespace, o: &mut Indented<O>) -> Result<()> {
     o.write_str("pub mod ")?;
     o.write_str(namespace.name)?;
     o.write(' ')?;
@@ -25,7 +25,7 @@ fn write_namespace(namespace: &Namespace, o: &mut Indented) -> Result<()> {
     write_block_end(o)
 }
 
-fn write_namespace_contents(namespace: &Namespace, o: &mut Indented) -> Result<()> {
+fn write_namespace_contents<O: Output>(namespace: &Namespace, o: &mut Indented<O>) -> Result<()> {
     for rpc in namespace.rpcs() {
         write_rpc(rpc, o)?;
         o.newline()?;
@@ -44,7 +44,7 @@ fn write_namespace_contents(namespace: &Namespace, o: &mut Indented) -> Result<(
     Ok(())
 }
 
-fn write_dto(dto: &Dto, o: &mut Indented) -> Result<()> {
+fn write_dto<O: Output>(dto: &Dto, o: &mut Indented<O>) -> Result<()> {
     write_dto_start(dto, o)?;
 
     for field in &dto.fields {
@@ -55,7 +55,7 @@ fn write_dto(dto: &Dto, o: &mut Indented) -> Result<()> {
     write_block_end(o)
 }
 
-fn write_rpc(rpc: &Rpc, o: &mut Indented) -> Result<()> {
+fn write_rpc<O: Output>(rpc: &Rpc, o: &mut Indented<O>) -> Result<()> {
     o.write_str("pub fn ")?;
     o.write_str(rpc.name)?;
 
@@ -82,42 +82,42 @@ fn write_rpc(rpc: &Rpc, o: &mut Indented) -> Result<()> {
     o.newline()
 }
 
-fn write_dto_start(dto: &Dto, o: &mut Indented) -> Result<()> {
+fn write_dto_start<O: Output>(dto: &Dto, o: &mut Indented<O>) -> Result<()> {
     o.write_str("struct ")?;
     o.write_str(dto.name)?;
     o.write(' ')?;
     write_block_start(o)
 }
 
-fn write_block_start(o: &mut Indented) -> Result<()> {
+fn write_block_start<O: Output>(o: &mut Indented<O>) -> Result<()> {
     o.write_str("{")?;
     o.indent(1);
     o.newline()
 }
 
-fn write_block_end(o: &mut Indented) -> Result<()> {
+fn write_block_end<O: Output>(o: &mut Indented<O>) -> Result<()> {
     o.indent(-1);
     o.write_str("}")?;
     o.newline()
 }
 
-fn write_field(field: &Field, o: &mut dyn Output) -> Result<()> {
+fn write_field<O: Output>(field: &Field, o: &mut O) -> Result<()> {
     write_param(field, o)?;
     o.write(',')
 }
 
-fn write_param(field: &Field, o: &mut dyn Output) -> Result<()> {
+fn write_param<O: Output>(field: &Field, o: &mut O) -> Result<()> {
     o.write_str(field.name)?;
     o.write_str(": ")?;
     write_type_ref(&field.ty, o)
 }
 
-fn write_type_ref(type_ref: &TypeRef, o: &mut dyn Output) -> Result<()> {
+fn write_type_ref<O: Output>(type_ref: &TypeRef, o: &mut O) -> Result<()> {
     write_joined(&type_ref.fully_qualified_type_name, "::", o)
 }
 
 /// Writes the `components` joined with `separator` without unnecessary allocations.
-fn write_joined(components: &[&str], separator: &str, o: &mut dyn Output) -> Result<()> {
+fn write_joined<O: Output>(components: &[&str], separator: &str, o: &mut O) -> Result<()> {
     let len = components.len();
     for (i, component) in components.iter().enumerate() {
         o.write_str(component)?;
@@ -137,7 +137,7 @@ mod tests {
     use crate::model::{
         Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE,
     };
-    use crate::output::{Indented, Output};
+    use crate::output::Indented;
     use crate::{output, Generator};
 
     #[test]
@@ -295,7 +295,10 @@ pub mod ns0 {
         assert_output(|o| write_type_ref(&TypeRef::new(&["asdf"]), o), "asdf")
     }
 
-    fn assert_output<F: Fn(&mut dyn Output) -> Result<()>>(write: F, expected: &str) -> Result<()> {
+    fn assert_output<F: Fn(&mut output::Buffer) -> Result<()>>(
+        write: F,
+        expected: &str,
+    ) -> Result<()> {
         let mut output = output::Buffer::default();
         write(&mut output)?;
         assert_eq!(&output.to_string(), expected);
