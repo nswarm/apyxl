@@ -1,5 +1,6 @@
+use std::cell::RefCell;
+
 use crate::input::Input;
-use std::cell::{Cell, RefCell};
 
 /// Stores all data in a single `chunk`.
 #[derive(Default)]

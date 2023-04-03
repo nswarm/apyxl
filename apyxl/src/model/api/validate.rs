@@ -1,9 +1,9 @@
-use crate::model::{Api, Field, Namespace, TypeRef, UNDEFINED_NAMESPACE};
-use anyhow::anyhow;
+use std::fmt::Debug;
+
 use itertools::Itertools;
-use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
 use thiserror::Error;
+
+use crate::model::{Api, Field, Namespace, TypeRef, UNDEFINED_NAMESPACE};
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError<'a> {
@@ -218,11 +218,12 @@ mod tests {
     // note: many tested via actual code paths in builder.
 
     mod field_types {
+        use itertools::Itertools;
+
         use crate::input;
         use crate::model::api::validate::field_types;
         use crate::model::tests::test_api;
         use crate::model::TypeRef;
-        use itertools::Itertools;
 
         #[test]
         fn absolute_path_from_top() {
