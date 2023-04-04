@@ -1,7 +1,9 @@
 mod buffer;
+mod file_set;
 mod stdin;
 
 pub use buffer::Buffer;
+pub use file_set::FileSet;
 pub use stdin::StdIn;
 
 /// An [Input] wraps some form of data retrieval and translates it to the format
