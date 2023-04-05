@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 
 use crate::input::Input;
 
@@ -14,7 +15,7 @@ pub struct FileSet {
 
 impl FileSet {
     /// Loads all files into memory. Errors if any fail to be read.
-    pub fn new<S: AsRef<str>>(files: &[S]) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(files: &[P]) -> Result<Self> {
         let mut s = Self {
             files: vec![],
             cursor: RefCell::new(0),
@@ -23,9 +24,9 @@ impl FileSet {
             let mut content = String::new();
             let file = file.as_ref();
             File::open(file)
-                .with_context(|| format!("Failed to open input file for read: {}", file))?
+                .with_context(|| format!("Failed to open input file for read: {}", file.display()))?
                 .read_to_string(&mut content)
-                .with_context(|| format!("Failed to read file to string: {}", file))?;
+                .with_context(|| format!("Failed to read file to string: {}", file.display()))?;
             s.files.push(content);
         }
         Ok(s)

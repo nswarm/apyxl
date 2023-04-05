@@ -12,8 +12,10 @@
       <sourceFolder url="file://$MODULE_DIR$/generator/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/output/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/parser/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/apyxl/examples/fake_platform/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/model/target" />
+      <excludeFolder url="file://$MODULE_DIR$/apyxl/examples/fake_platform/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
