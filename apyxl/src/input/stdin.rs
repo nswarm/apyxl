@@ -1,25 +1,29 @@
 use std::io::{stdin, Read};
+use std::path::PathBuf;
 
-use crate::input::Input;
+use crate::input::{Chunk, Input};
 use anyhow::Result;
 
 pub struct StdIn {
-    data: String,
+    chunk: Chunk,
 }
 
 impl StdIn {
     /// Pulls all available data from stdin immediately on creation.
     pub fn new() -> Result<Self> {
         let mut s = Self {
-            data: String::new(),
+            chunk: Chunk {
+                data: String::new(),
+                relative_file_path: PathBuf::new(),
+            },
         };
-        stdin().read_to_string(&mut s.data)?;
+        stdin().read_to_string(&mut s.chunk.data)?;
         Ok(s)
     }
 }
 
 impl Input for StdIn {
-    fn next_chunk(&self) -> Option<&str> {
-        Some(&self.data)
+    fn next_chunk(&self) -> Option<&Chunk> {
+        Some(&self.chunk)
     }
 }

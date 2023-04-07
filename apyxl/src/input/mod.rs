@@ -6,24 +6,32 @@ mod stdin;
 pub use buffer::Buffer;
 pub use file_set::FileSet;
 pub use glob::Glob;
+use std::path::PathBuf;
 pub use stdin::StdIn;
 
 /// An [Input] wraps some form of data retrieval and translates it to the format
-/// required by an apyxl [crate::parser::Parser].
+/// required by an apyxl [crate::Parser].
 ///
-/// [Input] is built around the idea that data will come from a series of `chunks`.
-/// The simplest and probably most common example of a `chunk` is when reading in multiple files.
-///
-/// Each chunk must parse to a valid [crate::model::Api], i.e. this isn't a streaming data
-/// handler. Instead it assumes it's fine to hold each `chunk` in memory as we parse it. Once
-/// all `chunks` are parse in [crate::model::Api]s, they are merged together to form the final
-/// [crate::model::Api].
-///
-/// Importantly, because the result of the parser (the model) holds slice references to the input
-/// chunks, they cannot be dropped once returned by next_chunk. This is an intentional decision.
-/// While it forces input to keep everything in memory, it means there are no copies involved in
-/// parsing or generating by default.
+/// [Input] is built around the idea that data will come from a series of [Chunk]s, typically
+/// referring to individual files in a set of input files. Chunks must remain in memory for the
+/// duration of parsing. This is a choice that requires more memory, but allows the parsing process
+/// to be close nearly copy-free until the [crate::Model] is finalized.
 pub trait Input {
-    /// This will be called when the parser is ready to parse the next `chunk`.
-    fn next_chunk(&self) -> Option<&str>;
+    /// This will be called when the parser is ready to parse the next [Chunk].
+    fn next_chunk(&self) -> Option<&Chunk>;
+}
+
+/// A section of data to be parser by a [crate::Parser]. The simplest and probably most common
+/// example of a [Chunk] is a file.
+///
+/// Each [Chunk] must parse to a valid [crate::model::Api].
+#[derive(Default)]
+pub struct Chunk {
+    /// The data that should be parsed by the [crate::Parser].
+    pub data: String,
+
+    /// Relative path including file name from a common root path shared by the other [Chunk]s from
+    /// the [Input]. Typically used by a [crate::Generator] to determine where to put the final file
+    /// for this data, and how to refer to it from other files for includes/imports.
+    pub relative_file_path: PathBuf,
 }

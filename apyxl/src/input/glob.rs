@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use walkdir::WalkDir;
 
 use crate::input;
-use crate::input::Input;
+use crate::input::{Chunk, Input};
 
 /// Input from one or more files in a file system.
 #[derive(Default)]
@@ -14,15 +14,14 @@ pub struct Glob {
 
 impl Glob {
     pub fn new<P: AsRef<Path>>(root_path: P, glob: &str) -> Result<Self> {
-        let mut s = Self {
-            file_set: input::FileSet::new(&walk_glob(root_path.as_ref(), glob)?)?,
-        };
-        Ok(s)
+        Ok(Self {
+            file_set: input::FileSet::new(&root_path, &walk_glob(root_path.as_ref(), glob)?)?,
+        })
     }
 }
 
 impl Input for Glob {
-    fn next_chunk(&self) -> Option<&str> {
+    fn next_chunk(&self) -> Option<&Chunk> {
         self.file_set.next_chunk()
     }
 }

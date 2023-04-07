@@ -230,6 +230,7 @@ mod tests {
                 children: input
                     .next_chunk()
                     .ok_or_else(|| anyhow!("no input data!"))?
+                    .data
                     .split(&self.delimiter)
                     .filter_map(|name| {
                         if name.is_empty() {

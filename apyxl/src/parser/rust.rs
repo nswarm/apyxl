@@ -18,10 +18,11 @@ impl ApyxlParser for Rust {
         let mut builder = api::Builder::default();
 
         while let Some(chunk) = input.next_chunk() {
+            // todo handle chunk path/name
             let children = namespace_children(namespace())
                 .padded()
                 .then_ignore(end())
-                .parse(chunk)
+                .parse(&chunk.data)
                 .into_result()
                 .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
 
@@ -162,15 +163,6 @@ mod tests {
         assert_eq!(output.name, "name");
         assert_eq!(output.ty.name().unwrap(), "Type");
         Ok(())
-    }
-
-    #[test]
-    fn full_parse() -> Result<()> {
-        // let input = input::Buffer::new(r#""#);
-        // let namespace = Rust::default().parse(&input)?;
-        // assert_eq!(namespace.name, UNDEFINED_NAMESPACE);
-        // assert!(namespace.children.is_empty());
-        todo!()
     }
 
     #[test]
