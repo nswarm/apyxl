@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::generator::Generator;
-use crate::model::Api;
+use crate::model::Model;
 use crate::output::Output;
 
 /// A generator that writes out the model in a the rust [std::fmt::Debug] format.
@@ -10,7 +10,7 @@ use crate::output::Output;
 pub struct Dbg {}
 
 impl Generator for Dbg {
-    fn generate<O: Output>(&mut self, api: &Api, output: &mut O) -> Result<()> {
-        output.write_str(&format!("{:#?}\n", api))
+    fn generate<O: Output>(&mut self, model: &Model, output: &mut O) -> Result<()> {
+        output.write_str(&format!("{:#?}\n", model))
     }
 }

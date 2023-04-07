@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::generator::Generator;
-use crate::model::{Api, Dto, Field, Namespace, Rpc, TypeRef};
+use crate::model::{Dto, Field, Model, Namespace, Rpc, TypeRef};
 use crate::output::{Indented, Output};
 
 #[derive(Default)]
@@ -10,9 +10,9 @@ pub struct Rust {}
 const INDENT: &str = "    ";
 
 impl Generator for Rust {
-    fn generate<O: Output>(&mut self, api: &Api, output: &mut O) -> Result<()> {
+    fn generate<O: Output>(&mut self, model: &Model, output: &mut O) -> Result<()> {
         let mut o = Indented::new(output, INDENT);
-        write_namespace_contents(api, &mut o)
+        write_namespace_contents(&model.api, &mut o)
     }
 }
 
@@ -135,7 +135,7 @@ mod tests {
     use crate::generator::rust::{write_dto, write_field, write_rpc, write_type_ref, INDENT};
     use crate::generator::Rust;
     use crate::model::{
-        Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE,
+        Api, Dto, Field, Model, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE,
     };
     use crate::output::Indented;
     use crate::{output, Generator};
@@ -195,7 +195,18 @@ pub mod ns0 {
 }
 
 "#;
-        assert_output(|o| Rust::default().generate(&api, o), expected)
+        assert_output(
+            move |o| {
+                Rust::default().generate(
+                    &Model {
+                        api,
+                        ..Default::default()
+                    },
+                    o,
+                )
+            },
+            expected,
+        )
     }
 
     #[test]
@@ -295,7 +306,7 @@ pub mod ns0 {
         assert_output(|o| write_type_ref(&TypeRef::new(&["asdf"]), o), "asdf")
     }
 
-    fn assert_output<F: Fn(&mut output::Buffer) -> Result<()>>(
+    fn assert_output<F: FnOnce(&mut output::Buffer) -> Result<()>>(
         write: F,
         expected: &str,
     ) -> Result<()> {

@@ -2,11 +2,9 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{
-    api, Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE,
-};
-use crate::Input;
+use crate::model::{Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE};
 use crate::Parser as ApyxlParser;
+use crate::{model, Input};
 
 type Error<'a> = extra::Err<Simple<'a, char>>;
 
@@ -14,8 +12,8 @@ type Error<'a> = extra::Err<Simple<'a, char>>;
 pub struct Rust {}
 
 impl ApyxlParser for Rust {
-    fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<api::Builder<'a>> {
-        let mut builder = api::Builder::default();
+    fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>> {
+        let mut builder = model::Builder::default();
 
         while let Some(chunk) = input.next_chunk() {
             // todo handle chunk path/name
@@ -174,11 +172,11 @@ mod tests {
         mod namespace {}
         "#,
         );
-        let api = parser::Rust::default().parse(&mut input)?.build().unwrap();
-        assert_eq!(api.name, UNDEFINED_NAMESPACE);
-        assert!(api.dto("dto").is_some());
-        assert!(api.rpc("rpc").is_some());
-        assert!(api.namespace("namespace").is_some());
+        let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
+        assert_eq!(model.api.name, UNDEFINED_NAMESPACE);
+        assert!(model.api.dto("dto").is_some());
+        assert!(model.api.rpc("rpc").is_some());
+        assert!(model.api.namespace("namespace").is_some());
         Ok(())
     }
 

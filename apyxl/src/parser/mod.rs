@@ -1,12 +1,12 @@
 use anyhow::Result;
 
+pub use rust::Rust;
+
 use crate::input::Input;
+use crate::model;
 
 mod rust;
 
-use crate::model::api;
-pub use rust::Rust;
-
 pub trait Parser {
-    fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<api::Builder<'a>>;
+    fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>>;
 }

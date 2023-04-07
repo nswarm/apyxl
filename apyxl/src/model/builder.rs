@@ -2,11 +2,15 @@ use anyhow::Result;
 use itertools::Itertools;
 
 use crate::model::api::validate;
-use crate::model::{Api, Namespace, TypeRef, ValidationError, UNDEFINED_NAMESPACE};
+use crate::model::{
+    Api, Metadata, Model, Namespace, TypeRef, ValidationError, UNDEFINED_NAMESPACE,
+};
 
-/// Helper struct for parsing [Namespace]s spread across multiple chunks.
-/// After all desired [Namespace]s are merged, the [Builder] can be finalized via [Builder::build] which will
-/// perform validation across the entire [Api].
+/// Helper struct made for parsing [Api]s spread across multiple [Chunk]s. Tracks [Metadata]
+/// associated with entities in the [Api]s.
+///
+/// After all desired [Api]s are merged, the [Builder] can be finalized via [Builder::build] which will
+/// perform validation across the entire [Api] and return the final [Model].
 pub struct Builder<'a> {
     api: Api<'a>,
     namespace_stack: Vec<&'a str>,
@@ -25,7 +29,7 @@ impl Default for Builder<'_> {
 }
 
 impl<'a> Builder<'a> {
-    /// Merge `namespace` with into the builder's [Api].
+    /// Merge `namespace` into the builder's [Api].
     ///
     /// If the `name` of the `namespace` is [UNDEFINED_NAMESPACE] it will be merged with the
     /// current builder namespace. Otherwise it will be added as a new namespace underneath the
@@ -55,13 +59,13 @@ impl<'a> Builder<'a> {
         self.namespace_stack.pop();
     }
 
-    /// Finalize and validate the API.
+    /// Finalize and validate the model.
     /// - Dedupes namespaces recursively.
     /// - Errors for [Dto]s or [Rpc]s with empty names.
     /// - Errors for [Dto]s with identical paths (aka duplicate definitions).
     /// - Errors for [Rpc]s with identical paths (aka duplicate definitions).
-    /// - Errors for TypeRefs with missing types.
-    pub fn build(mut self) -> Result<Api<'a>, Vec<ValidationError<'a>>> {
+    /// - Errors for [TypeRef]s with missing types.
+    pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespace_children(&mut self.api);
 
         let errors = [
@@ -81,7 +85,10 @@ impl<'a> Builder<'a> {
         .collect_vec();
 
         if errors.is_empty() {
-            Ok(self.api)
+            Ok(Model {
+                api: self.api,
+                metadata: Metadata {},
+            })
         } else {
             Err(errors)
         }
@@ -183,7 +190,7 @@ mod tests {
         use crate::model::{Dto, Namespace, NamespaceChild};
 
         mod no_current_namespace {
-            use crate::model::api::builder::tests::merge::{
+            use crate::model::builder::tests::merge::{
                 test_child_dto, test_child_namespace, test_named_namespace, test_namespace,
                 NS_NAMES,
             };
@@ -239,7 +246,7 @@ mod tests {
         }
 
         mod has_current_namespace {
-            use crate::model::api::builder::tests::merge::{
+            use crate::model::builder::tests::merge::{
                 test_child_dto, test_child_namespace, test_named_namespace, test_namespace,
             };
             use crate::model::{Builder, Namespace, NamespaceChild, UNDEFINED_NAMESPACE};
@@ -349,13 +356,13 @@ mod tests {
 
     mod build {
         use crate::input;
-        use crate::model::api::builder::ValidationError;
+        use crate::model::builder::ValidationError;
         use crate::model::tests::test_api;
-        use crate::model::{Api, Builder};
+        use crate::model::{Builder, Model};
 
         mod dedupe_namespaces {
             use crate::input;
-            use crate::model::api::builder::tests::build::build_from_input;
+            use crate::model::builder::tests::build::build_from_input;
 
             #[test]
             fn within_root() {
@@ -369,12 +376,12 @@ mod tests {
                     mod ns1 {}
                 "#,
                 );
-                let api = build_from_input(&mut input).unwrap();
+                let model = build_from_input(&mut input).unwrap();
 
-                assert_eq!(api.namespaces().count(), 3);
-                assert!(api.namespace("ns1").is_some());
-                assert!(api.namespace("ns2").is_some());
-                assert!(api.namespace("ns3").is_some());
+                assert_eq!(model.api.namespaces().count(), 3);
+                assert!(model.api.namespace("ns1").is_some());
+                assert!(model.api.namespace("ns2").is_some());
+                assert!(model.api.namespace("ns3").is_some());
             }
 
             #[test]
@@ -391,12 +398,12 @@ mod tests {
                     }
                 "#,
                 );
-                let api = build_from_input(&mut input).unwrap();
+                let model = build_from_input(&mut input).unwrap();
 
-                assert_eq!(api.namespaces().count(), 1);
-                assert!(api.namespace("ns").is_some());
+                assert_eq!(model.api.namespaces().count(), 1);
+                assert!(model.api.namespace("ns").is_some());
 
-                let nested = api.namespace("ns").unwrap();
+                let nested = model.api.namespace("ns").unwrap();
                 assert_eq!(nested.namespaces().count(), 3);
                 assert!(nested.namespace("ns1").is_some());
                 assert!(nested.namespace("ns2").is_some());
@@ -419,10 +426,10 @@ mod tests {
                     }
                 "#,
                 );
-                let api = build_from_input(&mut input).unwrap();
+                let model = build_from_input(&mut input).unwrap();
 
-                assert_eq!(api.namespaces().count(), 1);
-                let nested = api.namespace("ns").unwrap();
+                assert_eq!(model.api.namespaces().count(), 1);
+                let nested = model.api.namespace("ns").unwrap();
                 assert_eq!(nested.namespaces().count(), 3);
                 assert!(nested.namespace("ns1").is_some());
                 assert!(nested.namespace("ns2").is_some());
@@ -432,10 +439,8 @@ mod tests {
 
         mod validate_duplicates {
             use crate::input;
-            use crate::model::api::builder::tests::build::{
-                assert_contains_error, build_from_input,
-            };
-            use crate::model::api::builder::ValidationError;
+            use crate::model::builder::tests::build::{assert_contains_error, build_from_input};
+            use crate::model::builder::ValidationError;
 
             #[test]
             fn dtos() {
@@ -482,10 +487,10 @@ mod tests {
 
         mod validate_dto {
             use crate::input;
-            use crate::model::api::builder::tests::build::{
+            use crate::model::builder::tests::build::{
                 assert_contains_error, build_from_input, test_builder,
             };
-            use crate::model::api::builder::ValidationError;
+            use crate::model::builder::ValidationError;
             use crate::model::TypeRef;
 
             #[test]
@@ -573,10 +578,10 @@ mod tests {
 
         mod validate_rpc {
             use crate::input;
-            use crate::model::api::builder::tests::build::{
+            use crate::model::builder::tests::build::{
                 assert_contains_error, build_from_input, test_builder,
             };
-            use crate::model::api::builder::ValidationError;
+            use crate::model::builder::ValidationError;
             use crate::model::TypeRef;
 
             #[test]
@@ -673,10 +678,8 @@ mod tests {
 
         mod validate_namespace {
             use crate::input;
-            use crate::model::api::builder::tests::build::{
-                assert_contains_error, build_from_input,
-            };
-            use crate::model::api::builder::ValidationError;
+            use crate::model::builder::tests::build::{assert_contains_error, build_from_input};
+            use crate::model::builder::ValidationError;
             use crate::model::{Builder, UNDEFINED_NAMESPACE};
 
             #[test]
@@ -711,7 +714,7 @@ mod tests {
             }
         }
 
-        fn build_from_input(input: &mut input::Buffer) -> Result<Api, Vec<ValidationError<'_>>> {
+        fn build_from_input(input: &mut input::Buffer) -> Result<Model, Vec<ValidationError<'_>>> {
             test_builder(input).build()
         }
 
@@ -723,7 +726,7 @@ mod tests {
         }
 
         fn assert_contains_error(
-            build_result: &Result<Api, Vec<ValidationError<'_>>>,
+            build_result: &Result<Model, Vec<ValidationError<'_>>>,
             error: ValidationError,
         ) {
             let errors = build_result

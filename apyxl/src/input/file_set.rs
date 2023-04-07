@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::input::{Chunk, Input};
 
@@ -38,23 +38,6 @@ impl FileSet {
         }
         Ok(s)
     }
-}
-
-fn file_name(path: &Path) -> Result<String> {
-    Ok(path
-        .file_name()
-        .ok_or_else(|| {
-            anyhow!(
-                "Unable to get file name from relative_path: {}",
-                path.display()
-            )
-        })?
-        .to_string_lossy()
-        .to_string())
-}
-
-fn path_str(path: &Path) -> Result<String> {
-    Ok(path.to_str().ok_or_else(|| anyhow!(""))?.to_string())
 }
 
 impl Input for FileSet {

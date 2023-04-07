@@ -1,12 +1,9 @@
 use itertools::Itertools;
 use std::fmt::{Display, Formatter};
 
-pub use builder::Builder;
 pub use validate::ValidationError;
 
-mod builder;
-mod metadata;
-mod validate;
+pub mod validate;
 
 /// A complete set of components that make up an API.
 pub type Api<'a> = Namespace<'a>;

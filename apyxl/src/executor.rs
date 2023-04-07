@@ -56,8 +56,8 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
         }
 
         let api_builder = parser.parse(input)?;
-        let api = match api_builder.build() {
-            Ok(api) => api,
+        let model = match api_builder.build() {
+            Ok(model) => model,
             Err(errors) => {
                 return Err(anyhow!(
                     "API validation failed.\n{}",
@@ -69,7 +69,7 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
         for info in self.generator_infos {
             for output in info.outputs {
                 // todo log generating for abc to output xyz
-                info.generator.generate(&api, output)?;
+                info.generator.generate(&model, output)?;
             }
         }
         Ok(())
@@ -86,7 +86,8 @@ mod tests {
 
     use crate::generator::Generator;
     use crate::input::Input;
-    use crate::model::{api, Api, Dto, NamespaceChild, UNDEFINED_NAMESPACE};
+    use crate::model;
+    use crate::model::{Api, Dto, Model, NamespaceChild, UNDEFINED_NAMESPACE};
     use crate::output::Output;
     use crate::parser::Parser;
 
@@ -223,8 +224,8 @@ mod tests {
         }
     }
     impl Parser for FakeParser {
-        fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<api::Builder<'a>> {
-            let mut builder = api::Builder::default();
+        fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>> {
+            let mut builder = model::Builder::default();
             builder.merge(Api {
                 name: UNDEFINED_NAMESPACE,
                 children: input
@@ -270,8 +271,8 @@ mod tests {
     }
 
     impl Generator for FakeGenerator {
-        fn generate<O: Output>(&mut self, model: &Api, output: &mut O) -> Result<()> {
-            let dto_names = model.dtos().map(|dto| dto.name).collect::<Vec<&str>>();
+        fn generate<O: Output>(&mut self, model: &Model, output: &mut O) -> Result<()> {
+            let dto_names = model.api.dtos().map(|dto| dto.name).collect::<Vec<&str>>();
             output.write_str(&dto_names.join(&self.delimiter))?;
             Ok(())
         }
