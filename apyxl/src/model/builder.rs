@@ -1,9 +1,10 @@
 use anyhow::Result;
 use itertools::Itertools;
 
+use crate::input;
 use crate::model::api::validate;
 use crate::model::{
-    Api, Metadata, Model, Namespace, TypeRef, ValidationError, UNDEFINED_NAMESPACE,
+    metadata, Api, Metadata, Model, Namespace, TypeRef, ValidationError, UNDEFINED_NAMESPACE,
 };
 
 /// Helper struct made for parsing [Api]s spread across multiple [Chunk]s. Tracks [Metadata]
@@ -14,6 +15,7 @@ use crate::model::{
 pub struct Builder<'a> {
     api: Api<'a>,
     namespace_stack: Vec<&'a str>,
+    metadata: Metadata<'a>,
 }
 
 impl Default for Builder<'_> {
@@ -24,6 +26,7 @@ impl Default for Builder<'_> {
                 ..Default::default()
             },
             namespace_stack: Default::default(),
+            metadata: Default::default(),
         }
     }
 }
@@ -40,6 +43,21 @@ impl<'a> Builder<'a> {
         } else {
             self.current_namespace_mut().add_namespace(namespace)
         }
+    }
+
+    /// A version of [Builder::merge] that does the following in addition to the [Api] merge:
+    /// - Adds the appropriate [metadata::Chunk] to the builder's [Metadata].
+    /// - Applies the [metadata::Chunk::ATTRIBUTE] to all entities in the namespace recursively.
+    pub fn merge_from_chunk(&mut self, namespace: Namespace<'a>, chunk: &input::Chunk) {
+        let chunk_metadata = metadata::Chunk {
+            root_namespace: self.current_namespace_type_ref(),
+            relative_file_path: chunk.relative_file_path.clone(),
+        };
+
+        // todo apply Chunk::ATTRIBUTE to all entities...
+
+        self.metadata_mut().chunks.push(chunk_metadata);
+        self.merge(namespace);
     }
 
     /// Add `namespace` to the current namespace stack of the Builder. Any [Api]s merged will be
@@ -87,11 +105,23 @@ impl<'a> Builder<'a> {
         if errors.is_empty() {
             Ok(Model {
                 api: self.api,
-                metadata: Metadata {},
+                metadata: Metadata::default(),
             })
         } else {
             Err(errors)
         }
+    }
+
+    pub fn metadata(&self) -> &Metadata<'_> {
+        &self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut Metadata<'a> {
+        &mut self.metadata
+    }
+
+    pub fn current_namespace_type_ref(&self) -> TypeRef<'a> {
+        self.namespace_stack.clone().into()
     }
 
     pub fn current_namespace(&self) -> &Namespace<'a> {
@@ -105,7 +135,7 @@ impl<'a> Builder<'a> {
     }
 
     #[cfg(test)]
-    pub fn consume(self) -> Api<'a> {
+    pub fn into_api(self) -> Api<'a> {
         self.api
     }
 }
@@ -242,6 +272,37 @@ mod tests {
                         })
                     ]
                 );
+            }
+        }
+
+        mod merge_from_chunk {
+            use std::path::PathBuf;
+
+            use crate::input;
+            use crate::model::builder::tests::merge::test_namespace;
+            use crate::model::{Builder, TypeRef};
+
+            #[test]
+            fn adds_chunk_metadata_with_current_namespace() {
+                let mut builder = Builder::default();
+                let file_path = PathBuf::from("some/path");
+                builder.enter_namespace("blah");
+                builder.merge_from_chunk(
+                    test_namespace(1),
+                    &input::Chunk {
+                        data: "unused".to_string(),
+                        relative_file_path: file_path.clone(),
+                    },
+                );
+                assert_eq!(builder.metadata.chunks.len(), 1);
+                let chunk_metadata = builder.metadata.chunks.get(0).unwrap();
+                assert_eq!(chunk_metadata.root_namespace, TypeRef::from(["blah"]));
+                assert_eq!(chunk_metadata.relative_file_path, file_path);
+            }
+
+            #[test]
+            fn applies_chunk_attr_to_all_entities_recursively() {
+                todo!("nyi")
             }
         }
 

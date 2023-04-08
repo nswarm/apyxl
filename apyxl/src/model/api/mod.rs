@@ -5,7 +5,7 @@ pub use validate::ValidationError;
 
 pub mod validate;
 
-/// A complete set of components that make up an API.
+/// A complete set of entities that make up an API.
 pub type Api<'a> = Namespace<'a>;
 
 /// The root namespace of the entire API.
@@ -18,7 +18,7 @@ pub enum NamespaceChild<'a> {
     Namespace(Namespace<'a>),
 }
 
-/// A named, nestable wrapper for a set of API components.
+/// A named, nestable wrapper for a set of API entities.
 #[derive(Default, Debug, Eq, PartialEq)]
 pub struct Namespace<'a> {
     pub name: &'a str,
@@ -50,7 +50,7 @@ pub struct Rpc<'a> {
 /// A type such as a language primitive or a reference to a type within the API. Typically when used
 /// within model types, it refers to a [Dto], but can be used as a reference to other types
 /// like [Rpc]s or [Namespace]s as well.
-#[derive(Default, Debug, Eq, PartialEq, Clone)]
+#[derive(Default, Debug, Eq, PartialEq, Clone, Hash)]
 pub struct TypeRef<'a> {
     pub fully_qualified_type_name: Vec<&'a str>,
 }
@@ -587,6 +587,6 @@ pub mod tests {
         parser::Rust::default()
             .parse(input)
             .expect("test api definition failed to parse")
-            .consume()
+            .into_api()
     }
 }

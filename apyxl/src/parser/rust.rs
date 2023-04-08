@@ -2,7 +2,9 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{
+    metadata, Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE,
+};
 use crate::Parser as ApyxlParser;
 use crate::{model, Input};
 
@@ -16,7 +18,6 @@ impl ApyxlParser for Rust {
         let mut builder = model::Builder::default();
 
         while let Some(chunk) = input.next_chunk() {
-            // todo handle chunk path/name
             let children = namespace_children(namespace())
                 .padded()
                 .then_ignore(end())
@@ -24,10 +25,13 @@ impl ApyxlParser for Rust {
                 .into_result()
                 .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
 
-            builder.merge(Api {
-                name: UNDEFINED_NAMESPACE,
-                children,
-            });
+            builder.merge_from_chunk(
+                Api {
+                    name: UNDEFINED_NAMESPACE,
+                    children,
+                },
+                chunk,
+            );
         }
 
         Ok(builder)

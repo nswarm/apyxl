@@ -4,11 +4,11 @@ pub use metadata::Metadata;
 
 pub mod api;
 mod builder;
-mod metadata;
+pub mod metadata;
 
 /// In-memory representation of a fully parsed and validated API.
 #[derive(Debug, Default)]
 pub struct Model<'a> {
     pub api: Api<'a>,
-    pub metadata: Metadata,
+    pub metadata: Metadata<'a>,
 }
