@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 pub use validate::ValidationError;
@@ -18,11 +19,15 @@ pub enum NamespaceChild<'a> {
     Namespace(Namespace<'a>),
 }
 
+/// Arbitrary key=value pairs used to attach additional metadata to entities.
+pub type Attributes<'a> = HashMap<&'a str, String>;
+
 /// A named, nestable wrapper for a set of API entities.
 #[derive(Default, Debug, Eq, PartialEq)]
 pub struct Namespace<'a> {
     pub name: &'a str,
     pub children: Vec<NamespaceChild<'a>>,
+    pub attributes: Attributes<'a>,
 }
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
@@ -30,6 +35,7 @@ pub struct Namespace<'a> {
 pub struct Dto<'a> {
     pub name: &'a str,
     pub fields: Vec<Field<'a>>,
+    pub attributes: Attributes<'a>,
 }
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
@@ -37,6 +43,7 @@ pub struct Dto<'a> {
 pub struct Field<'a> {
     pub name: &'a str,
     pub ty: TypeRef<'a>,
+    pub attributes: Attributes<'a>,
 }
 
 /// A single Remote Procedure Call (RPC) within an [Api].
@@ -45,6 +52,7 @@ pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
     pub return_type: Option<TypeRef<'a>>,
+    pub attributes: Attributes<'a>,
 }
 
 /// A type such as a language primitive or a reference to a type within the API. Typically when used
@@ -53,6 +61,24 @@ pub struct Rpc<'a> {
 #[derive(Default, Debug, Eq, PartialEq, Clone, Hash)]
 pub struct TypeRef<'a> {
     pub fully_qualified_type_name: Vec<&'a str>,
+}
+
+impl<'a> NamespaceChild<'a> {
+    pub fn attributes(&self) -> &Attributes<'a> {
+        match self {
+            NamespaceChild::Dto(dto) => &dto.attributes,
+            NamespaceChild::Rpc(rpc) => &rpc.attributes,
+            NamespaceChild::Namespace(namespace) => &namespace.attributes,
+        }
+    }
+
+    pub fn attributes_mut(&mut self) -> &mut Attributes<'a> {
+        match self {
+            NamespaceChild::Dto(dto) => &mut dto.attributes,
+            NamespaceChild::Rpc(rpc) => &mut rpc.attributes,
+            NamespaceChild::Namespace(namespace) => &mut namespace.attributes,
+        }
+    }
 }
 
 impl<'a> Dto<'a> {
@@ -137,22 +163,6 @@ impl Display for TypeRef<'_> {
         write!(f, "{}", self.fully_qualified_type_name.iter().join("."))
     }
 }
-
-// impl<'a> From<&[&'a str]> for TypeRef<'a> {
-//     fn from(value: &[&'a str]) -> Self {
-//         Self {
-//             fully_qualified_type_name: value.to_vec(),
-//         }
-//     }
-// }
-
-// impl<'a> From<Vec<&'a str>> for TypeRef<'a> {
-//     fn from(value: Vec<&'a str>) -> Self {
-//         Self {
-//             fully_qualified_type_name: value,
-//         }
-//     }
-// }
 
 impl<'a> Namespace<'a> {
     /// Perform a simple merge of [Namespace] `other` into this [Namespace] by adding all of
@@ -264,6 +274,27 @@ impl<'a> Namespace<'a> {
         })
     }
 
+    /// Iterate mutably over all [Namespace]s within this [Namespace].
+    pub fn namespaces_mut(&mut self) -> impl Iterator<Item = &mut Namespace<'a>> {
+        self.children.iter_mut().filter_map(|child| {
+            if let NamespaceChild::Namespace(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Iterate over all [Attributes] of children in this [Namespace].
+    pub fn child_attributes(&self) -> impl Iterator<Item = &Attributes<'a>> {
+        self.children.iter().map(|child| child.attributes())
+    }
+
+    /// Iterate mutably over all [Attributes] of children in this [Namespace].
+    pub fn child_attributes_mut(&mut self) -> impl Iterator<Item = &mut Attributes<'a>> {
+        self.children.iter_mut().map(|child| child.attributes_mut())
+    }
+
     /// Removes all [Namespaces] from this [Namespace] and returns them in a [Vec].
     pub fn take_namespaces(&mut self) -> Vec<Namespace<'a>> {
         self.children
@@ -349,6 +380,15 @@ impl<'a> Namespace<'a> {
             }
         }
         Some(namespace_it)
+    }
+
+    pub fn apply_attr_to_children_recursively(&mut self, key: &'a str, value: &str) {
+        for attr in self.child_attributes_mut() {
+            attr.insert(key, value.to_string());
+        }
+        for namespace in self.namespaces_mut() {
+            namespace.apply_attr_to_children_recursively(key, value);
+        }
     }
 }
 
@@ -534,6 +574,63 @@ pub mod tests {
             assert_eq!(parent, Some(["ns0", "ns1"].into()));
             assert_eq!(parent.unwrap().parent(), Some(["ns0"].into()));
         }
+    }
+
+    #[test]
+    fn apply_attr_to_children() {
+        let mut input = input::Buffer::new(
+            r#"
+                    mod ns0 {
+                        mod ns1 {
+                            struct dto {}
+                            fn rpc() {}
+                        }
+                        struct dto {}
+                        fn rpc() {}
+                    }
+                "#,
+        );
+        let mut api = test_api(&mut input);
+        let attr_key = "key";
+        let attr_value = "value".to_string();
+        api.find_namespace_mut(&["ns0"].into())
+            .unwrap()
+            .apply_attr_to_children_recursively(attr_key, &attr_value);
+        assert_eq!(
+            api.find_namespace(&["ns0", "ns1"].into())
+                .unwrap()
+                .attributes
+                .get(attr_key),
+            Some(&attr_value)
+        );
+        assert_eq!(
+            api.find_dto(&["ns0", "dto"].into())
+                .unwrap()
+                .attributes
+                .get(attr_key),
+            Some(&attr_value)
+        );
+        assert_eq!(
+            api.find_rpc(&["ns0", "rpc"].into())
+                .unwrap()
+                .attributes
+                .get(attr_key),
+            Some(&attr_value)
+        );
+        assert_eq!(
+            api.find_dto(&["ns0", "ns1", "dto"].into())
+                .unwrap()
+                .attributes
+                .get(attr_key),
+            Some(&attr_value)
+        );
+        assert_eq!(
+            api.find_rpc(&["ns0", "ns1", "rpc"].into())
+                .unwrap()
+                .attributes
+                .get(attr_key),
+            Some(&attr_value)
+        );
     }
 
     const NAMES: &[&str] = &["name0", "name1", "name2", "name3", "name4", "name5"];

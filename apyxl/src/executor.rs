@@ -245,6 +245,7 @@ mod tests {
                     })
                     .map(NamespaceChild::Dto)
                     .collect::<Vec<NamespaceChild>>(),
+                attributes: Default::default(),
             });
             Ok(builder)
         }

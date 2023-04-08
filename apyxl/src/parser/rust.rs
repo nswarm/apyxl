@@ -2,9 +2,7 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{
-    metadata, Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE,
-};
+use crate::model::{Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE};
 use crate::Parser as ApyxlParser;
 use crate::{model, Input};
 
@@ -29,6 +27,7 @@ impl ApyxlParser for Rust {
                 Api {
                     name: UNDEFINED_NAMESPACE,
                     children,
+                    attributes: Default::default(),
                 },
                 chunk,
             );
@@ -53,7 +52,11 @@ fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
         .then_ignore(just(':').padded())
         .then(type_ref())
         .padded()
-        .map(|(name, ty)| Field { name, ty })
+        .map(|(name, ty)| Field {
+            name,
+            ty,
+            attributes: Default::default(),
+        })
 }
 
 fn dto<'a>() -> impl Parser<'a, &'a str, Dto<'a>, Error<'a>> {
@@ -63,7 +66,11 @@ fn dto<'a>() -> impl Parser<'a, &'a str, Dto<'a>, Error<'a>> {
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded());
     let name = text::keyword("struct").padded().ignore_then(text::ident());
-    name.then(fields).map(|(name, fields)| Dto { name, fields })
+    name.then(fields).map(|(name, fields)| Dto {
+        name,
+        fields,
+        attributes: Default::default(),
+    })
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -114,6 +121,7 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
             name,
             params,
             return_type,
+            attributes: Default::default(),
         })
 }
 
@@ -142,7 +150,11 @@ fn namespace<'a>() -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
             .padded()
             .ignore_then(text::ident())
             .then(body)
-            .map(|(name, children)| Namespace { name, children })
+            .map(|(name, children)| Namespace {
+                name,
+                children,
+                attributes: Default::default(),
+            })
     })
 }
 

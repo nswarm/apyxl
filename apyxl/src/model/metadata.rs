@@ -20,7 +20,7 @@ pub struct Chunk<'a> {
 impl Chunk<'_> {
     /// Attribute key that API entities will have to associated them with a [Chunk].
     /// The attribute value should be the string from [Chunk::relative_file_path_str]
-    pub const ATTRIBUTE: &'static str = "";
+    pub const ATTRIBUTE: &'static str = "chunk_relative_file_path";
 
     pub fn relative_file_path_str(&self) -> Cow<str> {
         self.relative_file_path.to_string_lossy()

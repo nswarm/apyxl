@@ -48,15 +48,24 @@ impl<'a> Builder<'a> {
     /// A version of [Builder::merge] that does the following in addition to the [Api] merge:
     /// - Adds the appropriate [metadata::Chunk] to the builder's [Metadata].
     /// - Applies the [metadata::Chunk::ATTRIBUTE] to all entities in the namespace recursively.
-    pub fn merge_from_chunk(&mut self, namespace: Namespace<'a>, chunk: &input::Chunk) {
+    pub fn merge_from_chunk(&mut self, mut namespace: Namespace<'a>, chunk: &input::Chunk) {
         let chunk_metadata = metadata::Chunk {
             root_namespace: self.current_namespace_type_ref(),
             relative_file_path: chunk.relative_file_path.clone(),
         };
 
-        // todo apply Chunk::ATTRIBUTE to all entities...
+        let attr_key = metadata::Chunk::ATTRIBUTE;
+        let attr_value = chunk_metadata.relative_file_path_str();
 
-        self.metadata_mut().chunks.push(chunk_metadata);
+        if !attr_value.is_empty() {
+            namespace
+                .attributes
+                .insert(attr_key, attr_value.to_string());
+            namespace.apply_attr_to_children_recursively(attr_key, attr_value.as_ref());
+
+            self.metadata_mut().chunks.push(chunk_metadata);
+        }
+
         self.merge(namespace);
     }
 
@@ -193,6 +202,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::input;
+    use crate::model::tests::test_api;
+    use crate::model::{Builder, Model, ValidationError};
+
     mod namespace {
         use crate::model::Builder;
 
@@ -269,6 +282,7 @@ mod tests {
                         NamespaceChild::Namespace(Namespace {
                             name: NS_NAMES[1],
                             children: vec![test_child_dto(2)],
+                            ..Default::default()
                         })
                     ]
                 );
@@ -280,6 +294,9 @@ mod tests {
 
             use crate::input;
             use crate::model::builder::tests::merge::test_namespace;
+            use crate::model::builder::tests::test_builder;
+            use crate::model::metadata::Chunk;
+            use crate::model::tests::test_api;
             use crate::model::{Builder, TypeRef};
 
             #[test]
@@ -302,7 +319,69 @@ mod tests {
 
             #[test]
             fn applies_chunk_attr_to_all_entities_recursively() {
-                todo!("nyi")
+                let mut input = input::Buffer::new("mod ns0 { mod ns1 {} struct dto {} }");
+                let mut builder = test_builder(&mut input);
+                builder.enter_namespace("ns0");
+
+                let mut merge_input = input::Buffer::new(
+                    r#"
+                    mod ns2 {
+                        struct dto {}
+                        fn rpc() {}
+                    }
+                "#,
+                );
+                let to_merge = test_api(&mut merge_input);
+
+                let file_path = PathBuf::from("some/path");
+                builder.merge_from_chunk(
+                    to_merge,
+                    &input::Chunk {
+                        data: "unused".to_string(),
+                        relative_file_path: file_path.clone(),
+                    },
+                );
+
+                let api = builder.build().unwrap().api;
+                let attr_value = file_path.to_string_lossy().to_string();
+                // Existing shouldn't have attribute.
+                assert!(!api
+                    .find_namespace(&["ns0"].into())
+                    .unwrap()
+                    .attributes
+                    .contains_key(Chunk::ATTRIBUTE));
+                assert!(!api
+                    .find_namespace(&["ns0", "ns1"].into())
+                    .unwrap()
+                    .attributes
+                    .contains_key(Chunk::ATTRIBUTE));
+                assert!(!api
+                    .find_dto(&["ns0", "dto"].into())
+                    .unwrap()
+                    .attributes
+                    .contains_key(Chunk::ATTRIBUTE));
+                // Merged should have correct attribute.
+                assert_eq!(
+                    api.find_namespace(&["ns0", "ns2"].into())
+                        .unwrap()
+                        .attributes
+                        .get(Chunk::ATTRIBUTE),
+                    Some(&attr_value)
+                );
+                assert_eq!(
+                    api.find_dto(&["ns0", "ns2", "dto"].into())
+                        .unwrap()
+                        .attributes
+                        .get(Chunk::ATTRIBUTE),
+                    Some(&attr_value)
+                );
+                assert_eq!(
+                    api.find_rpc(&["ns0", "ns2", "rpc"].into())
+                        .unwrap()
+                        .attributes
+                        .get(Chunk::ATTRIBUTE),
+                    Some(&attr_value)
+                );
             }
         }
 
@@ -399,6 +478,7 @@ mod tests {
             Namespace {
                 name,
                 children: vec![test_child_dto(i)],
+                ..Default::default()
             }
         }
 
@@ -411,19 +491,15 @@ mod tests {
             Dto {
                 name: DTO_NAMES[i],
                 fields: vec![],
+                ..Default::default()
             }
         }
     }
 
     mod build {
-        use crate::input;
-        use crate::model::builder::ValidationError;
-        use crate::model::tests::test_api;
-        use crate::model::{Builder, Model};
-
         mod dedupe_namespaces {
             use crate::input;
-            use crate::model::builder::tests::build::build_from_input;
+            use crate::model::builder::tests::build_from_input;
 
             #[test]
             fn within_root() {
@@ -500,7 +576,7 @@ mod tests {
 
         mod validate_duplicates {
             use crate::input;
-            use crate::model::builder::tests::build::{assert_contains_error, build_from_input};
+            use crate::model::builder::tests::{assert_contains_error, build_from_input};
             use crate::model::builder::ValidationError;
 
             #[test]
@@ -548,7 +624,7 @@ mod tests {
 
         mod validate_dto {
             use crate::input;
-            use crate::model::builder::tests::build::{
+            use crate::model::builder::tests::{
                 assert_contains_error, build_from_input, test_builder,
             };
             use crate::model::builder::ValidationError;
@@ -639,7 +715,7 @@ mod tests {
 
         mod validate_rpc {
             use crate::input;
-            use crate::model::builder::tests::build::{
+            use crate::model::builder::tests::{
                 assert_contains_error, build_from_input, test_builder,
             };
             use crate::model::builder::ValidationError;
@@ -739,7 +815,7 @@ mod tests {
 
         mod validate_namespace {
             use crate::input;
-            use crate::model::builder::tests::build::{assert_contains_error, build_from_input};
+            use crate::model::builder::tests::{assert_contains_error, build_from_input};
             use crate::model::builder::ValidationError;
             use crate::model::{Builder, UNDEFINED_NAMESPACE};
 
@@ -774,32 +850,32 @@ mod tests {
                 );
             }
         }
+    }
 
-        fn build_from_input(input: &mut input::Buffer) -> Result<Model, Vec<ValidationError<'_>>> {
-            test_builder(input).build()
-        }
+    fn build_from_input(input: &mut input::Buffer) -> Result<Model, Vec<ValidationError<'_>>> {
+        test_builder(input).build()
+    }
 
-        fn test_builder(input: &mut input::Buffer) -> Builder {
-            Builder {
-                api: test_api(input),
-                ..Default::default()
-            }
+    fn test_builder(input: &mut input::Buffer) -> Builder {
+        Builder {
+            api: test_api(input),
+            ..Default::default()
         }
+    }
 
-        fn assert_contains_error(
-            build_result: &Result<Model, Vec<ValidationError<'_>>>,
-            error: ValidationError,
-        ) {
-            let errors = build_result
-                .as_ref()
-                .map(|_| "...but it passed!")
-                .expect_err("expected Builder::build to fail");
-            assert!(
-                errors.contains(&error),
-                "missing: {:?}\nactual: {:?}",
-                error,
-                errors
-            );
-        }
+    fn assert_contains_error(
+        build_result: &Result<Model, Vec<ValidationError<'_>>>,
+        error: ValidationError,
+    ) {
+        let errors = build_result
+            .as_ref()
+            .map(|_| "...but it passed!")
+            .expect_err("expected Builder::build to fail");
+        assert!(
+            errors.contains(&error),
+            "missing: {:?}\nactual: {:?}",
+            error,
+            errors
+        );
     }
 }

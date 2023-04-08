@@ -150,7 +150,9 @@ mod tests {
                     fields: vec![Field {
                         name: "i",
                         ty: TypeRef::new(&["i32"]),
+                        attributes: Default::default(),
                     }],
+                    attributes: Default::default(),
                 }),
                 NamespaceChild::Rpc(Rpc {
                     name: "rpc_name",
@@ -158,13 +160,16 @@ mod tests {
                         Field {
                             name: "dto",
                             ty: TypeRef::new(&["DtoName"]),
+                            attributes: Default::default(),
                         },
                         Field {
                             name: "dto2",
                             ty: TypeRef::new(&["ns0", "DtoName"]),
+                            attributes: Default::default(),
                         },
                     ],
                     return_type: Some(TypeRef::new(&["DtoName"])),
+                    attributes: Default::default(),
                 }),
                 NamespaceChild::Namespace(Namespace {
                     name: "ns0",
@@ -173,10 +178,14 @@ mod tests {
                         fields: vec![Field {
                             name: "i",
                             ty: TypeRef::new(&["i32"]),
+                            attributes: Default::default(),
                         }],
+                        attributes: Default::default(),
                     })],
+                    attributes: Default::default(),
                 }),
             ],
+            attributes: Default::default(),
         };
         let expected = r#"pub fn rpc_name(
     dto: DtoName,
@@ -220,12 +229,15 @@ pub mod ns0 {
                             Field {
                                 name: "field0",
                                 ty: TypeRef::new(&["Type0"]),
+                                attributes: Default::default(),
                             },
                             Field {
                                 name: "field1",
                                 ty: TypeRef::new(&["Type1"]),
+                                attributes: Default::default(),
                             },
                         ],
+                        attributes: Default::default(),
                     },
                     &mut Indented::new(o, INDENT),
                 )
@@ -249,13 +261,16 @@ pub mod ns0 {
                             Field {
                                 name: "param0",
                                 ty: TypeRef::new(&["Type0"]),
+                                attributes: Default::default(),
                             },
                             Field {
                                 name: "param1",
                                 ty: TypeRef::new(&["Type1"]),
+                                attributes: Default::default(),
                             },
                         ],
                         return_type: None,
+                        attributes: Default::default(),
                     },
                     &mut Indented::new(o, INDENT),
                 )
@@ -277,6 +292,7 @@ pub mod ns0 {
                         name: "rpc_name",
                         params: vec![],
                         return_type: Some(TypeRef::new(&["ReturnType"])),
+                        attributes: Default::default(),
                     },
                     &mut Indented::new(o, INDENT),
                 )
@@ -293,6 +309,7 @@ pub mod ns0 {
                     &Field {
                         name: "asdf",
                         ty: TypeRef::new(&["Type"]),
+                        attributes: Default::default(),
                     },
                     o,
                 )
