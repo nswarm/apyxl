@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
@@ -20,7 +21,7 @@ pub enum NamespaceChild<'a> {
 }
 
 /// Arbitrary key=value pairs used to attach additional metadata to entities.
-pub type Attributes<'a> = HashMap<&'a str, String>;
+pub type Attributes<'a> = HashMap<Cow<'a, str>, String>;
 
 /// A named, nestable wrapper for a set of API entities.
 #[derive(Default, Debug, Eq, PartialEq)]
@@ -384,7 +385,7 @@ impl<'a> Namespace<'a> {
 
     pub fn apply_attr_to_children_recursively(&mut self, key: &'a str, value: &str) {
         for attr in self.child_attributes_mut() {
-            attr.insert(key, value.to_string());
+            attr.insert(Cow::Borrowed(key), value.to_string());
         }
         for namespace in self.namespaces_mut() {
             namespace.apply_attr_to_children_recursively(key, value);

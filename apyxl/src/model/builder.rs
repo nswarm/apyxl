@@ -1,5 +1,6 @@
 use anyhow::Result;
 use itertools::Itertools;
+use std::borrow::Cow;
 
 use crate::input;
 use crate::model::api::validate;
@@ -60,7 +61,7 @@ impl<'a> Builder<'a> {
         if !attr_value.is_empty() {
             namespace
                 .attributes
-                .insert(attr_key, attr_value.to_string());
+                .insert(Cow::Borrowed(attr_key), attr_value.to_string());
             namespace.apply_attr_to_children_recursively(attr_key, attr_value.as_ref());
 
             self.metadata_mut().chunks.push(chunk_metadata);

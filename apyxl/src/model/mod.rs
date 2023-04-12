@@ -5,6 +5,7 @@ pub use metadata::Metadata;
 pub mod api;
 mod builder;
 pub mod metadata;
+pub mod view;
 
 /// In-memory representation of a fully parsed and validated API.
 #[derive(Debug, Default)]
