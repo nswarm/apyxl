@@ -179,29 +179,31 @@ impl<'v, 'a> RpcView<'v, 'a> {
 }
 
 trait NamespaceTransform {
-    fn name(&self, value: &mut Cow<str>) {}
-    fn filter_namespace(&self, namespace: &NamespaceView) -> bool {
+    fn name(&self, _: &mut Cow<str>) {}
+    fn filter_namespace(&self, _: &NamespaceView) -> bool {
         false
     }
-    fn filter_dto(&self, dto: &DtoView) -> bool {
+    fn filter_dto(&self, _: &DtoView) -> bool {
         false
     }
-    fn filter_rpc(&self, rpc: &RpcView) -> bool {
+    fn filter_rpc(&self, _: &RpcView) -> bool {
         false
     }
 }
 trait DtoTransform {
-    fn name(&self, value: &mut Cow<str>) {}
+    fn name(&self, _: &mut Cow<str>) {}
 }
 trait RpcTransform {
-    fn name(&self, value: &mut Cow<str>) {}
+    fn name(&self, _: &mut Cow<str>) {}
 }
 
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
 
-    use crate::model::view::{DtoView, NamespaceTransform, NamespaceView, RpcView};
+    use crate::model::view::{
+        DtoTransform, DtoView, NamespaceTransform, NamespaceView, RpcTransform, RpcView,
+    };
 
     mod namespace {
         use itertools::Itertools;
@@ -216,8 +218,7 @@ mod tests {
             let mut input = input::Buffer::new(
                 r#"
                     mod ns0 {
-                        mod visible {}
-                        mod hidden {}
+                        mod ns1 {}
                     }
                 "#,
             );
@@ -225,7 +226,15 @@ mod tests {
             let view = ApiView::new(&api).with_namespace_transform(TestRenamer {});
             let root = view.root();
 
-            assert_eq!(root.name(), TestRenamer::NAME);
+            assert_eq!(root.name(), TestRenamer::renamed("_"));
+            assert_eq!(
+                root.find_namespace(&["ns0"].into()).unwrap().name(),
+                TestRenamer::renamed("ns0")
+            );
+            assert_eq!(
+                root.find_namespace(&["ns0", "ns1"].into()).unwrap().name(),
+                TestRenamer::renamed("ns1")
+            );
         }
 
         #[test]
@@ -377,26 +386,97 @@ mod tests {
     }
 
     mod dto {
+        use crate::input;
+        use crate::model::tests::test_api;
+        use crate::model::view::tests::TestRenamer;
+        use crate::model::view::ApiView;
+
         #[test]
-        fn asdf() {
-            todo!("nyi")
+        fn name() {
+            let mut input = input::Buffer::new(
+                r#"
+                    mod ns0 {
+                        struct dto0 {}
+                        mod ns1 {
+                            struct dto1 {}
+                        }
+                    }
+                "#,
+            );
+            let api = test_api(&mut input);
+            let view = ApiView::new(&api).with_dto_transform(TestRenamer {});
+            let root = view.root();
+
+            assert_eq!(
+                root.find_dto(&["ns0", "dto0"].into()).unwrap().name(),
+                TestRenamer::renamed("dto0")
+            );
+            assert_eq!(
+                root.find_dto(&["ns0", "ns1", "dto1"].into())
+                    .unwrap()
+                    .name(),
+                TestRenamer::renamed("dto1")
+            );
         }
     }
 
     mod rpc {
+        use crate::input;
+        use crate::model::tests::test_api;
+        use crate::model::view::tests::TestRenamer;
+        use crate::model::view::ApiView;
+
         #[test]
-        fn asdf() {
-            todo!("nyi")
+        fn name() {
+            let mut input = input::Buffer::new(
+                r#"
+                    mod ns0 {
+                        fn rpc0() {}
+                        mod ns1 {
+                            fn rpc1() {}
+                        }
+                    }
+                "#,
+            );
+            let api = test_api(&mut input);
+            let view = ApiView::new(&api).with_rpc_transform(TestRenamer {});
+            let root = view.root();
+
+            assert_eq!(
+                root.find_rpc(&["ns0", "rpc0"].into()).unwrap().name(),
+                TestRenamer::renamed("rpc0")
+            );
+            assert_eq!(
+                root.find_rpc(&["ns0", "ns1", "rpc1"].into())
+                    .unwrap()
+                    .name(),
+                TestRenamer::renamed("rpc1")
+            );
         }
     }
 
+    #[derive(Default)]
     struct TestRenamer {}
     impl TestRenamer {
-        const NAME: &'static str = "renamed";
+        const SUFFIX: &'static str = "_renamed";
+
+        fn renamed(name: &str) -> String {
+            format!("{}{}", name, TestRenamer::SUFFIX)
+        }
     }
     impl NamespaceTransform for TestRenamer {
         fn name(&self, value: &mut Cow<str>) {
-            *value = Cow::Borrowed(TestRenamer::NAME)
+            *value = Cow::Owned(TestRenamer::renamed(value))
+        }
+    }
+    impl DtoTransform for TestRenamer {
+        fn name(&self, value: &mut Cow<str>) {
+            *value = Cow::Owned(TestRenamer::renamed(value))
+        }
+    }
+    impl RpcTransform for TestRenamer {
+        fn name(&self, value: &mut Cow<str>) {
+            *value = Cow::Owned(TestRenamer::renamed(value))
         }
     }
 
