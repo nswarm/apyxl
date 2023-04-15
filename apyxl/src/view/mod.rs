@@ -1,4 +1,7 @@
 use std::borrow::Cow;
+use std::fmt::Debug;
+
+use itertools::Itertools;
 
 use crate::model;
 
@@ -6,13 +9,14 @@ use crate::model;
 //   'v: view
 //   'a: api
 
-struct Model<'v, 'a> {
+#[derive(Debug)]
+pub struct Model<'v, 'a> {
     model: &'v model::Model<'a>,
     xforms: Transforms,
 }
 
-#[derive(Default)]
-struct Transforms {
+#[derive(Default, Debug)]
+pub struct Transforms {
     namespace: Vec<Box<dyn NamespaceTransform>>,
     dto: Vec<Box<dyn DtoTransform>>,
     rpc: Vec<Box<dyn RpcTransform>>,
@@ -29,11 +33,16 @@ impl<'v, 'a> Model<'v, 'a> {
         }
     }
 
-    pub fn root(&'v self) -> Namespace<'v, 'a> {
+    pub fn api(&'v self) -> Namespace<'v, 'a> {
         Namespace::<'v, 'a> {
             target: &self.model.api,
             xforms: &self.xforms,
         }
+    }
+
+    // todo view::Metadata
+    pub fn metadata(&self) -> &model::Metadata {
+        &self.model.metadata
     }
 
     pub fn with_namespace_transform(mut self, xform: impl NamespaceTransform + 'static) -> Self {
@@ -52,20 +61,74 @@ impl<'v, 'a> Model<'v, 'a> {
     }
 }
 
-struct Namespace<'v, 'a> {
+#[derive(Debug, Copy, Clone)]
+pub struct TypeRef<'v, 'a> {
+    target: &'v model::TypeRef<'a>,
+    xforms: &'v Transforms,
+}
+#[derive(Debug, Copy, Clone)]
+pub struct Namespace<'v, 'a> {
     target: &'v model::Namespace<'a>,
     xforms: &'v Transforms,
 }
-struct Dto<'v, 'a> {
+#[derive(Debug, Copy, Clone)]
+pub struct NamespaceChild<'v, 'a> {
+    target: &'v model::NamespaceChild<'a>,
+    xforms: &'v Transforms,
+}
+#[derive(Debug, Copy, Clone)]
+pub struct Dto<'v, 'a> {
     target: &'v model::Dto<'a>,
     xforms: &'v Transforms,
 }
-struct Rpc<'v, 'a> {
+#[derive(Debug, Copy, Clone)]
+pub struct Rpc<'v, 'a> {
     target: &'v model::Rpc<'a>,
     xforms: &'v Transforms,
 }
+#[derive(Debug, Copy, Clone)]
+pub struct Field<'v, 'a> {
+    target: &'v model::Field<'a>,
+    xforms: &'v Transforms,
+}
+#[derive(Debug, Copy, Clone)]
+pub struct Attributes<'v, 'a> {
+    target: &'v model::Attributes<'a>,
+    xforms: &'v Transforms,
+}
+
+// Helper for tests that wraps a view around an existing model type.
+macro_rules! for_test {
+    ($ty:ident) => {
+        #[cfg(test)]
+        pub fn for_test(xforms: &'v Transforms, target: &'v model::$ty<'a>) -> Self {
+            Self {
+                target,
+                xforms: xforms,
+            }
+        }
+    };
+}
+
+impl<'v, 'a> TypeRef<'v, 'a> {
+    for_test!(TypeRef);
+
+    pub fn fully_qualified_type_name(&self) -> Vec<Cow<str>> {
+        self.target
+            .fully_qualified_type_name
+            .iter()
+            .map(|s| Cow::Borrowed(*s))
+            .collect_vec()
+        // todo xforms
+        // for x in &self.xforms.namespace {
+        //     x.name(&mut name)
+        // }
+    }
+}
 
 impl<'v, 'a> Namespace<'v, 'a> {
+    for_test!(Namespace);
+
     pub fn name(&self) -> Cow<str> {
         let mut name = Cow::Borrowed(self.target.name);
         for x in &self.xforms.namespace {
@@ -74,51 +137,71 @@ impl<'v, 'a> Namespace<'v, 'a> {
         name
     }
 
+    pub fn children(&'a self) -> impl Iterator<Item = NamespaceChild<'v, 'a>> + 'a {
+        // todo xforms
+        self.target
+            .children
+            .iter()
+            .map(|child| self.view_namespace_child(child))
+    }
+
+    pub fn attributes(&self) -> Attributes {
+        // todo xforms
+        self.view_attributes(&self.target.attributes)
+    }
+
     pub fn find_namespace(&'a self, type_ref: &model::TypeRef<'a>) -> Option<Namespace<'v, 'a>> {
         self.target
             .find_namespace(type_ref)
-            .map(|namespace| self.view_namespace(namespace))
             .filter(|namespace| {
                 self.xforms
                     .namespace
                     .iter()
-                    .all(|x| !x.filter_namespace(namespace))
+                    .all(|x| x.filter_namespace(namespace))
             })
+            .map(|namespace| self.view_namespace(namespace))
     }
 
     pub fn find_dto(&'a self, type_ref: &model::TypeRef<'a>) -> Option<Dto<'v, 'a>> {
         self.target
             .find_dto(type_ref)
+            .filter(|dto| self.xforms.namespace.iter().all(|x| x.filter_dto(dto)))
             .map(|dto| self.view_dto(dto))
-            .filter(|dto| self.xforms.namespace.iter().all(|x| !x.filter_dto(dto)))
     }
 
     pub fn find_rpc(&'a self, type_ref: &model::TypeRef<'a>) -> Option<Rpc<'v, 'a>> {
         self.target
             .find_rpc(type_ref)
+            .filter(|rpc| self.xforms.namespace.iter().all(|x| x.filter_rpc(rpc)))
             .map(|rpc| self.view_rpc(rpc))
-            .filter(|rpc| self.xforms.namespace.iter().all(|x| !x.filter_rpc(rpc)))
     }
 
     pub fn namespaces(&'a self) -> impl Iterator<Item = Namespace<'v, 'a>> + 'a {
         self.target
             .namespaces()
-            .map(move |ns| self.view_namespace(ns))
             .filter(|ns| self.filter_namespace(ns))
+            .map(move |ns| self.view_namespace(ns))
     }
 
     pub fn dtos(&'a self) -> impl Iterator<Item = Dto<'v, 'a>> {
         self.target
             .dtos()
-            .map(move |dto| self.view_dto(dto))
             .filter(|dto| self.filter_dto(dto))
+            .map(move |dto| self.view_dto(dto))
     }
 
     pub fn rpcs(&'a self) -> impl Iterator<Item = Rpc<'v, 'a>> {
         self.target
             .rpcs()
-            .map(move |rpc| self.view_rpc(rpc))
             .filter(|rpc| self.filter_rpc(rpc))
+            .map(move |rpc| self.view_rpc(rpc))
+    }
+
+    fn view_namespace_child(&'a self, child: &'a model::NamespaceChild) -> NamespaceChild {
+        NamespaceChild {
+            target: child,
+            xforms: self.xforms,
+        }
     }
 
     fn view_namespace(&'a self, namespace: &'a model::Namespace) -> Namespace {
@@ -142,23 +225,32 @@ impl<'v, 'a> Namespace<'v, 'a> {
         }
     }
 
-    fn filter_namespace(&self, namespace: &Namespace) -> bool {
+    fn view_attributes(&'a self, attributes: &'a model::Attributes) -> Attributes {
+        Attributes {
+            target: attributes,
+            xforms: self.xforms,
+        }
+    }
+
+    fn filter_namespace(&self, namespace: &model::Namespace) -> bool {
         self.xforms
             .namespace
             .iter()
-            .all(|x| !x.filter_namespace(namespace))
+            .all(|x| x.filter_namespace(namespace))
     }
 
-    fn filter_dto(&self, dto: &Dto) -> bool {
-        self.xforms.namespace.iter().all(|x| !x.filter_dto(dto))
+    fn filter_dto(&self, dto: &model::Dto) -> bool {
+        self.xforms.namespace.iter().all(|x| x.filter_dto(dto))
     }
 
-    fn filter_rpc(&self, rpc: &Rpc) -> bool {
-        self.xforms.namespace.iter().all(|x| !x.filter_rpc(rpc))
+    fn filter_rpc(&self, rpc: &model::Rpc) -> bool {
+        self.xforms.namespace.iter().all(|x| x.filter_rpc(rpc))
     }
 }
 
 impl<'v, 'a> Dto<'v, 'a> {
+    for_test!(Dto);
+
     pub fn name(&self) -> Cow<str> {
         let mut name = Cow::Borrowed(self.target.name);
         for x in &self.xforms.dto {
@@ -166,9 +258,30 @@ impl<'v, 'a> Dto<'v, 'a> {
         }
         name
     }
+
+    pub fn fields(&'a self) -> impl Iterator<Item = Field<'v, 'a>> {
+        self.target
+            .fields
+            .iter()
+            .filter(|field| self.filter_field(field))
+            .map(move |field| self.view_field(field))
+    }
+
+    fn filter_field(&self, field: &model::Field) -> bool {
+        self.xforms.dto.iter().all(|x| x.filter_field(field))
+    }
+
+    fn view_field(&'a self, field: &'a model::Field) -> Field {
+        Field {
+            target: field,
+            xforms: self.xforms,
+        }
+    }
 }
 
 impl<'v, 'a> Rpc<'v, 'a> {
+    for_test!(Rpc);
+
     pub fn name(&self) -> Cow<str> {
         let mut name = Cow::Borrowed(self.target.name);
         for x in &self.xforms.rpc {
@@ -176,54 +289,139 @@ impl<'v, 'a> Rpc<'v, 'a> {
         }
         name
     }
+
+    pub fn params(&'a self) -> impl Iterator<Item = Field<'v, 'a>> {
+        self.target
+            .params
+            .iter()
+            .filter(|param| self.filter_param(param))
+            .map(move |param| self.view_param(param))
+    }
+
+    pub fn return_type(&self) -> Option<TypeRef> {
+        self.target
+            .return_type
+            .as_ref()
+            .map(|type_ref| self.view_type_ref(type_ref))
+        // todo xforms
+        // for x in &self.xforms.rpc {
+        //     x.name(&mut name)
+        // }
+    }
+
+    fn filter_param(&self, param: &model::Field) -> bool {
+        // todo xforms
+        // self.xforms.dto.iter().all(|x| x.filter_param(param))
+        return true;
+    }
+
+    fn view_param(&'a self, param: &'a model::Field) -> Field {
+        Field {
+            target: param,
+            xforms: self.xforms,
+        }
+    }
+
+    fn view_type_ref(&'a self, type_ref: &'a model::TypeRef) -> TypeRef {
+        TypeRef {
+            target: type_ref,
+            xforms: self.xforms,
+        }
+    }
 }
 
-trait NamespaceTransform {
-    fn name(&self, _: &mut Cow<str>) {}
-    fn filter_namespace(&self, _: &Namespace) -> bool {
-        false
+impl<'v, 'a> Field<'v, 'a> {
+    for_test!(Field);
+
+    pub fn name(&self) -> Cow<str> {
+        let mut name = Cow::Borrowed(self.target.name);
+        // todo xforms
+        // for x in &self.xforms.field {
+        //     x.name(&mut name)
+        // }
+        name
     }
-    fn filter_dto(&self, _: &Dto) -> bool {
-        false
+
+    pub fn ty(&self) -> TypeRef {
+        self.view_type_ref(&self.target.ty)
+        // todo xforms
+        // let mut ty = Cow::Borrowed(self.target.ty);
+        // for x in &self.xforms.rpc {
+        //     x.ty(&mut ty)
+        // }
+        // ty
     }
-    fn filter_rpc(&self, _: &Rpc) -> bool {
-        false
+
+    fn view_type_ref(&'a self, type_ref: &'a model::TypeRef) -> TypeRef {
+        TypeRef {
+            target: type_ref,
+            xforms: self.xforms,
+        }
     }
 }
-trait DtoTransform {
+
+pub trait NamespaceTransform: Debug {
     fn name(&self, _: &mut Cow<str>) {}
+
+    /// If this returns false, the value will be excluded.
+    fn filter_namespace(&self, _: &model::Namespace) -> bool {
+        true
+    }
+
+    /// If this returns false, the value will be excluded.
+    fn filter_dto(&self, _: &model::Dto) -> bool {
+        true
+    }
+
+    /// If this returns false, the value will be excluded.
+    fn filter_rpc(&self, _: &model::Rpc) -> bool {
+        true
+    }
 }
-trait RpcTransform {
+pub trait DtoTransform: Debug {
     fn name(&self, _: &mut Cow<str>) {}
+
+    /// If this returns false, the value will be excluded.
+    fn filter_field(&self, _: &model::Field) -> bool {
+        true
+    }
+}
+pub trait RpcTransform: Debug {
+    fn name(&self, _: &mut Cow<str>) {}
+    fn return_type(&self, _: &mut model::TypeRef) {}
+
+    /// If this returns false, the value will be excluded.
+    fn filter_params(&self, _: &model::Field) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use std::borrow::Cow;
 
-    use crate::model::tests::test_api;
-    use crate::view::{Dto, DtoTransform, Namespace, NamespaceTransform, Rpc, RpcTransform};
-    use crate::{input, model};
+    use crate::model;
+    use crate::view::{DtoTransform, NamespaceTransform, RpcTransform};
 
     mod namespace {
         use itertools::Itertools;
 
-        use crate::input;
-        use crate::view::tests::{test_model, TestFilter, TestRenamer};
-        use crate::view::Model;
+        use crate::test_util::executor::TestExecutor;
+        use crate::view::tests::{TestFilter, TestRenamer};
 
         #[test]
         fn name() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
                     mod ns0 {
                         mod ns1 {}
                     }
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_namespace_transform(TestRenamer {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view();
+            let view = model.view().with_namespace_transform(TestRenamer {});
+            let root = view.api();
 
             assert_eq!(root.name(), TestRenamer::renamed("_"));
             assert_eq!(
@@ -238,7 +436,7 @@ mod tests {
 
         #[test]
         fn find_namespace() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
                     mod ns0 {
                         mod visible {}
@@ -246,9 +444,9 @@ mod tests {
                     }
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_namespace_transform(TestFilter {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view().with_namespace_transform(TestFilter {});
+            let root = view.api();
 
             let visible_type_ref = ["ns0", "visible"].into();
             let expected = model.api.find_namespace(&visible_type_ref);
@@ -262,7 +460,7 @@ mod tests {
 
         #[test]
         fn find_dto() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
                     mod ns0 {
                         struct visible {}
@@ -270,9 +468,9 @@ mod tests {
                     }
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_namespace_transform(TestFilter {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view().with_namespace_transform(TestFilter {});
+            let root = view.api();
 
             let visible_type_ref = ["ns0", "visible"].into();
             let expected = model.api.find_dto(&visible_type_ref);
@@ -286,7 +484,7 @@ mod tests {
 
         #[test]
         fn find_rpc() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
                     mod ns0 {
                         fn visible() {}
@@ -294,9 +492,9 @@ mod tests {
                     }
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_namespace_transform(TestFilter {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view().with_namespace_transform(TestFilter {});
+            let root = view.api();
 
             let visible_type_ref = ["ns0", "visible"].into();
             let expected = model.api.find_rpc(&visible_type_ref);
@@ -310,18 +508,16 @@ mod tests {
 
         #[test]
         fn namespaces() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
-                    mod ns0 {
-                        mod visible0 {}
-                        mod hidden {}
-                        mod visible1 {}
-                    }
+                    mod visible0 {}
+                    mod hidden {}
+                    mod visible1 {}
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_namespace_transform(TestFilter {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view().with_namespace_transform(TestFilter {});
+            let root = view.api();
 
             let namespaces = root.namespaces().map(|v| v.target).collect_vec();
             assert_eq!(
@@ -335,18 +531,16 @@ mod tests {
 
         #[test]
         fn dtos() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
-                    mod ns0 {
-                        struct visible0 {}
-                        struct hidden {}
-                        struct visible1 {}
-                    }
+                    struct visible0 {}
+                    struct hidden {}
+                    struct visible1 {}
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_namespace_transform(TestFilter {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view().with_namespace_transform(TestFilter {});
+            let root = view.api();
 
             let dtos = root.dtos().map(|v| v.target).collect_vec();
             assert_eq!(
@@ -360,18 +554,16 @@ mod tests {
 
         #[test]
         fn rpcs() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
-                    mod ns0 {
-                        fn visible0() {}
-                        fn hidden() {}
-                        fn visible1() {}
-                    }
+                    fn visible0() {}
+                    fn hidden() {}
+                    fn visible1() {}
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_namespace_transform(TestFilter {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view().with_namespace_transform(TestFilter {});
+            let root = view.api();
 
             let rpcs = root.rpcs().map(|v| v.target).collect_vec();
             assert_eq!(
@@ -385,13 +577,12 @@ mod tests {
     }
 
     mod dto {
-        use crate::input;
-        use crate::view::tests::{test_model, TestRenamer};
-        use crate::view::Model;
+        use crate::test_util::executor::TestExecutor;
+        use crate::view::tests::TestRenamer;
 
         #[test]
         fn name() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
                     mod ns0 {
                         struct dto0 {}
@@ -401,9 +592,9 @@ mod tests {
                     }
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_dto_transform(TestRenamer {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view().with_dto_transform(TestRenamer {});
+            let root = view.api();
 
             assert_eq!(
                 root.find_dto(&["ns0", "dto0"].into()).unwrap().name(),
@@ -419,13 +610,12 @@ mod tests {
     }
 
     mod rpc {
-        use crate::input;
-        use crate::view::tests::{test_model, TestRenamer};
-        use crate::view::Model;
+        use crate::test_util::executor::TestExecutor;
+        use crate::view::tests::TestRenamer;
 
         #[test]
         fn name() {
-            let mut input = input::Buffer::new(
+            let mut exe = TestExecutor::new(
                 r#"
                     mod ns0 {
                         fn rpc0() {}
@@ -435,9 +625,9 @@ mod tests {
                     }
                 "#,
             );
-            let model = test_model(&mut input);
-            let view = Model::new(&model).with_rpc_transform(TestRenamer {});
-            let root = view.root();
+            let model = exe.model();
+            let view = model.view().with_rpc_transform(TestRenamer {});
+            let root = view.api();
 
             assert_eq!(
                 root.find_rpc(&["ns0", "rpc0"].into()).unwrap().name(),
@@ -452,7 +642,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     struct TestRenamer {}
     impl TestRenamer {
         const SUFFIX: &'static str = "_renamed";
@@ -477,25 +667,19 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
     struct TestFilter {}
     impl NamespaceTransform for TestFilter {
-        fn filter_namespace(&self, namespace: &Namespace) -> bool {
-            namespace.name().contains("hidden")
+        fn filter_namespace(&self, namespace: &model::Namespace) -> bool {
+            !namespace.name.contains("hidden")
         }
 
-        fn filter_dto(&self, dto: &Dto) -> bool {
-            dto.name().contains("hidden")
+        fn filter_dto(&self, dto: &model::Dto) -> bool {
+            !dto.name.contains("hidden")
         }
 
-        fn filter_rpc(&self, rpc: &Rpc) -> bool {
-            rpc.name().contains("hidden")
-        }
-    }
-
-    fn test_model(input: &mut input::Buffer) -> model::Model {
-        model::Model {
-            api: test_api(input),
-            ..Default::default()
+        fn filter_rpc(&self, rpc: &model::Rpc) -> bool {
+            !rpc.name.contains("hidden")
         }
     }
 }

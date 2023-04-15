@@ -220,10 +220,9 @@ mod tests {
     mod field_types {
         use itertools::Itertools;
 
-        use crate::input;
         use crate::model::api::validate::field_types;
-        use crate::model::tests::test_api;
         use crate::model::TypeRef;
+        use crate::test_util::executor::TestExecutor;
 
         #[test]
         fn absolute_path_from_top() {
@@ -370,8 +369,8 @@ mod tests {
         }
 
         fn run_test(input_data: &str, source_dto: &TypeRef) {
-            let mut input = input::Buffer::new(input_data);
-            let api = test_api(&mut input);
+            let mut exe = TestExecutor::new(input_data);
+            let api = exe.api();
 
             assert_eq!(
                 field_types(

@@ -1,3 +1,4 @@
+use crate::view;
 pub use api::*;
 pub use builder::Builder;
 pub use metadata::Metadata;
@@ -11,4 +12,10 @@ pub mod metadata;
 pub struct Model<'a> {
     pub api: Api<'a>,
     pub metadata: Metadata<'a>,
+}
+
+impl Model<'_> {
+    pub fn view(&self) -> view::Model {
+        view::Model::new(self)
+    }
 }

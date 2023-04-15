@@ -3,12 +3,12 @@ use anyhow::Result;
 pub use dbg::Dbg;
 pub use rust::Rust;
 
-use crate::model::Model;
 use crate::output::Output;
+use crate::view;
 
 mod dbg;
 mod rust;
 
 pub trait Generator {
-    fn generate<O: Output>(&mut self, model: &Model, output: &mut O) -> Result<()>;
+    fn generate<O: Output>(&mut self, model: view::Model, output: &mut O) -> Result<()>;
 }

@@ -55,8 +55,8 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
             }
         }
 
-        let api_builder = parser.parse(input)?;
-        let model = match api_builder.build() {
+        let model_builder = parser.parse(input)?;
+        let model = match model_builder.build() {
             Ok(model) => model,
             Err(errors) => {
                 return Err(anyhow!(
@@ -69,7 +69,7 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
         for info in self.generator_infos {
             for output in info.outputs {
                 // todo log generating for abc to output xyz
-                info.generator.generate(&model, output)?;
+                info.generator.generate(model.view(), output)?;
             }
         }
         Ok(())
@@ -86,10 +86,10 @@ mod tests {
 
     use crate::generator::Generator;
     use crate::input::Input;
-    use crate::model;
-    use crate::model::{Api, Dto, Model, NamespaceChild, UNDEFINED_NAMESPACE};
+    use crate::model::{Api, Dto, NamespaceChild, UNDEFINED_NAMESPACE};
     use crate::output::Output;
     use crate::parser::Parser;
+    use crate::{model, view};
 
     mod execute {
         use anyhow::Result;
@@ -272,8 +272,12 @@ mod tests {
     }
 
     impl Generator for FakeGenerator {
-        fn generate<O: Output>(&mut self, model: &Model, output: &mut O) -> Result<()> {
-            let dto_names = model.api.dtos().map(|dto| dto.name).collect::<Vec<&str>>();
+        fn generate<O: Output>(&mut self, model: view::Model, output: &mut O) -> Result<()> {
+            let dto_names = model
+                .api()
+                .dtos()
+                .map(|dto| dto.name().to_string())
+                .collect::<Vec<String>>();
             output.write_str(&dto_names.join(&self.delimiter))?;
             Ok(())
         }

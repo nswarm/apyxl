@@ -1,7 +1,8 @@
-use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+
+use itertools::Itertools;
 
 pub use validate::ValidationError;
 
@@ -13,7 +14,7 @@ pub type Api<'a> = Namespace<'a>;
 /// The root namespace of the entire API.
 pub const UNDEFINED_NAMESPACE: &str = "_";
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum NamespaceChild<'a> {
     Dto(Dto<'a>),
     Rpc(Rpc<'a>),
@@ -24,7 +25,7 @@ pub enum NamespaceChild<'a> {
 pub type Attributes<'a> = HashMap<Cow<'a, str>, String>;
 
 /// A named, nestable wrapper for a set of API entities.
-#[derive(Default, Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Namespace<'a> {
     pub name: &'a str,
     pub children: Vec<NamespaceChild<'a>>,
@@ -32,7 +33,7 @@ pub struct Namespace<'a> {
 }
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
-#[derive(Default, Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Dto<'a> {
     pub name: &'a str,
     pub fields: Vec<Field<'a>>,
@@ -40,7 +41,7 @@ pub struct Dto<'a> {
 }
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
-#[derive(Default, Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Field<'a> {
     pub name: &'a str,
     pub ty: TypeRef<'a>,
@@ -48,7 +49,7 @@ pub struct Field<'a> {
 }
 
 /// A single Remote Procedure Call (RPC) within an [Api].
-#[derive(Default, Debug, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
@@ -59,7 +60,7 @@ pub struct Rpc<'a> {
 /// A type such as a language primitive or a reference to a type within the API. Typically when used
 /// within model types, it refers to a [Dto], but can be used as a reference to other types
 /// like [Rpc]s or [Namespace]s as well.
-#[derive(Default, Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
 pub struct TypeRef<'a> {
     pub fully_qualified_type_name: Vec<&'a str>,
 }
@@ -394,30 +395,30 @@ impl<'a> Namespace<'a> {
 }
 
 #[cfg(test)]
-pub mod tests {
-    use crate::model::{Api, Dto, Namespace, Rpc};
-    use crate::parser::Parser;
-    use crate::{input, parser};
+mod tests {
+    use crate::model::{Api, Namespace};
+    use crate::test_util::executor::TestExecutor;
+    use crate::test_util::{test_dto, test_namespace, test_rpc};
 
     #[test]
     fn merge() {
-        let mut input0 = input::Buffer::new(
+        let mut exe0 = TestExecutor::new(
             r#"
             fn rpc0() {}
             struct dto0 {}
             mod nested0 {}
         "#,
         );
-        let mut ns0 = test_api(&mut input0);
+        let mut ns0 = exe0.api();
 
-        let mut input1 = input::Buffer::new(
+        let mut exe1 = TestExecutor::new(
             r#"
             fn rpc1() {}
             struct dto1 {}
             mod nested1 {}
         "#,
         );
-        let ns1 = test_api(&mut input1);
+        let ns1 = exe1.api();
 
         ns0.merge(ns1);
         assert_eq!(ns0.dtos().count(), 2);
@@ -432,7 +433,8 @@ pub mod tests {
     }
 
     mod add_get {
-        use crate::model::api::tests::{complex_api, complex_namespace, test_dto, test_rpc, NAMES};
+        use crate::model::api::tests::{complex_api, complex_namespace};
+        use crate::test_util::{test_dto, test_rpc, NAMES};
 
         #[test]
         fn dto() {
@@ -469,7 +471,8 @@ pub mod tests {
     }
 
     mod iter {
-        use crate::model::api::tests::{complex_api, complex_namespace, test_dto, test_rpc};
+        use crate::model::api::tests::{complex_api, complex_namespace};
+        use crate::test_util::{test_dto, test_rpc};
 
         #[test]
         fn dtos() {
@@ -500,10 +503,9 @@ pub mod tests {
     }
 
     mod find {
-        use crate::model::api::tests::{
-            complex_api, complex_namespace, test_dto, test_namespace, test_rpc, NAMES,
-        };
+        use crate::model::api::tests::{complex_api, complex_namespace};
         use crate::model::TypeRef;
+        use crate::test_util::{test_dto, test_namespace, test_rpc, NAMES};
 
         #[test]
         fn dto() {
@@ -579,7 +581,7 @@ pub mod tests {
 
     #[test]
     fn apply_attr_to_children() {
-        let mut input = input::Buffer::new(
+        let mut exe = TestExecutor::new(
             r#"
                     mod ns0 {
                         mod ns1 {
@@ -591,7 +593,7 @@ pub mod tests {
                     }
                 "#,
         );
-        let mut api = test_api(&mut input);
+        let mut api = exe.api();
         let attr_key = "key";
         let attr_value = "value".to_string();
         api.find_namespace_mut(&["ns0"].into())
@@ -634,8 +636,6 @@ pub mod tests {
         );
     }
 
-    const NAMES: &[&str] = &["name0", "name1", "name2", "name3", "name4", "name5"];
-
     fn complex_api() -> Api<'static> {
         let mut api = Api::default();
         api.add_dto(test_dto(1));
@@ -658,33 +658,5 @@ pub mod tests {
         deep_namespace.add_dto(test_dto(5));
         namespace.add_namespace(deep_namespace);
         namespace
-    }
-
-    pub fn test_dto(i: usize) -> Dto<'static> {
-        Dto {
-            name: NAMES[i],
-            ..Default::default()
-        }
-    }
-
-    pub fn test_rpc(i: usize) -> Rpc<'static> {
-        Rpc {
-            name: NAMES[i],
-            ..Default::default()
-        }
-    }
-
-    pub fn test_namespace(i: usize) -> Namespace<'static> {
-        Namespace {
-            name: NAMES[i],
-            ..Default::default()
-        }
-    }
-
-    pub fn test_api(input: &mut input::Buffer) -> Api {
-        parser::Rust::default()
-            .parse(input)
-            .expect("test api definition failed to parse")
-            .into_api()
     }
 }

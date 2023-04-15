@@ -1,6 +1,7 @@
+use std::borrow::Cow;
+
 use anyhow::Result;
 use itertools::Itertools;
-use std::borrow::Cow;
 
 use crate::input;
 use crate::model::api::validate;
@@ -203,9 +204,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::input;
-    use crate::model::tests::test_api;
     use crate::model::{Builder, Model, ValidationError};
+    use crate::test_util::executor::TestExecutor;
 
     mod namespace {
         use crate::model::Builder;
@@ -297,8 +297,8 @@ mod tests {
             use crate::model::builder::tests::merge::test_namespace;
             use crate::model::builder::tests::test_builder;
             use crate::model::metadata::Chunk;
-            use crate::model::tests::test_api;
             use crate::model::{Builder, TypeRef};
+            use crate::test_util::executor::TestExecutor;
 
             #[test]
             fn adds_chunk_metadata_with_current_namespace() {
@@ -320,11 +320,11 @@ mod tests {
 
             #[test]
             fn applies_chunk_attr_to_all_entities_recursively() {
-                let mut input = input::Buffer::new("mod ns0 { mod ns1 {} struct dto {} }");
-                let mut builder = test_builder(&mut input);
+                let mut exe = TestExecutor::new("mod ns0 { mod ns1 {} struct dto {} }");
+                let mut builder = test_builder(&mut exe);
                 builder.enter_namespace("ns0");
 
-                let mut merge_input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns2 {
                         struct dto {}
@@ -332,7 +332,7 @@ mod tests {
                     }
                 "#,
                 );
-                let to_merge = test_api(&mut merge_input);
+                let to_merge = exe.api();
 
                 let file_path = PathBuf::from("some/path");
                 builder.merge_from_chunk(
@@ -499,12 +499,12 @@ mod tests {
 
     mod build {
         mod dedupe_namespaces {
-            use crate::input;
             use crate::model::builder::tests::build_from_input;
+            use crate::test_util::executor::TestExecutor;
 
             #[test]
             fn within_root() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns2 {}
                     mod ns1 {}
@@ -514,7 +514,7 @@ mod tests {
                     mod ns1 {}
                 "#,
                 );
-                let model = build_from_input(&mut input).unwrap();
+                let model = build_from_input(&mut exe).unwrap();
 
                 assert_eq!(model.api.namespaces().count(), 3);
                 assert!(model.api.namespace("ns1").is_some());
@@ -524,7 +524,7 @@ mod tests {
 
             #[test]
             fn within_sub_namespace() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         mod ns2 {}
@@ -536,7 +536,7 @@ mod tests {
                     }
                 "#,
                 );
-                let model = build_from_input(&mut input).unwrap();
+                let model = build_from_input(&mut exe).unwrap();
 
                 assert_eq!(model.api.namespaces().count(), 1);
                 assert!(model.api.namespace("ns").is_some());
@@ -550,7 +550,7 @@ mod tests {
 
             #[test]
             fn across_sub_namespaces_with_same_name() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         mod ns1 {}
@@ -564,7 +564,7 @@ mod tests {
                     }
                 "#,
                 );
-                let model = build_from_input(&mut input).unwrap();
+                let model = build_from_input(&mut exe).unwrap();
 
                 assert_eq!(model.api.namespaces().count(), 1);
                 let nested = model.api.namespace("ns").unwrap();
@@ -576,13 +576,13 @@ mod tests {
         }
 
         mod validate_duplicates {
-            use crate::input;
             use crate::model::builder::tests::{assert_contains_error, build_from_input};
             use crate::model::builder::ValidationError;
+            use crate::test_util::executor::TestExecutor;
 
             #[test]
             fn dtos() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         struct dto {}
@@ -590,13 +590,13 @@ mod tests {
                     }
                 "#,
                 );
-                let result = build_from_input(&mut input);
+                let result = build_from_input(&mut exe);
                 assert_contains_error(&result, ValidationError::DuplicateDto(["ns", "dto"].into()));
             }
 
             #[test]
             fn rpcs() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         fn rpc() {}
@@ -604,13 +604,13 @@ mod tests {
                     }
                 "#,
                 );
-                let result = build_from_input(&mut input);
+                let result = build_from_input(&mut exe);
                 assert_contains_error(&result, ValidationError::DuplicateRpc(["ns", "rpc"].into()));
             }
 
             #[test]
             fn rpc_dto_with_same_name_ok() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         fn thing() {}
@@ -618,22 +618,22 @@ mod tests {
                     }
                 "#,
                 );
-                let result = build_from_input(&mut input);
+                let result = build_from_input(&mut exe);
                 assert!(result.is_ok());
             }
         }
 
         mod validate_dto {
-            use crate::input;
             use crate::model::builder::tests::{
                 assert_contains_error, build_from_input, test_builder,
             };
             use crate::model::builder::ValidationError;
             use crate::model::TypeRef;
+            use crate::test_util::executor::TestExecutor;
 
             #[test]
             fn name_empty() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         struct dto0 {}
@@ -642,7 +642,7 @@ mod tests {
                     }
                 "#,
                 );
-                let mut builder = test_builder(&mut input);
+                let mut builder = test_builder(&mut exe);
                 builder
                     .api
                     .find_dto_mut(&["ns", "dto2"].into())
@@ -660,7 +660,7 @@ mod tests {
 
             #[test]
             fn field_name_empty() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         struct dto {
@@ -670,7 +670,7 @@ mod tests {
                         }
                     }"#,
                 );
-                let mut builder = test_builder(&mut input);
+                let mut builder = test_builder(&mut exe);
                 builder
                     .api
                     .find_dto_mut(&["ns", "dto"].into())
@@ -690,7 +690,7 @@ mod tests {
 
             #[test]
             fn field_type_invalid_linkage() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     struct dto {
                         field0: bool,
@@ -700,7 +700,7 @@ mod tests {
                         struct definitely_not_dto {}
                     }"#,
                 );
-                let result = build_from_input(&mut input);
+                let result = build_from_input(&mut exe);
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -715,16 +715,16 @@ mod tests {
         }
 
         mod validate_rpc {
-            use crate::input;
             use crate::model::builder::tests::{
                 assert_contains_error, build_from_input, test_builder,
             };
             use crate::model::builder::ValidationError;
             use crate::model::TypeRef;
+            use crate::test_util::executor::TestExecutor;
 
             #[test]
             fn name_empty() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         fn rpc0() {}
@@ -733,7 +733,7 @@ mod tests {
                     }
                 "#,
                 );
-                let mut builder = test_builder(&mut input);
+                let mut builder = test_builder(&mut exe);
                 builder
                     .api
                     .find_rpc_mut(&["ns", "rpc2"].into())
@@ -751,13 +751,13 @@ mod tests {
 
             #[test]
             fn param_name_empty() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         fn rpc(param0: bool, param1: bool, param2: bool) {}
                     }"#,
                 );
-                let mut builder = test_builder(&mut input);
+                let mut builder = test_builder(&mut exe);
                 builder
                     .api
                     .find_rpc_mut(&["ns", "rpc"].into())
@@ -777,14 +777,14 @@ mod tests {
 
             #[test]
             fn param_type_invalid_linkage() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     fn rpc(param0: bool, param1: ns::dto) {}
                     mod ns {
                         struct definitely_not_dto {}
                     }"#,
                 );
-                let result = build_from_input(&mut input);
+                let result = build_from_input(&mut exe);
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -799,14 +799,14 @@ mod tests {
 
             #[test]
             fn return_type_invalid_linkage() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     fn rpc() -> ns::dto {}
                     mod ns {
                         struct definitely_not_dto {}
                     }"#,
                 );
-                let result = build_from_input(&mut input);
+                let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidRpcReturnType(["rpc"].into(), ["ns", "dto"].into()),
@@ -815,10 +815,10 @@ mod tests {
         }
 
         mod validate_namespace {
-            use crate::input;
             use crate::model::builder::tests::{assert_contains_error, build_from_input};
             use crate::model::builder::ValidationError;
             use crate::model::{Builder, UNDEFINED_NAMESPACE};
+            use crate::test_util::executor::TestExecutor;
 
             #[test]
             fn root_namespace_undefined_allowed() {
@@ -828,17 +828,16 @@ mod tests {
 
             #[test]
             fn name_within_root_not_undefined() {
-                let mut input =
-                    input::Buffer::new("mod zzzz {}".replace("zzzz", UNDEFINED_NAMESPACE));
+                let mut exe = TestExecutor::new("mod zzzz {}".replace("zzzz", UNDEFINED_NAMESPACE));
                 assert_contains_error(
-                    &build_from_input(&mut input),
+                    &build_from_input(&mut exe),
                     ValidationError::InvalidNamespaceName([UNDEFINED_NAMESPACE].into()),
                 );
             }
 
             #[test]
             fn name_below_root_not_undefined() {
-                let mut input = input::Buffer::new(
+                let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
                         mod zzzz {}
@@ -846,20 +845,20 @@ mod tests {
                     .replace("zzzz", UNDEFINED_NAMESPACE),
                 );
                 assert_contains_error(
-                    &build_from_input(&mut input),
+                    &build_from_input(&mut exe),
                     ValidationError::InvalidNamespaceName(["ns", UNDEFINED_NAMESPACE].into()),
                 );
             }
         }
     }
 
-    fn build_from_input(input: &mut input::Buffer) -> Result<Model, Vec<ValidationError<'_>>> {
-        test_builder(input).build()
+    fn build_from_input(exe: &mut TestExecutor) -> Result<Model, Vec<ValidationError<'_>>> {
+        test_builder(exe).build()
     }
 
-    fn test_builder(input: &mut input::Buffer) -> Builder {
+    fn test_builder(exe: &mut TestExecutor) -> Builder {
         Builder {
-            api: test_api(input),
+            api: exe.api(),
             ..Default::default()
         }
     }
