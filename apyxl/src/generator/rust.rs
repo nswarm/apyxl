@@ -178,8 +178,7 @@ pub mod ns0 {
         assert_output(
             |o| {
                 write_dto(
-                    view::Dto::for_test(
-                        &Transforms::default(),
+                    view::Dto::new(
                         &model::Dto {
                             name: "DtoName",
                             fields: vec![
@@ -196,6 +195,7 @@ pub mod ns0 {
                             ],
                             attributes: Default::default(),
                         },
+                        &Transforms::default(),
                     ),
                     &mut Indented::new(o, INDENT),
                 )
@@ -213,8 +213,7 @@ pub mod ns0 {
         assert_output(
             |o| {
                 write_rpc(
-                    view::Rpc::for_test(
-                        &Transforms::default(),
+                    view::Rpc::new(
                         &model::Rpc {
                             name: "rpc_name",
                             params: vec![
@@ -232,6 +231,7 @@ pub mod ns0 {
                             return_type: None,
                             attributes: Default::default(),
                         },
+                        &Transforms::default(),
                     ),
                     &mut Indented::new(o, INDENT),
                 )
@@ -249,14 +249,14 @@ pub mod ns0 {
         assert_output(
             |o| {
                 write_rpc(
-                    view::Rpc::for_test(
-                        &Transforms::default(),
+                    view::Rpc::new(
                         &model::Rpc {
                             name: "rpc_name",
                             params: vec![],
                             return_type: Some(model::TypeRef::new(&["ReturnType"])),
                             attributes: Default::default(),
                         },
+                        &Transforms::default(),
                     ),
                     &mut Indented::new(o, INDENT),
                 )
@@ -270,13 +270,15 @@ pub mod ns0 {
         assert_output(
             |o| {
                 write_field(
-                    view::Field::for_test(
-                        &Transforms::default(),
+                    view::Field::new(
                         &model::Field {
                             name: "asdf",
                             ty: model::TypeRef::new(&["Type"]),
                             attributes: Default::default(),
                         },
+                        &vec![],
+                        &vec![],
+                        &vec![],
                     ),
                     o,
                 )
@@ -289,12 +291,7 @@ pub mod ns0 {
     fn type_ref() -> Result<()> {
         let type_ref = model::TypeRef::new(&["asdf"]);
         assert_output(
-            |o| {
-                write_type_ref(
-                    view::TypeRef::for_test(&Transforms::default(), &type_ref),
-                    o,
-                )
-            },
+            |o| write_type_ref(view::TypeRef::new(&type_ref, &vec![]), o),
             "asdf",
         )
     }
