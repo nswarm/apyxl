@@ -80,7 +80,9 @@ mod tests {
     use std::borrow::Cow;
 
     use crate::model;
-    use crate::view::{DtoTransform, FieldTransform, NamespaceTransform, RpcTransform, TypeRef};
+    use crate::view::{
+        DtoTransform, FieldTransform, NamespaceTransform, RpcTransform, TypeRef, TypeRefTransform,
+    };
 
     #[derive(Default, Debug)]
     pub struct TestRenamer {}
@@ -110,10 +112,10 @@ mod tests {
         fn name(&self, value: &mut Cow<str>) {
             *value = Cow::Owned(TestRenamer::renamed(value))
         }
-        fn ty(&self, value: &mut TypeRef) {
-            value
-                .fully_qualified_type_name()
-                .push(Cow::Borrowed(TestRenamer::SUFFIX))
+    }
+    impl TypeRefTransform for TestRenamer {
+        fn fully_qualified_type_name(&self, value: &mut Vec<Cow<str>>) {
+            value.push(Cow::Borrowed(TestRenamer::SUFFIX))
         }
     }
 

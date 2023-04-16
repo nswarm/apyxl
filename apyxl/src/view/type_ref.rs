@@ -34,8 +34,36 @@ impl<'v, 'a> TypeRef<'v, 'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_util::executor::TestExecutor;
+    use crate::view::tests::TestRenamer;
+    use itertools::Itertools;
+
     #[test]
     fn fully_qualified_type_name() {
-        todo!()
+        #[test]
+        fn name() {
+            let mut exe = TestExecutor::new(
+                r#"
+                    struct dto {
+                        field: some::Type
+                    }
+                "#,
+            );
+            let model = exe.model();
+            let view = model.view().with_dto_transform(TestRenamer {});
+            let root = view.api();
+            let dto = root.find_dto(&["dto"].into()).unwrap();
+            let fields = dto.fields().collect_vec();
+            let type_ref = fields.get(0).unwrap().ty();
+
+            assert_eq!(
+                type_ref
+                    .fully_qualified_type_name()
+                    .iter()
+                    .map(|s| s.as_ref())
+                    .collect_vec(),
+                vec!["some", "Type", TestRenamer::SUFFIX],
+            );
+        }
     }
 }

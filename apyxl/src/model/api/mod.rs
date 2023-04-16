@@ -14,22 +14,19 @@ pub type Api<'a> = Namespace<'a>;
 /// The root namespace of the entire API.
 pub const UNDEFINED_NAMESPACE: &str = "_";
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum NamespaceChild<'a> {
-    Dto(Dto<'a>),
-    Rpc(Rpc<'a>),
-    Namespace(Namespace<'a>),
-}
-
-/// Arbitrary key=value pairs used to attach additional metadata to entities.
-pub type Attributes<'a> = HashMap<Cow<'a, str>, String>;
-
 /// A named, nestable wrapper for a set of API entities.
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Namespace<'a> {
     pub name: &'a str,
     pub children: Vec<NamespaceChild<'a>>,
     pub attributes: Attributes<'a>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum NamespaceChild<'a> {
+    Dto(Dto<'a>),
+    Rpc(Rpc<'a>),
+    Namespace(Namespace<'a>),
 }
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
@@ -65,106 +62,8 @@ pub struct TypeRef<'a> {
     pub fully_qualified_type_name: Vec<&'a str>,
 }
 
-impl<'a> NamespaceChild<'a> {
-    pub fn attributes(&self) -> &Attributes<'a> {
-        match self {
-            NamespaceChild::Dto(dto) => &dto.attributes,
-            NamespaceChild::Rpc(rpc) => &rpc.attributes,
-            NamespaceChild::Namespace(namespace) => &namespace.attributes,
-        }
-    }
-
-    pub fn attributes_mut(&mut self) -> &mut Attributes<'a> {
-        match self {
-            NamespaceChild::Dto(dto) => &mut dto.attributes,
-            NamespaceChild::Rpc(rpc) => &mut rpc.attributes,
-            NamespaceChild::Namespace(namespace) => &mut namespace.attributes,
-        }
-    }
-}
-
-impl<'a> Dto<'a> {
-    pub fn field(&self, name: &str) -> Option<&Field<'a>> {
-        self.fields.iter().find(|field| field.name == name)
-    }
-
-    pub fn field_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
-        self.fields.iter_mut().find(|field| field.name == name)
-    }
-}
-
-impl<'a> Rpc<'a> {
-    pub fn param(&self, name: &str) -> Option<&Field<'a>> {
-        self.params.iter().find(|param| param.name == name)
-    }
-
-    pub fn param_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
-        self.params.iter_mut().find(|param| param.name == name)
-    }
-}
-
-impl<'a> TypeRef<'a> {
-    pub fn new(fqtn: &[&'a str]) -> Self {
-        Self {
-            fully_qualified_type_name: fqtn.to_vec(),
-        }
-    }
-
-    pub fn parent(&self) -> Option<Self> {
-        let fqtn = &self.fully_qualified_type_name;
-        if fqtn.is_empty() {
-            return None;
-        }
-        let len = fqtn.len() - 1;
-        Some(Self {
-            fully_qualified_type_name: fqtn[..len].to_vec(),
-        })
-    }
-
-    pub fn child(&self, name: &'a str) -> Self {
-        let mut child = self.clone();
-        child.fully_qualified_type_name.push(name);
-        child
-    }
-
-    pub fn has_namespace(&self) -> bool {
-        self.fully_qualified_type_name.len() > 1
-    }
-
-    /// Returns an iterator over the part of the path _before_ the name, which represents the
-    /// namespace it is a part of as an iterator over the type ref.
-    pub fn namespace_iter<'b>(&'b self) -> impl Iterator<Item = &'a str> + 'b {
-        let len = self.fully_qualified_type_name.len();
-        self.fully_qualified_type_name.iter().copied().take(len - 1)
-    }
-
-    /// Returns the part of the path _before_ the name
-    pub fn namespace(&self) -> TypeRef<'a> {
-        TypeRef::new(&self.namespace_iter().collect::<Vec<_>>())
-    }
-
-    /// The name is always the last part of the type path.
-    pub fn name(&self) -> Option<&'a str> {
-        self.fully_qualified_type_name.last().copied()
-    }
-}
-
-impl<'a, T> From<T> for TypeRef<'a>
-where
-    T: AsRef<[&'a str]>,
-{
-    fn from(value: T) -> Self {
-        Self {
-            fully_qualified_type_name: value.as_ref().to_vec(),
-        }
-    }
-}
-
-impl Display for TypeRef<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.fully_qualified_type_name.iter().join("."))
-    }
-}
+/// Arbitrary key=value pairs used to attach additional metadata to entities.
+pub type Attributes<'a> = HashMap<Cow<'a, str>, String>;
 
 impl<'a> Namespace<'a> {
     /// Perform a simple merge of [Namespace] `other` into this [Namespace] by adding all of
@@ -391,6 +290,107 @@ impl<'a> Namespace<'a> {
         for namespace in self.namespaces_mut() {
             namespace.apply_attr_to_children_recursively(key, value);
         }
+    }
+}
+
+impl<'a> NamespaceChild<'a> {
+    pub fn attributes(&self) -> &Attributes<'a> {
+        match self {
+            NamespaceChild::Dto(dto) => &dto.attributes,
+            NamespaceChild::Rpc(rpc) => &rpc.attributes,
+            NamespaceChild::Namespace(namespace) => &namespace.attributes,
+        }
+    }
+
+    pub fn attributes_mut(&mut self) -> &mut Attributes<'a> {
+        match self {
+            NamespaceChild::Dto(dto) => &mut dto.attributes,
+            NamespaceChild::Rpc(rpc) => &mut rpc.attributes,
+            NamespaceChild::Namespace(namespace) => &mut namespace.attributes,
+        }
+    }
+}
+
+impl<'a> Dto<'a> {
+    pub fn field(&self, name: &str) -> Option<&Field<'a>> {
+        self.fields.iter().find(|field| field.name == name)
+    }
+
+    pub fn field_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
+        self.fields.iter_mut().find(|field| field.name == name)
+    }
+}
+
+impl<'a> Rpc<'a> {
+    pub fn param(&self, name: &str) -> Option<&Field<'a>> {
+        self.params.iter().find(|param| param.name == name)
+    }
+
+    pub fn param_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
+        self.params.iter_mut().find(|param| param.name == name)
+    }
+}
+
+impl<'a> TypeRef<'a> {
+    pub fn new(fqtn: &[&'a str]) -> Self {
+        Self {
+            fully_qualified_type_name: fqtn.to_vec(),
+        }
+    }
+
+    pub fn parent(&self) -> Option<Self> {
+        let fqtn = &self.fully_qualified_type_name;
+        if fqtn.is_empty() {
+            return None;
+        }
+        let len = fqtn.len() - 1;
+        Some(Self {
+            fully_qualified_type_name: fqtn[..len].to_vec(),
+        })
+    }
+
+    pub fn child(&self, name: &'a str) -> Self {
+        let mut child = self.clone();
+        child.fully_qualified_type_name.push(name);
+        child
+    }
+
+    pub fn has_namespace(&self) -> bool {
+        self.fully_qualified_type_name.len() > 1
+    }
+
+    /// Returns an iterator over the part of the path _before_ the name, which represents the
+    /// namespace it is a part of as an iterator over the type ref.
+    pub fn namespace_iter<'b>(&'b self) -> impl Iterator<Item = &'a str> + 'b {
+        let len = self.fully_qualified_type_name.len();
+        self.fully_qualified_type_name.iter().copied().take(len - 1)
+    }
+
+    /// Returns the part of the path _before_ the name
+    pub fn namespace(&self) -> TypeRef<'a> {
+        TypeRef::new(&self.namespace_iter().collect::<Vec<_>>())
+    }
+
+    /// The name is always the last part of the type path.
+    pub fn name(&self) -> Option<&'a str> {
+        self.fully_qualified_type_name.last().copied()
+    }
+}
+
+impl<'a, T> From<T> for TypeRef<'a>
+where
+    T: AsRef<[&'a str]>,
+{
+    fn from(value: T) -> Self {
+        Self {
+            fully_qualified_type_name: value.as_ref().to_vec(),
+        }
+    }
+}
+
+impl Display for TypeRef<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.fully_qualified_type_name.iter().join("."))
     }
 }
 

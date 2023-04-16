@@ -16,7 +16,6 @@ pub struct Field<'v, 'a> {
 
 pub trait FieldTransform: Debug {
     fn name(&self, _: &mut Cow<str>) {}
-    fn ty(&self, _: &mut TypeRef) {}
 }
 
 impl<'v, 'a> Field<'v, 'a> {
