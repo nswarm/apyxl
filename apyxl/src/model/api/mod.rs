@@ -338,20 +338,20 @@ impl<'a> Rpc<'a> {
 }
 
 impl<'a> EntityId<'a> {
-    pub fn new(fqtn: &[&'a str]) -> Self {
+    pub fn new(path: &[&'a str]) -> Self {
         Self {
-            path: fqtn.to_vec(),
+            path: path.to_vec(),
         }
     }
 
     pub fn parent(&self) -> Option<Self> {
-        let fqtn = &self.path;
-        if fqtn.is_empty() {
+        let path = &self.path;
+        if path.is_empty() {
             return None;
         }
-        let len = fqtn.len() - 1;
+        let len = path.len() - 1;
         Some(Self {
-            path: fqtn[..len].to_vec(),
+            path: path[..len].to_vec(),
         })
     }
 

@@ -3,6 +3,7 @@ use itertools::Itertools;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
+/// A reference to another entity within the [Api].
 #[derive(Debug, Copy, Clone)]
 pub struct EntityId<'v, 'a> {
     target: &'v model::EntityId<'a>,
@@ -10,7 +11,7 @@ pub struct EntityId<'v, 'a> {
 }
 
 pub trait EntityIdTransform: Debug {
-    fn fully_qualified_type_name(&self, _: &mut Vec<Cow<str>>) {}
+    fn path(&self, _: &mut Vec<Cow<str>>) {}
 }
 
 impl<'v, 'a> EntityId<'v, 'a> {
@@ -21,7 +22,15 @@ impl<'v, 'a> EntityId<'v, 'a> {
         Self { target, xforms }
     }
 
-    pub fn fully_qualified_type_name(&self) -> Vec<Cow<str>> {
+    /// The path through other entities in the [Api] to get to the referred to entity. This will
+    /// typically be a path through the hierarchy of [NamespaceChild], but can also refer to
+    /// sub-child items like [Dto] fields or [Rpc] parameters.
+    ///
+    /// Examples:
+    ///     `namespace1.namespace2.DtoName`
+    ///     `namespace1.namespace2.DtoName.field0`
+    ///     `namespace1.RpcName.param0`
+    pub fn path(&self) -> Vec<Cow<str>> {
         let mut value = self
             .target
             .path
@@ -29,7 +38,7 @@ impl<'v, 'a> EntityId<'v, 'a> {
             .map(|s| Cow::Borrowed(*s))
             .collect_vec();
         for x in self.xforms {
-            x.fully_qualified_type_name(&mut value)
+            x.path(&mut value)
         }
         value
     }
@@ -42,7 +51,7 @@ mod tests {
     use itertools::Itertools;
 
     #[test]
-    fn fully_qualified_type_name() {
+    fn path() {
         #[test]
         fn name() {
             let mut exe = TestExecutor::new(
@@ -61,7 +70,7 @@ mod tests {
 
             assert_eq!(
                 field_type_id
-                    .fully_qualified_type_name()
+                    .path()
                     .iter()
                     .map(|s| s.as_ref())
                     .collect_vec(),

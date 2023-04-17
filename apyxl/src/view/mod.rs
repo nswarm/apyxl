@@ -114,7 +114,7 @@ mod tests {
         }
     }
     impl EntityIdTransform for TestRenamer {
-        fn fully_qualified_type_name(&self, value: &mut Vec<Cow<str>>) {
+        fn path(&self, value: &mut Vec<Cow<str>>) {
             value.push(Cow::Borrowed(TestRenamer::SUFFIX))
         }
     }

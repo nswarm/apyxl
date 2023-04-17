@@ -115,11 +115,7 @@ fn write_param<O: Output>(field: Field, o: &mut O) -> Result<()> {
 
 fn write_entity_id<O: Output>(entity_id: EntityId, o: &mut O) -> Result<()> {
     write_joined(
-        &entity_id
-            .fully_qualified_type_name()
-            .iter()
-            .map(|s| s.as_ref())
-            .collect_vec(),
+        &entity_id.path().iter().map(|s| s.as_ref()).collect_vec(),
         "::",
         o,
     )
