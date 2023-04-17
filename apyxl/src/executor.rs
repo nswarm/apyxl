@@ -219,7 +219,6 @@ mod tests {
                     data.push_str(&self.delimiter);
                 }
             }
-            println!("{}", data);
             data
         }
     }

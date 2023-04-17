@@ -101,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn filter_param() {
+    fn params() {
         let mut exe = TestExecutor::new(
             r#"
             fn rpc(visible0: Type, hidden: Type, visible1: Type) {}

@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[test]
-    fn filter_field() {
+    fn fields() {
         let mut exe = TestExecutor::new(
             r#"
             struct dto {
