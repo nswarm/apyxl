@@ -17,11 +17,11 @@ impl ApyxlParser for Rust {
     fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>> {
         let mut builder = model::Builder::default();
 
-        while let Some(chunk) = input.next_chunk() {
+        while let Some((chunk, data)) = input.next_chunk() {
             let children = namespace_children(namespace())
                 .padded()
                 .then_ignore(end())
-                .parse(&chunk.data)
+                .parse(&data)
                 .into_result()
                 .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
 
@@ -113,7 +113,9 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('(').padded(), just(')').padded());
-    let return_type = just("->").ignore_then(whitespace()).ignore_then(entity_id());
+    let return_type = just("->")
+        .ignore_then(whitespace())
+        .ignore_then(entity_id());
     name.then(params)
         .then(return_type.or_not())
         .then_ignore(expr_block().padded())

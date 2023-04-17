@@ -1,10 +1,9 @@
 use anyhow::Result;
 use itertools::Itertools;
 
-use crate::input;
 use crate::model::api::validate;
 use crate::model::{
-    chunk, Api, EntityId, Metadata, Model, Namespace, ValidationError, UNDEFINED_NAMESPACE,
+    chunk, Api, Chunk, EntityId, Metadata, Model, Namespace, ValidationError, UNDEFINED_NAMESPACE,
 };
 
 /// Helper struct made for parsing [Api]s spread across multiple [Chunk]s. Tracks [Metadata]
@@ -48,12 +47,12 @@ impl<'a> Builder<'a> {
     /// A version of [Builder::merge] that does the following in addition to the [Api] merge:
     /// - Adds the appropriate [chunk::Metadata] to the builder's [Metadata].
     /// - Applies the [chunk::Attribute] to all entities in the namespace recursively.
-    pub fn merge_from_chunk(&mut self, mut namespace: Namespace<'a>, input_chunk: &input::Chunk) {
-        if let Some(relative_file_path) = &input_chunk.chunk.relative_file_path {
+    pub fn merge_from_chunk(&mut self, mut namespace: Namespace<'a>, chunk: &Chunk) {
+        if let Some(relative_file_path) = &chunk.relative_file_path {
             let root_namespace = self.current_namespace_id();
             self.metadata_mut().chunks.push(chunk::Metadata {
                 root_namespace,
-                chunk: input_chunk.chunk.clone(),
+                chunk: chunk.clone(),
             });
             namespace.apply_attr_to_children_recursively(|attr| {
                 attr.chunk
@@ -288,11 +287,11 @@ mod tests {
         mod merge_from_chunk {
             use std::path::PathBuf;
 
+            use crate::model;
             use crate::model::builder::tests::merge::test_namespace;
             use crate::model::builder::tests::test_builder;
-            use crate::model::{Builder, EntityId};
+            use crate::model::{Builder, Chunk, EntityId};
             use crate::test_util::executor::TestExecutor;
-            use crate::{input, model};
 
             #[test]
             fn adds_chunk_metadata_with_current_namespace() {
@@ -301,10 +300,7 @@ mod tests {
                 builder.enter_namespace("blah");
                 builder.merge_from_chunk(
                     test_namespace(1),
-                    &input::Chunk {
-                        data: "unused".to_string(),
-                        chunk: model::Chunk::with_relative_file_path(file_path.clone().unwrap()),
-                    },
+                    &Chunk::with_relative_file_path(file_path.clone().unwrap()),
                 );
                 assert_eq!(builder.metadata.chunks.len(), 1);
                 let chunk_metadata = builder.metadata.chunks.get(0).unwrap();
@@ -329,13 +325,8 @@ mod tests {
                 let to_merge = exe.api();
 
                 let file_path = PathBuf::from("some/path");
-                builder.merge_from_chunk(
-                    to_merge,
-                    &input::Chunk {
-                        data: "unused".to_string(),
-                        chunk: model::Chunk::with_relative_file_path(file_path.clone()),
-                    },
-                );
+                builder
+                    .merge_from_chunk(to_merge, &Chunk::with_relative_file_path(file_path.clone()));
 
                 let api = builder.build().unwrap().api;
                 // Existing shouldn't have attribute.

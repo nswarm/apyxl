@@ -2,15 +2,15 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 
-use crate::{input, model};
 use anyhow::{Context, Result};
 
-use crate::input::Input;
+use crate::input::{Data, Input};
+use crate::model::Chunk;
 
 /// Input from one or more files in a file system.
 #[derive(Default)]
 pub struct FileSet {
-    chunks: Vec<input::Chunk>,
+    chunks: Vec<(Chunk, Data)>,
     cursor: RefCell<usize>,
 }
 
@@ -32,24 +32,24 @@ impl FileSet {
             let content = fs::read_to_string(&file_path).with_context(|| {
                 format!("Failed to read file to string: {}", file_path.display())
             })?;
-            s.chunks.push(input::Chunk {
-                data: content.to_string(),
-                chunk: model::Chunk::with_relative_file_path(relative_file_path),
-            });
+            s.chunks.push((
+                Chunk::with_relative_file_path(relative_file_path),
+                content.to_string(),
+            ));
         }
         Ok(s)
     }
 }
 
 impl Input for FileSet {
-    fn next_chunk(&self) -> Option<&input::Chunk> {
+    fn next_chunk(&self) -> Option<(&Chunk, &Data)> {
         let cursor = *self.cursor.borrow();
         if cursor >= self.chunks.len() {
             return None;
         }
         let file = &self.chunks[cursor];
         *self.cursor.borrow_mut() = cursor + 1;
-        Some(file)
+        Some((&file.0, &file.1))
     }
 }
 
@@ -73,9 +73,15 @@ mod tests {
         File::create(&path0)?.write_all("test0".as_bytes())?;
         File::create(&path1)?.write_all("test1".as_bytes())?;
         let input = FileSet::new("", &[path0, path1])?;
-        assert_eq!(input.next_chunk().map(|c| c.data.as_str()), Some("test0"));
-        assert_eq!(input.next_chunk().map(|c| c.data.as_str()), Some("test1"));
-        assert_eq!(input.next_chunk().map(|c| c.data.as_str()), None);
+        assert_eq!(
+            input.next_chunk().map(|(_, data)| data.as_str()),
+            Some("test0")
+        );
+        assert_eq!(
+            input.next_chunk().map(|(_, data)| data.as_str()),
+            Some("test1")
+        );
+        assert_eq!(input.next_chunk().map(|(_, data)| data.as_str()), None);
         Ok(())
     }
 
@@ -88,13 +94,13 @@ mod tests {
         assert_eq!(
             input
                 .next_chunk()
-                .map(|c| c.chunk.relative_file_path.clone().unwrap()),
+                .map(|(chunk, _)| chunk.relative_file_path.clone().unwrap()),
             Some(path0)
         );
         assert_eq!(
             input
                 .next_chunk()
-                .map(|c| c.chunk.relative_file_path.clone().unwrap()),
+                .map(|(chunk, _)| chunk.relative_file_path.clone().unwrap()),
             Some(path1)
         );
         Ok(())
@@ -109,7 +115,7 @@ mod tests {
     #[test]
     fn returns_none_when_empty() -> Result<()> {
         let input = FileSet::new::<&str, &str>("", &[])?;
-        assert_eq!(input.next_chunk().map(|c| c.data.as_str()), None);
+        assert_eq!(input.next_chunk().map(|(_, data)| data.as_str()), None);
         Ok(())
     }
 

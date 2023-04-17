@@ -69,11 +69,11 @@ impl<'a, O: Output> Indented<'_, O> {
 }
 
 impl<O: Output> Output for Indented<'_, O> {
-    fn start_chunk(&mut self, chunk: &Chunk) {
+    fn start_chunk(&mut self, chunk: &Chunk) -> Result<()> {
         self.output.start_chunk(chunk)
     }
 
-    fn end_chunk(&mut self, chunk: &Chunk) {
+    fn end_chunk(&mut self, chunk: &Chunk) -> Result<()> {
         self.output.end_chunk(chunk)
     }
 

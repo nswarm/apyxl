@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use walkdir::WalkDir;
 
 use crate::input;
-use crate::input::{Chunk, Input};
+use crate::input::{Chunk, Data, Input};
 
 /// Input from one or more files in a file system.
 #[derive(Default)]
@@ -21,7 +21,7 @@ impl Glob {
 }
 
 impl Input for Glob {
-    fn next_chunk(&self) -> Option<&Chunk> {
+    fn next_chunk(&self) -> Option<(&Chunk, &Data)> {
         self.file_set.next_chunk()
     }
 }

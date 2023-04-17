@@ -14,11 +14,11 @@ mod stdout;
 pub trait Output {
     /// Start a new chunk. This should be used to acquire new resources for writing the chunk
     /// data such as opening a file. Always pair with a call to `end_chunk`.
-    fn start_chunk(&mut self, chunk: &chunk::Chunk);
+    fn start_chunk(&mut self, chunk: &chunk::Chunk) -> Result<()>;
 
     /// Complete the current chunk. This should handle releasing any resources related to the
     /// current chunk such as open files.
-    fn end_chunk(&mut self, chunk: &chunk::Chunk);
+    fn end_chunk(&mut self, chunk: &chunk::Chunk) -> Result<()>;
 
     fn write_str(&mut self, data: &str) -> Result<()>;
     fn write(&mut self, data: char) -> Result<()>;

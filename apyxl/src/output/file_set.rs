@@ -1,7 +1,3 @@
-use crate::model::chunk::Chunk;
-use crate::output::Output;
-use anyhow::Result;
-
 #[derive(Default)]
 pub struct FileSet {}
 
