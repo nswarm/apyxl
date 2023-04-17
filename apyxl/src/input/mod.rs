@@ -33,5 +33,5 @@ pub struct Chunk {
     /// Relative path including file name from a common root path shared by the other [Chunk]s from
     /// the [Input]. Typically used by a [crate::Generator] to determine where to put the final file
     /// for this data, and how to refer to it from other files for includes/imports.
-    pub relative_file_path: PathBuf,
+    pub relative_file_path: Option<PathBuf>,
 }

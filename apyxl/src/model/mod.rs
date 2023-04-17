@@ -5,6 +5,7 @@ pub use metadata::Metadata;
 
 pub mod api;
 mod builder;
+mod chunk;
 pub mod metadata;
 
 /// In-memory representation of a fully parsed and validated API.

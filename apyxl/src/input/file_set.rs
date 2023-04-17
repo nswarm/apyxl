@@ -33,7 +33,7 @@ impl FileSet {
             })?;
             s.chunks.push(Chunk {
                 data: content.to_string(),
-                relative_file_path,
+                relative_file_path: Some(relative_file_path),
             });
         }
         Ok(s)
@@ -85,11 +85,15 @@ mod tests {
         let path1 = create_file_in(root.path(), "test1");
         let input = FileSet::new(&root, &[&path0, &path1])?;
         assert_eq!(
-            input.next_chunk().map(|c| c.relative_file_path.clone()),
+            input
+                .next_chunk()
+                .map(|c| c.relative_file_path.clone().unwrap()),
             Some(path0)
         );
         assert_eq!(
-            input.next_chunk().map(|c| c.relative_file_path.clone()),
+            input
+                .next_chunk()
+                .map(|c| c.relative_file_path.clone().unwrap()),
             Some(path1)
         );
         Ok(())

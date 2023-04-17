@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::path::PathBuf;
 
 use crate::input::{Chunk, Input};
 
@@ -15,7 +14,7 @@ impl Buffer {
         Self {
             chunk: Chunk {
                 data: data.to_string(),
-                relative_file_path: PathBuf::new(),
+                relative_file_path: None,
             },
             read: RefCell::new(false),
         }

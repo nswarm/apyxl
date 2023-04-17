@@ -1,8 +1,8 @@
 use std::io::{stdin, Read};
-use std::path::PathBuf;
+
+use anyhow::Result;
 
 use crate::input::{Chunk, Input};
-use anyhow::Result;
 
 pub struct StdIn {
     chunk: Chunk,
@@ -14,7 +14,7 @@ impl StdIn {
         let mut s = Self {
             chunk: Chunk {
                 data: String::new(),
-                relative_file_path: PathBuf::new(),
+                relative_file_path: None,
             },
         };
         stdin().read_to_string(&mut s.chunk.data)?;

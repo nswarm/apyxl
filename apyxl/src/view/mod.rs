@@ -73,6 +73,11 @@ impl<'v, 'a> Model<'v, 'a> {
         self.xforms.dto_field.push(Box::new(xform));
         self
     }
+
+    pub fn with_entity_id_transform(mut self, xform: impl EntityIdTransform + 'static) -> Self {
+        self.xforms.entity_id_xforms.push(Box::new(xform));
+        self
+    }
 }
 
 #[cfg(test)]
@@ -81,7 +86,7 @@ mod tests {
 
     use crate::model;
     use crate::view::{
-        DtoTransform, EntityId, EntityIdTransform, FieldTransform, NamespaceTransform, RpcTransform,
+        DtoTransform, EntityIdTransform, FieldTransform, NamespaceTransform, RpcTransform,
     };
 
     #[derive(Default, Debug)]

@@ -1,12 +1,10 @@
-use std::borrow::Cow;
-
 use anyhow::Result;
 use itertools::Itertools;
 
 use crate::input;
 use crate::model::api::validate;
 use crate::model::{
-    metadata, Api, EntityId, Metadata, Model, Namespace, ValidationError, UNDEFINED_NAMESPACE,
+    chunk, Api, EntityId, Metadata, Model, Namespace, ValidationError, UNDEFINED_NAMESPACE,
 };
 
 /// Helper struct made for parsing [Api]s spread across multiple [Chunk]s. Tracks [Metadata]
@@ -48,24 +46,21 @@ impl<'a> Builder<'a> {
     }
 
     /// A version of [Builder::merge] that does the following in addition to the [Api] merge:
-    /// - Adds the appropriate [metadata::Chunk] to the builder's [Metadata].
-    /// - Applies the [metadata::Chunk::ATTRIBUTE] to all entities in the namespace recursively.
+    /// - Adds the appropriate [chunk::Metadata] to the builder's [Metadata].
+    /// - Applies the [chunk::Attribute] to all entities in the namespace recursively.
     pub fn merge_from_chunk(&mut self, mut namespace: Namespace<'a>, chunk: &input::Chunk) {
-        let chunk_metadata = metadata::Chunk {
-            root_namespace: self.current_namespace_id(),
-            relative_file_path: chunk.relative_file_path.clone(),
-        };
-
-        let attr_key = metadata::Chunk::ATTRIBUTE;
-        let attr_value = chunk_metadata.relative_file_path_str();
-
-        if !attr_value.is_empty() {
-            namespace
-                .attributes
-                .insert(Cow::Borrowed(attr_key), attr_value.to_string());
-            namespace.apply_attr_to_children_recursively(attr_key, attr_value.as_ref());
-
-            self.metadata_mut().chunks.push(chunk_metadata);
+        if let Some(relative_file_path) = &chunk.relative_file_path {
+            let root_namespace = self.current_namespace_id();
+            self.metadata_mut().chunks.push(chunk::Metadata {
+                root_namespace,
+                relative_file_path: chunk.relative_file_path.clone(),
+            });
+            namespace.apply_attr_to_children_recursively(|attr| {
+                attr.chunk
+                    .get_or_insert(chunk::Attribute::default())
+                    .relative_file_paths
+                    .push(relative_file_path.clone())
+            });
         }
 
         self.merge(namespace);
@@ -293,17 +288,16 @@ mod tests {
         mod merge_from_chunk {
             use std::path::PathBuf;
 
-            use crate::input;
             use crate::model::builder::tests::merge::test_namespace;
             use crate::model::builder::tests::test_builder;
-            use crate::model::metadata::Chunk;
             use crate::model::{Builder, EntityId};
             use crate::test_util::executor::TestExecutor;
+            use crate::{input, model};
 
             #[test]
             fn adds_chunk_metadata_with_current_namespace() {
                 let mut builder = Builder::default();
-                let file_path = PathBuf::from("some/path");
+                let file_path = Some(PathBuf::from("some/path"));
                 builder.enter_namespace("blah");
                 builder.merge_from_chunk(
                     test_namespace(1),
@@ -339,50 +333,55 @@ mod tests {
                     to_merge,
                     &input::Chunk {
                         data: "unused".to_string(),
-                        relative_file_path: file_path.clone(),
+                        relative_file_path: Some(file_path.clone()),
                     },
                 );
 
                 let api = builder.build().unwrap().api;
-                let attr_value = file_path.to_string_lossy().to_string();
                 // Existing shouldn't have attribute.
-                assert!(!api
-                    .find_namespace(&["ns0"].into())
-                    .unwrap()
-                    .attributes
-                    .contains_key(Chunk::ATTRIBUTE));
-                assert!(!api
-                    .find_namespace(&["ns0", "ns1"].into())
-                    .unwrap()
-                    .attributes
-                    .contains_key(Chunk::ATTRIBUTE));
-                assert!(!api
-                    .find_dto(&["ns0", "dto"].into())
-                    .unwrap()
-                    .attributes
-                    .contains_key(Chunk::ATTRIBUTE));
+                assert!(!chunk_attr_contains_file_path(
+                    &api.find_namespace(&["ns0"].into()).unwrap().attributes,
+                    &file_path
+                ));
+                assert!(!chunk_attr_contains_file_path(
+                    &api.find_namespace(&["ns0", "ns1"].into())
+                        .unwrap()
+                        .attributes,
+                    &file_path
+                ));
+                assert!(!chunk_attr_contains_file_path(
+                    &api.find_dto(&["ns0", "dto"].into()).unwrap().attributes,
+                    &file_path
+                ));
                 // Merged should have correct attribute.
-                assert_eq!(
-                    api.find_namespace(&["ns0", "ns2"].into())
+                assert!(chunk_attr_contains_file_path(
+                    &api.find_namespace(&["ns0", "ns2"].into())
                         .unwrap()
-                        .attributes
-                        .get(Chunk::ATTRIBUTE),
-                    Some(&attr_value)
-                );
-                assert_eq!(
-                    api.find_dto(&["ns0", "ns2", "dto"].into())
+                        .attributes,
+                    &file_path
+                ));
+                assert!(chunk_attr_contains_file_path(
+                    &api.find_dto(&["ns0", "ns2", "dto"].into())
                         .unwrap()
-                        .attributes
-                        .get(Chunk::ATTRIBUTE),
-                    Some(&attr_value)
-                );
-                assert_eq!(
-                    api.find_rpc(&["ns0", "ns2", "rpc"].into())
+                        .attributes,
+                    &file_path
+                ));
+                assert!(chunk_attr_contains_file_path(
+                    &api.find_rpc(&["ns0", "ns2", "rpc"].into())
                         .unwrap()
-                        .attributes
-                        .get(Chunk::ATTRIBUTE),
-                    Some(&attr_value)
-                );
+                        .attributes,
+                    &file_path
+                ));
+            }
+
+            fn chunk_attr_contains_file_path(
+                attr: &model::Attributes,
+                file_path: &PathBuf,
+            ) -> bool {
+                attr.chunk
+                    .as_ref()
+                    .map(|attr| attr.relative_file_paths.contains(&file_path))
+                    .unwrap_or(false)
             }
         }
 

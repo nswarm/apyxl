@@ -1,7 +1,9 @@
-use crate::model;
-use itertools::Itertools;
 use std::borrow::Cow;
 use std::fmt::Debug;
+
+use itertools::Itertools;
+
+use crate::model;
 
 /// A reference to another entity within the [Api].
 #[derive(Debug, Copy, Clone)]
@@ -46,36 +48,34 @@ impl<'v, 'a> EntityId<'v, 'a> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::TestRenamer;
-    use itertools::Itertools;
 
     #[test]
     fn path() {
-        #[test]
-        fn name() {
-            let mut exe = TestExecutor::new(
-                r#"
-                    struct dto {
-                        field: some::Type
-                    }
-                "#,
-            );
-            let model = exe.model();
-            let view = model.view().with_dto_transform(TestRenamer {});
-            let root = view.api();
-            let dto = root.find_dto(&["dto"].into()).unwrap();
-            let fields = dto.fields().collect_vec();
-            let field_type_id = fields.get(0).unwrap().ty();
+        let mut exe = TestExecutor::new(
+            r#"
+                struct dto {
+                    field: some::Type
+                }
+            "#,
+        );
+        let model = exe.model();
+        let view = model.view().with_entity_id_transform(TestRenamer {});
+        let root = view.api();
+        let dto = root.find_dto(&["dto"].into()).unwrap();
+        let fields = dto.fields().collect_vec();
+        let field_type_id = fields.get(0).unwrap().ty();
 
-            assert_eq!(
-                field_type_id
-                    .path()
-                    .iter()
-                    .map(|s| s.as_ref())
-                    .collect_vec(),
-                vec!["some", "Type", TestRenamer::SUFFIX],
-            );
-        }
+        assert_eq!(
+            field_type_id
+                .path()
+                .iter()
+                .map(|s| s.as_ref())
+                .collect_vec(),
+            vec!["some", "Type", TestRenamer::SUFFIX],
+        );
     }
 }

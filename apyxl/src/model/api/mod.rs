@@ -1,10 +1,10 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 use itertools::Itertools;
 
 pub use validate::ValidationError;
+
+use crate::model::chunk;
 
 pub mod validate;
 
@@ -19,7 +19,7 @@ pub const UNDEFINED_NAMESPACE: &str = "_";
 pub struct Namespace<'a> {
     pub name: &'a str,
     pub children: Vec<NamespaceChild<'a>>,
-    pub attributes: Attributes<'a>,
+    pub attributes: Attributes,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -34,7 +34,7 @@ pub enum NamespaceChild<'a> {
 pub struct Dto<'a> {
     pub name: &'a str,
     pub fields: Vec<Field<'a>>,
-    pub attributes: Attributes<'a>,
+    pub attributes: Attributes,
 }
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
@@ -42,7 +42,7 @@ pub struct Dto<'a> {
 pub struct Field<'a> {
     pub name: &'a str,
     pub ty: EntityId<'a>,
-    pub attributes: Attributes<'a>,
+    pub attributes: Attributes,
 }
 
 /// A single Remote Procedure Call (RPC) within an [Api].
@@ -51,7 +51,7 @@ pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
     pub return_type: Option<EntityId<'a>>,
-    pub attributes: Attributes<'a>,
+    pub attributes: Attributes,
 }
 
 /// A reference to another entity within the [Api].
@@ -68,8 +68,11 @@ pub struct EntityId<'a> {
     pub path: Vec<&'a str>,
 }
 
-/// Arbitrary key=value pairs used to attach additional metadata to entities.
-pub type Attributes<'a> = HashMap<Cow<'a, str>, String>;
+/// Additional metadata attached to entities.
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
+pub struct Attributes {
+    pub chunk: Option<chunk::Attribute>,
+}
 
 impl<'a> Namespace<'a> {
     /// Perform a simple merge of [Namespace] `other` into this [Namespace] by adding all of
@@ -192,16 +195,6 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Iterate over all [Attributes] of children in this [Namespace].
-    pub fn child_attributes(&self) -> impl Iterator<Item = &Attributes<'a>> {
-        self.children.iter().map(|child| child.attributes())
-    }
-
-    /// Iterate mutably over all [Attributes] of children in this [Namespace].
-    pub fn child_attributes_mut(&mut self) -> impl Iterator<Item = &mut Attributes<'a>> {
-        self.children.iter_mut().map(|child| child.attributes_mut())
-    }
-
     /// Removes all [Namespaces] from this [Namespace] and returns them in a [Vec].
     pub fn take_namespaces(&mut self) -> Vec<Namespace<'a>> {
         self.children
@@ -289,18 +282,21 @@ impl<'a> Namespace<'a> {
         Some(namespace_it)
     }
 
-    pub fn apply_attr_to_children_recursively(&mut self, key: &'a str, value: &str) {
-        for attr in self.child_attributes_mut() {
-            attr.insert(Cow::Borrowed(key), value.to_string());
-        }
+    pub fn apply_attr_to_children_recursively<F: FnMut(&mut Attributes) + Clone>(
+        &mut self,
+        mut f: F,
+    ) {
         for namespace in self.namespaces_mut() {
-            namespace.apply_attr_to_children_recursively(key, value);
+            namespace.apply_attr_to_children_recursively(f.clone());
+        }
+        for child in &mut self.children {
+            f(child.attributes_mut())
         }
     }
 }
 
 impl<'a> NamespaceChild<'a> {
-    pub fn attributes(&self) -> &Attributes<'a> {
+    pub fn attributes(&self) -> &Attributes {
         match self {
             NamespaceChild::Dto(dto) => &dto.attributes,
             NamespaceChild::Rpc(rpc) => &rpc.attributes,
@@ -308,7 +304,7 @@ impl<'a> NamespaceChild<'a> {
         }
     }
 
-    pub fn attributes_mut(&mut self) -> &mut Attributes<'a> {
+    pub fn attributes_mut(&mut self) -> &mut Attributes {
         match self {
             NamespaceChild::Dto(dto) => &mut dto.attributes,
             NamespaceChild::Rpc(rpc) => &mut rpc.attributes,
@@ -402,7 +398,9 @@ impl Display for EntityId<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{Api, Namespace};
+    use std::path::PathBuf;
+
+    use crate::model::{chunk, Api, Namespace};
     use crate::test_util::executor::TestExecutor;
     use crate::test_util::{test_dto, test_namespace, test_rpc};
 
@@ -600,45 +598,64 @@ mod tests {
                 "#,
         );
         let mut api = exe.api();
-        let attr_key = "key";
-        let attr_value = "value".to_string();
+        let expected_chunk = PathBuf::from("a/b/c");
         api.find_namespace_mut(&["ns0"].into())
             .unwrap()
-            .apply_attr_to_children_recursively(attr_key, &attr_value);
+            .apply_attr_to_children_recursively(|attr| {
+                attr.chunk
+                    .get_or_insert(chunk::Attribute::default())
+                    .relative_file_paths
+                    .push(expected_chunk.clone())
+            });
         assert_eq!(
             api.find_namespace(&["ns0", "ns1"].into())
                 .unwrap()
                 .attributes
-                .get(attr_key),
-            Some(&attr_value)
+                .chunk
+                .as_ref()
+                .unwrap()
+                .relative_file_paths,
+            vec![expected_chunk.clone()]
         );
         assert_eq!(
             api.find_dto(&["ns0", "dto"].into())
                 .unwrap()
                 .attributes
-                .get(attr_key),
-            Some(&attr_value)
+                .chunk
+                .as_ref()
+                .unwrap()
+                .relative_file_paths,
+            vec![expected_chunk.clone()]
         );
         assert_eq!(
             api.find_rpc(&["ns0", "rpc"].into())
                 .unwrap()
                 .attributes
-                .get(attr_key),
-            Some(&attr_value)
+                .chunk
+                .as_ref()
+                .unwrap()
+                .relative_file_paths,
+            vec![expected_chunk.clone()]
         );
         assert_eq!(
             api.find_dto(&["ns0", "ns1", "dto"].into())
                 .unwrap()
                 .attributes
-                .get(attr_key),
-            Some(&attr_value)
+                .chunk
+                .as_ref()
+                .unwrap()
+                .relative_file_paths,
+            vec![expected_chunk.clone()]
         );
         assert_eq!(
             api.find_rpc(&["ns0", "ns1", "rpc"].into())
                 .unwrap()
                 .attributes
-                .get(attr_key),
-            Some(&attr_value)
+                .chunk
+                .as_ref()
+                .unwrap()
+                .relative_file_paths,
+            vec![expected_chunk.clone()]
         );
     }
 
