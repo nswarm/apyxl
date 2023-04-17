@@ -41,7 +41,7 @@ pub struct Dto<'a> {
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Field<'a> {
     pub name: &'a str,
-    pub ty: TypeRef<'a>,
+    pub ty: EntityId<'a>,
     pub attributes: Attributes<'a>,
 }
 
@@ -50,16 +50,22 @@ pub struct Field<'a> {
 pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
-    pub return_type: Option<TypeRef<'a>>,
+    pub return_type: Option<EntityId<'a>>,
     pub attributes: Attributes<'a>,
 }
 
-/// A type such as a language primitive or a reference to a type within the API. Typically when used
-/// within model types, it refers to a [Dto], but can be used as a reference to other types
-/// like [Rpc]s or [Namespace]s as well.
+/// A reference to another entity within the [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
-pub struct TypeRef<'a> {
-    pub fully_qualified_type_name: Vec<&'a str>,
+pub struct EntityId<'a> {
+    /// The path through other entities in the [Api] to get to the referred to entity. This will
+    /// typically be a path through the hierarchy of [NamespaceChild], but can also refer to
+    /// sub-child items like [Dto] fields or [Rpc] parameters.
+    ///
+    /// Examples:
+    ///     `namespace1.namespace2.DtoName`
+    ///     `namespace1.namespace2.DtoName.field0`
+    ///     `namespace1.RpcName.param0`
+    pub path: Vec<&'a str>,
 }
 
 /// Arbitrary key=value pairs used to attach additional metadata to entities.
@@ -210,57 +216,57 @@ impl<'a> Namespace<'a> {
             .collect_vec()
     }
 
-    /// Find a [Dto] by `type_ref` relative to this [Namespace].
-    pub fn find_dto(&self, type_ref: &TypeRef) -> Option<&Dto<'a>> {
-        if !type_ref.has_namespace() {
-            return type_ref.name().and_then(|name| self.dto(name));
+    /// Find a [Dto] by [EntityId] relative to this [Namespace].
+    pub fn find_dto(&self, entity_id: &EntityId) -> Option<&Dto<'a>> {
+        if !entity_id.has_namespace() {
+            return entity_id.name().and_then(|name| self.dto(name));
         }
-        let namespace = self.find_namespace(&type_ref.namespace());
-        let name = type_ref.name();
+        let namespace = self.find_namespace(&entity_id.namespace());
+        let name = entity_id.name();
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.dto(name),
             _ => None,
         }
     }
 
-    /// Find a [Dto] by `type_ref` relative to this [Namespace].
-    pub fn find_dto_mut(&mut self, type_ref: &TypeRef) -> Option<&mut Dto<'a>> {
-        if !type_ref.has_namespace() {
-            return type_ref.name().and_then(|name| self.dto_mut(name));
+    /// Find a [Dto] by [EntityId] relative to this [Namespace].
+    pub fn find_dto_mut(&mut self, entity_id: &EntityId) -> Option<&mut Dto<'a>> {
+        if !entity_id.has_namespace() {
+            return entity_id.name().and_then(|name| self.dto_mut(name));
         }
-        let namespace = self.find_namespace_mut(&type_ref.namespace());
-        let name = type_ref.name();
+        let namespace = self.find_namespace_mut(&entity_id.namespace());
+        let name = entity_id.name();
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.dto_mut(name),
             _ => None,
         }
     }
 
-    /// Find a [Rpc] by `type_ref` relative to this [Namespace].
-    pub fn find_rpc(&self, type_ref: &TypeRef) -> Option<&Rpc<'a>> {
-        let namespace = self.find_namespace(&type_ref.namespace());
-        let name = type_ref.name();
+    /// Find a [Rpc] by [EntityId] relative to this [Namespace].
+    pub fn find_rpc(&self, entity_id: &EntityId) -> Option<&Rpc<'a>> {
+        let namespace = self.find_namespace(&entity_id.namespace());
+        let name = entity_id.name();
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.rpc(name),
             _ => None,
         }
     }
 
-    /// Find a [Rpc] by `type_ref` relative to this [Namespace].
-    pub fn find_rpc_mut(&mut self, type_ref: &TypeRef) -> Option<&mut Rpc<'a>> {
-        let namespace = self.find_namespace_mut(&type_ref.namespace());
-        let name = type_ref.name();
+    /// Find a [Rpc] by [EntityId] relative to this [Namespace].
+    pub fn find_rpc_mut(&mut self, entity_id: &EntityId) -> Option<&mut Rpc<'a>> {
+        let namespace = self.find_namespace_mut(&entity_id.namespace());
+        let name = entity_id.name();
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.rpc_mut(name),
             _ => None,
         }
     }
 
-    /// Find a [Namespace] by `type_ref` relative to this [Namespace].
+    /// Find a [Namespace] by [EntityId] relative to this [Namespace].
     /// If the type ref is empty, this [Namespace] will be returned.
-    pub fn find_namespace(&self, type_ref: &TypeRef) -> Option<&Namespace<'a>> {
+    pub fn find_namespace(&self, entity_id: &EntityId) -> Option<&Namespace<'a>> {
         let mut namespace_it = self;
-        for name in &type_ref.fully_qualified_type_name {
+        for name in &entity_id.path {
             if let Some(namespace) = namespace_it.namespace(name) {
                 namespace_it = namespace;
             } else {
@@ -270,10 +276,10 @@ impl<'a> Namespace<'a> {
         Some(namespace_it)
     }
 
-    /// Find a [Namespace] by `type_ref` relative to this [Namespace].
-    pub fn find_namespace_mut(&mut self, type_ref: &TypeRef) -> Option<&mut Namespace<'a>> {
+    /// Find a [Namespace] by [EntityId] relative to this [Namespace].
+    pub fn find_namespace_mut(&mut self, entity_id: &EntityId) -> Option<&mut Namespace<'a>> {
         let mut namespace_it = self;
-        for name in &type_ref.fully_qualified_type_name {
+        for name in &entity_id.path {
             if let Some(namespace) = namespace_it.namespace_mut(name) {
                 namespace_it = namespace;
             } else {
@@ -331,66 +337,66 @@ impl<'a> Rpc<'a> {
     }
 }
 
-impl<'a> TypeRef<'a> {
+impl<'a> EntityId<'a> {
     pub fn new(fqtn: &[&'a str]) -> Self {
         Self {
-            fully_qualified_type_name: fqtn.to_vec(),
+            path: fqtn.to_vec(),
         }
     }
 
     pub fn parent(&self) -> Option<Self> {
-        let fqtn = &self.fully_qualified_type_name;
+        let fqtn = &self.path;
         if fqtn.is_empty() {
             return None;
         }
         let len = fqtn.len() - 1;
         Some(Self {
-            fully_qualified_type_name: fqtn[..len].to_vec(),
+            path: fqtn[..len].to_vec(),
         })
     }
 
     pub fn child(&self, name: &'a str) -> Self {
         let mut child = self.clone();
-        child.fully_qualified_type_name.push(name);
+        child.path.push(name);
         child
     }
 
     pub fn has_namespace(&self) -> bool {
-        self.fully_qualified_type_name.len() > 1
+        self.path.len() > 1
     }
 
     /// Returns an iterator over the part of the path _before_ the name, which represents the
     /// namespace it is a part of as an iterator over the type ref.
     pub fn namespace_iter<'b>(&'b self) -> impl Iterator<Item = &'a str> + 'b {
-        let len = self.fully_qualified_type_name.len();
-        self.fully_qualified_type_name.iter().copied().take(len - 1)
+        let len = self.path.len();
+        self.path.iter().copied().take(len - 1)
     }
 
     /// Returns the part of the path _before_ the name
-    pub fn namespace(&self) -> TypeRef<'a> {
-        TypeRef::new(&self.namespace_iter().collect::<Vec<_>>())
+    pub fn namespace(&self) -> EntityId<'a> {
+        EntityId::new(&self.namespace_iter().collect::<Vec<_>>())
     }
 
     /// The name is always the last part of the type path.
     pub fn name(&self) -> Option<&'a str> {
-        self.fully_qualified_type_name.last().copied()
+        self.path.last().copied()
     }
 }
 
-impl<'a, T> From<T> for TypeRef<'a>
+impl<'a, T> From<T> for EntityId<'a>
 where
     T: AsRef<[&'a str]>,
 {
     fn from(value: T) -> Self {
         Self {
-            fully_qualified_type_name: value.as_ref().to_vec(),
+            path: value.as_ref().to_vec(),
         }
     }
 }
 
-impl Display for TypeRef<'_> {
+impl Display for EntityId<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.fully_qualified_type_name.iter().join("."))
+        write!(f, "{}", self.path.iter().join("."))
     }
 }
 
@@ -504,35 +510,35 @@ mod tests {
 
     mod find {
         use crate::model::api::tests::{complex_api, complex_namespace};
-        use crate::model::TypeRef;
+        use crate::model::EntityId;
         use crate::test_util::{test_dto, test_namespace, test_rpc, NAMES};
 
         #[test]
         fn dto() {
             let mut api = complex_api();
-            let type_ref1 = TypeRef::new(&[test_dto(1).name]);
-            let type_ref2 = TypeRef::new(&[test_dto(2).name]);
-            assert_eq!(api.find_dto(&type_ref1), Some(&test_dto(1)));
-            assert_eq!(api.find_dto_mut(&type_ref2), Some(&mut test_dto(2)));
+            let entity_id1 = EntityId::new(&[test_dto(1).name]);
+            let entity_id2 = EntityId::new(&[test_dto(2).name]);
+            assert_eq!(api.find_dto(&entity_id1), Some(&test_dto(1)));
+            assert_eq!(api.find_dto_mut(&entity_id2), Some(&mut test_dto(2)));
         }
 
         #[test]
         fn rpc() {
             let mut api = complex_api();
-            let type_ref1 = TypeRef::new(&[test_dto(1).name]);
-            let type_ref2 = TypeRef::new(&[test_dto(2).name]);
-            assert_eq!(api.find_rpc(&type_ref1), Some(&test_rpc(1)),);
-            assert_eq!(api.find_rpc_mut(&type_ref2), Some(&mut test_rpc(2)),);
+            let entity_id1 = EntityId::new(&[test_dto(1).name]);
+            let entity_id2 = EntityId::new(&[test_dto(2).name]);
+            assert_eq!(api.find_rpc(&entity_id1), Some(&test_rpc(1)),);
+            assert_eq!(api.find_rpc_mut(&entity_id2), Some(&mut test_rpc(2)),);
         }
 
         #[test]
         fn namespace() {
             let mut api = complex_api();
-            let type_ref1 = TypeRef::new(&[complex_namespace(1).name]);
-            let type_ref2 = TypeRef::new(&[complex_namespace(2).name]);
-            assert_eq!(api.find_namespace(&type_ref1), Some(&complex_namespace(1)));
+            let entity_id1 = EntityId::new(&[complex_namespace(1).name]);
+            let entity_id2 = EntityId::new(&[complex_namespace(2).name]);
+            assert_eq!(api.find_namespace(&entity_id1), Some(&complex_namespace(1)));
             assert_eq!(
-                api.find_namespace_mut(&type_ref2),
+                api.find_namespace_mut(&entity_id2),
                 Some(&mut complex_namespace(2))
             );
         }
@@ -540,39 +546,39 @@ mod tests {
         #[test]
         fn child() {
             let api = complex_api();
-            let type_ref = TypeRef::new(&[complex_namespace(1).name, NAMES[3]]);
-            assert_eq!(api.find_dto(&type_ref), Some(&test_dto(3)));
-            assert_eq!(api.find_rpc(&type_ref), Some(&test_rpc(3)));
-            assert_eq!(api.find_namespace(&type_ref), Some(&test_namespace(3)));
+            let entity_id = EntityId::new(&[complex_namespace(1).name, NAMES[3]]);
+            assert_eq!(api.find_dto(&entity_id), Some(&test_dto(3)));
+            assert_eq!(api.find_rpc(&entity_id), Some(&test_rpc(3)));
+            assert_eq!(api.find_namespace(&entity_id), Some(&test_namespace(3)));
         }
 
         #[test]
         fn multi_depth_child() {
             let api = complex_api();
-            let type_ref =
-                TypeRef::new(&[complex_namespace(1).name, test_namespace(4).name, NAMES[5]]);
-            assert_eq!(api.find_dto(&type_ref), Some(&test_dto(5)));
+            let entity_id =
+                EntityId::new(&[complex_namespace(1).name, test_namespace(4).name, NAMES[5]]);
+            assert_eq!(api.find_dto(&entity_id), Some(&test_dto(5)));
         }
     }
 
     mod parent {
-        use crate::model::TypeRef;
+        use crate::model::EntityId;
 
         #[test]
         fn no_parent() {
-            let ty = TypeRef::from([]);
+            let ty = EntityId::from([]);
             assert_eq!(ty.parent(), None);
         }
 
         #[test]
         fn parent_is_root() {
-            let ty = TypeRef::from(["dto"]);
+            let ty = EntityId::from(["dto"]);
             assert_eq!(ty.parent(), Some([].into()));
         }
 
         #[test]
         fn typical() {
-            let ty = TypeRef::from(["ns0", "ns1", "dto"]);
+            let ty = EntityId::from(["ns0", "ns1", "dto"]);
             let parent = ty.parent();
             assert_eq!(parent, Some(["ns0", "ns1"].into()));
             assert_eq!(parent.unwrap().parent(), Some(["ns0"].into()));

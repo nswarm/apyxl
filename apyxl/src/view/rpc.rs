@@ -1,5 +1,5 @@
 use crate::model;
-use crate::view::{Attributes, Field, Transforms, TypeRef};
+use crate::view::{Attributes, EntityId, Field, Transforms};
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -13,7 +13,7 @@ pub struct Rpc<'v, 'a> {
 
 pub trait RpcTransform: Debug {
     fn name(&self, _: &mut Cow<str>) {}
-    fn return_type(&self, _: &mut model::TypeRef) {}
+    fn return_type(&self, _: &mut model::EntityId) {}
 
     /// `true`: included.
     /// `false`: excluded.
@@ -44,17 +44,17 @@ impl<'v, 'a> Rpc<'v, 'a> {
                 Field::new(
                     param,
                     &self.xforms.rpc_param,
-                    &self.xforms.type_ref_xforms,
+                    &self.xforms.entity_id_xforms,
                     &self.xforms.attr_xforms,
                 )
             })
     }
 
-    pub fn return_type(&self) -> Option<TypeRef> {
+    pub fn return_type(&self) -> Option<EntityId> {
         self.target
             .return_type
             .as_ref()
-            .map(|target| TypeRef::new(target, &self.xforms.type_ref_xforms))
+            .map(|target| EntityId::new(target, &self.xforms.entity_id_xforms))
     }
 
     pub fn attributes(&self) -> Attributes {

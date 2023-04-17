@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 
 use crate::model;
-use crate::view::{AttributeTransform, Attributes, TypeRef, TypeRefTransform};
+use crate::view::{AttributeTransform, Attributes, EntityId, EntityIdTransform};
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
 /// Wraps [model::Dto].
@@ -10,7 +10,7 @@ use crate::view::{AttributeTransform, Attributes, TypeRef, TypeRefTransform};
 pub struct Field<'v, 'a> {
     target: &'v model::Field<'a>,
     xforms: &'v Vec<Box<dyn FieldTransform>>,
-    type_ref_xforms: &'v Vec<Box<dyn TypeRefTransform>>,
+    entity_id_xforms: &'v Vec<Box<dyn EntityIdTransform>>,
     attr_xforms: &'v Vec<Box<dyn AttributeTransform>>,
 }
 
@@ -22,13 +22,13 @@ impl<'v, 'a> Field<'v, 'a> {
     pub fn new(
         target: &'v model::Field<'a>,
         xforms: &'v Vec<Box<dyn FieldTransform>>,
-        type_ref_xforms: &'v Vec<Box<dyn TypeRefTransform>>,
+        entity_id_xforms: &'v Vec<Box<dyn EntityIdTransform>>,
         attr_xforms: &'v Vec<Box<dyn AttributeTransform>>,
     ) -> Self {
         Self {
             target,
             xforms,
-            type_ref_xforms,
+            entity_id_xforms,
             attr_xforms,
         }
     }
@@ -41,8 +41,8 @@ impl<'v, 'a> Field<'v, 'a> {
         name
     }
 
-    pub fn ty(&self) -> TypeRef {
-        TypeRef::new(&self.target.ty, self.type_ref_xforms)
+    pub fn ty(&self) -> EntityId {
+        EntityId::new(&self.target.ty, self.entity_id_xforms)
     }
 
     pub fn attributes(&self) -> Attributes {

@@ -43,7 +43,7 @@ impl<'v, 'a> Dto<'v, 'a> {
                 Field::new(
                     field,
                     &self.xforms.dto_field,
-                    &self.xforms.type_ref_xforms,
+                    &self.xforms.entity_id_xforms,
                     &self.xforms.attr_xforms,
                 )
             })

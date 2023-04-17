@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::model::{Api, Field, Namespace, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{Api, EntityId, Field, Namespace, UNDEFINED_NAMESPACE};
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError<'a> {
@@ -11,41 +11,41 @@ pub enum ValidationError<'a> {
         "Invalid namespace found at path {0}. Only the root namespace can be named {}.",
         UNDEFINED_NAMESPACE
     )]
-    InvalidNamespaceName(TypeRef<'a>),
+    InvalidNamespaceName(EntityId<'a>),
 
     #[error("Invalid DTO name within namespace '{0}', index #{1}. DTO names cannot be empty.")]
-    InvalidDtoName(TypeRef<'a>, usize),
+    InvalidDtoName(EntityId<'a>, usize),
 
     #[error("Invalid RPC name within namespace '{0}', index #{1}. RPC names cannot be empty.")]
-    InvalidRpcName(TypeRef<'a>, usize),
+    InvalidRpcName(EntityId<'a>, usize),
 
     #[error("Invalid field name at '{0}', index {1}. Field names cannot be empty.")]
-    InvalidFieldName(TypeRef<'a>, usize),
+    InvalidFieldName(EntityId<'a>, usize),
 
     #[error(
         "Invalid field type '{0}::{1}', index {2}. Type '{3}' must be a valid DTO in the API."
     )]
-    InvalidFieldType(TypeRef<'a>, &'a str, usize, TypeRef<'a>),
+    InvalidFieldType(EntityId<'a>, &'a str, usize, EntityId<'a>),
 
     #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO in the API.")]
-    InvalidRpcReturnType(TypeRef<'a>, TypeRef<'a>),
+    InvalidRpcReturnType(EntityId<'a>, EntityId<'a>),
 
     #[error("Duplicate DTO definition: '{0}'")]
-    DuplicateDto(TypeRef<'a>),
+    DuplicateDto(EntityId<'a>),
 
     #[error("Duplicate RPC definition: '{0}'")]
-    DuplicateRpc(TypeRef<'a>),
+    DuplicateRpc(EntityId<'a>),
 }
 
 pub fn namespace_names<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace.namespaces().filter_map(move |child| {
         if child.name == UNDEFINED_NAMESPACE {
             Some(ValidationError::InvalidNamespaceName(
-                type_ref.child(child.name),
+                entity_id.child(child.name),
             ))
         } else {
             None
@@ -56,33 +56,33 @@ pub fn namespace_names<'a, 'b>(
 pub fn no_duplicate_dtos<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace
         .dtos()
         .duplicates_by(|dto| dto.name)
-        .map(move |dto| ValidationError::DuplicateDto(type_ref.child(dto.name)))
+        .map(move |dto| ValidationError::DuplicateDto(entity_id.child(dto.name)))
 }
 
 pub fn no_duplicate_rpcs<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace
         .rpcs()
         .duplicates_by(|rpc| rpc.name)
-        .map(move |rpc| ValidationError::DuplicateRpc(type_ref.child(rpc.name)))
+        .map(move |rpc| ValidationError::DuplicateRpc(entity_id.child(rpc.name)))
 }
 
 pub fn dto_names<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace.dtos().enumerate().filter_map(move |(i, dto)| {
         if dto.name.is_empty() {
-            Some(ValidationError::InvalidDtoName(type_ref.clone(), i))
+            Some(ValidationError::InvalidDtoName(entity_id.clone(), i))
         } else {
             None
         }
@@ -92,31 +92,31 @@ pub fn dto_names<'a, 'b>(
 pub fn dto_field_names<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace
         .dtos()
-        .flat_map(move |dto| field_names(api, dto.fields.iter(), type_ref.child(dto.name)))
+        .flat_map(move |dto| field_names(api, dto.fields.iter(), entity_id.child(dto.name)))
 }
 
 pub fn dto_field_types<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace
         .dtos()
-        .flat_map(move |dto| field_types(api, dto.fields.iter(), type_ref.child(dto.name)))
+        .flat_map(move |dto| field_types(api, dto.fields.iter(), entity_id.child(dto.name)))
 }
 
 pub fn rpc_names<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace.rpcs().enumerate().filter_map(move |(i, rpc)| {
         if rpc.name.is_empty() {
-            Some(ValidationError::InvalidRpcName(type_ref.clone(), i))
+            Some(ValidationError::InvalidRpcName(entity_id.clone(), i))
         } else {
             None
         }
@@ -126,27 +126,27 @@ pub fn rpc_names<'a, 'b>(
 pub fn rpc_param_names<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace
         .rpcs()
-        .flat_map(move |rpc| field_names(api, rpc.params.iter(), type_ref.child(rpc.name)))
+        .flat_map(move |rpc| field_names(api, rpc.params.iter(), entity_id.child(rpc.name)))
 }
 
 pub fn rpc_param_types<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace
         .rpcs()
-        .flat_map(move |rpc| field_types(api, rpc.params.iter(), type_ref.child(rpc.name)))
+        .flat_map(move |rpc| field_types(api, rpc.params.iter(), entity_id.child(rpc.name)))
 }
 
 pub fn rpc_return_types<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     namespace
         .rpcs()
@@ -154,7 +154,7 @@ pub fn rpc_return_types<'a, 'b>(
         .filter_map(move |(rpc_name, return_type)| {
             if api.find_dto(return_type).is_none() {
                 Some(ValidationError::InvalidRpcReturnType(
-                    type_ref.child(rpc_name),
+                    entity_id.child(rpc_name),
                     return_type.clone(),
                 ))
             } else {
@@ -166,11 +166,11 @@ pub fn rpc_return_types<'a, 'b>(
 pub fn field_names<'a, 'b>(
     _: &'b Api<'a>,
     fields: impl Iterator<Item = &'b Field<'a>> + 'b,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
         if field.name.is_empty() {
-            Some(ValidationError::InvalidFieldName(type_ref.clone(), i))
+            Some(ValidationError::InvalidFieldName(entity_id.clone(), i))
         } else {
             None
         }
@@ -180,10 +180,10 @@ pub fn field_names<'a, 'b>(
 pub fn field_types<'a, 'b>(
     api: &'b Api<'a>,
     fields: impl Iterator<Item = &'b Field<'a>> + 'b,
-    parent_type_ref: TypeRef<'a>,
+    parent_entity_id: EntityId<'a>,
 ) -> impl Iterator<Item = ValidationError<'a>> + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
-        let mut iter_ty = parent_type_ref.clone();
+        let mut iter_ty = parent_entity_id.clone();
 
         loop {
             let parent = iter_ty.parent();
@@ -193,7 +193,7 @@ pub fn field_types<'a, 'b>(
             iter_ty = match parent {
                 None => {
                     return Some(ValidationError::InvalidFieldType(
-                        parent_type_ref.clone(),
+                        parent_entity_id.clone(),
                         field.name,
                         i,
                         field.ty.clone(),
@@ -205,7 +205,7 @@ pub fn field_types<'a, 'b>(
     })
 }
 
-fn find_type_relative(find_ty: &TypeRef, api: &Api, namespace_ty: TypeRef) -> bool {
+fn find_type_relative(find_ty: &EntityId, api: &Api, namespace_ty: EntityId) -> bool {
     let namespace = match api.find_namespace(&namespace_ty) {
         None => return false,
         Some(namespace) => namespace,
@@ -221,7 +221,7 @@ mod tests {
         use itertools::Itertools;
 
         use crate::model::api::validate::field_types;
-        use crate::model::TypeRef;
+        use crate::model::EntityId;
         use crate::test_util::executor::TestExecutor;
 
         #[test]
@@ -368,7 +368,7 @@ mod tests {
             );
         }
 
-        fn run_test(input_data: &str, source_dto: &TypeRef) {
+        fn run_test(input_data: &str, source_dto: &EntityId) {
             let mut exe = TestExecutor::new(input_data);
             let api = exe.api();
 

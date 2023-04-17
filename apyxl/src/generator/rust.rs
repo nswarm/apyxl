@@ -3,7 +3,7 @@ use itertools::Itertools;
 
 use crate::generator::Generator;
 use crate::output::{Indented, Output};
-use crate::view::{Dto, Field, Model, Namespace, Rpc, TypeRef};
+use crate::view::{Dto, EntityId, Field, Model, Namespace, Rpc};
 
 #[derive(Default)]
 pub struct Rust {}
@@ -76,7 +76,7 @@ fn write_rpc<O: Output>(rpc: Rpc, o: &mut Indented<O>) -> Result<()> {
 
     if let Some(return_type) = rpc.return_type() {
         o.write_str(" -> ")?;
-        write_type_ref(return_type, o)?;
+        write_entity_id(return_type, o)?;
     }
 
     o.write_str(" {}")?;
@@ -110,12 +110,12 @@ fn write_field<O: Output>(field: Field, o: &mut O) -> Result<()> {
 fn write_param<O: Output>(field: Field, o: &mut O) -> Result<()> {
     o.write_str(&field.name())?;
     o.write_str(": ")?;
-    write_type_ref(field.ty(), o)
+    write_entity_id(field.ty(), o)
 }
 
-fn write_type_ref<O: Output>(type_ref: TypeRef, o: &mut O) -> Result<()> {
+fn write_entity_id<O: Output>(entity_id: EntityId, o: &mut O) -> Result<()> {
     write_joined(
-        &type_ref
+        &entity_id
             .fully_qualified_type_name()
             .iter()
             .map(|s| s.as_ref())
@@ -141,7 +141,7 @@ fn write_joined<O: Output>(components: &[&str], separator: &str, o: &mut O) -> R
 mod tests {
     use anyhow::Result;
 
-    use crate::generator::rust::{write_dto, write_field, write_rpc, write_type_ref, INDENT};
+    use crate::generator::rust::{write_dto, write_entity_id, write_field, write_rpc, INDENT};
     use crate::generator::Rust;
     use crate::output::Indented;
     use crate::test_util::executor::TestExecutor;
@@ -184,12 +184,12 @@ pub mod ns0 {
                             fields: vec![
                                 model::Field {
                                     name: "field0",
-                                    ty: model::TypeRef::new(&["Type0"]),
+                                    ty: model::EntityId::new(&["Type0"]),
                                     attributes: Default::default(),
                                 },
                                 model::Field {
                                     name: "field1",
-                                    ty: model::TypeRef::new(&["Type1"]),
+                                    ty: model::EntityId::new(&["Type1"]),
                                     attributes: Default::default(),
                                 },
                             ],
@@ -219,12 +219,12 @@ pub mod ns0 {
                             params: vec![
                                 model::Field {
                                     name: "param0",
-                                    ty: model::TypeRef::new(&["Type0"]),
+                                    ty: model::EntityId::new(&["Type0"]),
                                     attributes: Default::default(),
                                 },
                                 model::Field {
                                     name: "param1",
-                                    ty: model::TypeRef::new(&["Type1"]),
+                                    ty: model::EntityId::new(&["Type1"]),
                                     attributes: Default::default(),
                                 },
                             ],
@@ -253,7 +253,7 @@ pub mod ns0 {
                         &model::Rpc {
                             name: "rpc_name",
                             params: vec![],
-                            return_type: Some(model::TypeRef::new(&["ReturnType"])),
+                            return_type: Some(model::EntityId::new(&["ReturnType"])),
                             attributes: Default::default(),
                         },
                         &Transforms::default(),
@@ -273,7 +273,7 @@ pub mod ns0 {
                     view::Field::new(
                         &model::Field {
                             name: "asdf",
-                            ty: model::TypeRef::new(&["Type"]),
+                            ty: model::EntityId::new(&["Type"]),
                             attributes: Default::default(),
                         },
                         &vec![],
@@ -288,10 +288,10 @@ pub mod ns0 {
     }
 
     #[test]
-    fn type_ref() -> Result<()> {
-        let type_ref = model::TypeRef::new(&["asdf"]);
+    fn entity_id() -> Result<()> {
+        let entity_id = model::EntityId::new(&["asdf"]);
         assert_output(
-            |o| write_type_ref(view::TypeRef::new(&type_ref, &vec![]), o),
+            |o| write_entity_id(view::EntityId::new(&entity_id, &vec![]), o),
             "asdf",
         )
     }

@@ -82,9 +82,9 @@ impl<'v, 'a> Namespace<'v, 'a> {
         Attributes::new(&self.target.attributes, &self.xforms.attr_xforms)
     }
 
-    pub fn find_namespace(&'a self, type_ref: &model::TypeRef<'a>) -> Option<Namespace<'v, 'a>> {
+    pub fn find_namespace(&'a self, id: &model::EntityId<'a>) -> Option<Namespace<'v, 'a>> {
         self.target
-            .find_namespace(type_ref)
+            .find_namespace(id)
             .filter(|namespace| {
                 self.xforms
                     .namespace
@@ -94,16 +94,16 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .map(|namespace| Namespace::new(namespace, self.xforms))
     }
 
-    pub fn find_dto(&'a self, type_ref: &model::TypeRef<'a>) -> Option<Dto<'v, 'a>> {
+    pub fn find_dto(&'a self, id: &model::EntityId<'a>) -> Option<Dto<'v, 'a>> {
         self.target
-            .find_dto(type_ref)
+            .find_dto(id)
             .filter(|dto| self.xforms.namespace.iter().all(|x| x.filter_dto(dto)))
             .map(|dto| Dto::new(dto, self.xforms))
     }
 
-    pub fn find_rpc(&'a self, type_ref: &model::TypeRef<'a>) -> Option<Rpc<'v, 'a>> {
+    pub fn find_rpc(&'a self, id: &model::EntityId<'a>) -> Option<Rpc<'v, 'a>> {
         self.target
-            .find_rpc(type_ref)
+            .find_rpc(id)
             .filter(|rpc| self.xforms.namespace.iter().all(|x| x.filter_rpc(rpc)))
             .map(|rpc| Rpc::new(rpc, self.xforms))
     }
@@ -191,13 +191,13 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_type_ref = ["ns0", "visible"].into();
-        let expected = model.api.find_namespace(&visible_type_ref);
-        let found = root.find_namespace(&visible_type_ref);
+        let visible_id = ["ns0", "visible"].into();
+        let expected = model.api.find_namespace(&visible_id);
+        let found = root.find_namespace(&visible_id);
         assert_eq!(found.map(|v| v.target), expected);
 
-        let hidden_type_ref = ["ns0", "hidden"].into();
-        let found = root.find_namespace(&hidden_type_ref);
+        let hidden_id = ["ns0", "hidden"].into();
+        let found = root.find_namespace(&hidden_id);
         assert!(found.is_none());
     }
 
@@ -215,13 +215,13 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_type_ref = ["ns0", "visible"].into();
-        let expected = model.api.find_dto(&visible_type_ref).unwrap();
-        let found = root.find_dto(&visible_type_ref).unwrap();
+        let visible_id = ["ns0", "visible"].into();
+        let expected = model.api.find_dto(&visible_id).unwrap();
+        let found = root.find_dto(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name);
 
-        let hidden_type_ref = ["ns0", "hidden"].into();
-        let found = root.find_dto(&hidden_type_ref);
+        let hidden_id = ["ns0", "hidden"].into();
+        let found = root.find_dto(&hidden_id);
         assert!(found.is_none());
     }
 
@@ -239,13 +239,13 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_type_ref = ["ns0", "visible"].into();
-        let expected = model.api.find_rpc(&visible_type_ref).unwrap();
-        let found = root.find_rpc(&visible_type_ref).unwrap();
+        let visible_id = ["ns0", "visible"].into();
+        let expected = model.api.find_rpc(&visible_id).unwrap();
+        let found = root.find_rpc(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name);
 
-        let hidden_type_ref = ["ns0", "hidden"].into();
-        let found = root.find_rpc(&hidden_type_ref);
+        let hidden_id = ["ns0", "hidden"].into();
+        let found = root.find_rpc(&hidden_id);
         assert!(found.is_none());
     }
 

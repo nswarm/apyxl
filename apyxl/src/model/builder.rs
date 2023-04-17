@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::input;
 use crate::model::api::validate;
 use crate::model::{
-    metadata, Api, Metadata, Model, Namespace, TypeRef, ValidationError, UNDEFINED_NAMESPACE,
+    metadata, Api, EntityId, Metadata, Model, Namespace, ValidationError, UNDEFINED_NAMESPACE,
 };
 
 /// Helper struct made for parsing [Api]s spread across multiple [Chunk]s. Tracks [Metadata]
@@ -52,7 +52,7 @@ impl<'a> Builder<'a> {
     /// - Applies the [metadata::Chunk::ATTRIBUTE] to all entities in the namespace recursively.
     pub fn merge_from_chunk(&mut self, mut namespace: Namespace<'a>, chunk: &input::Chunk) {
         let chunk_metadata = metadata::Chunk {
-            root_namespace: self.current_namespace_type_ref(),
+            root_namespace: self.current_namespace_id(),
             relative_file_path: chunk.relative_file_path.clone(),
         };
 
@@ -93,7 +93,7 @@ impl<'a> Builder<'a> {
     /// - Errors for [Dto]s or [Rpc]s with empty names.
     /// - Errors for [Dto]s with identical paths (aka duplicate definitions).
     /// - Errors for [Rpc]s with identical paths (aka duplicate definitions).
-    /// - Errors for [TypeRef]s with missing types.
+    /// - Errors for [EntityId]s with missing types.
     pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError<'a>>> {
         dedupe_namespace_children(&mut self.api);
 
@@ -131,7 +131,7 @@ impl<'a> Builder<'a> {
         &mut self.metadata
     }
 
-    pub fn current_namespace_type_ref(&self) -> TypeRef<'a> {
+    pub fn current_namespace_id(&self) -> EntityId<'a> {
         self.namespace_stack.clone().into()
     }
 
@@ -171,34 +171,34 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
 }
 
 /// Calls the function `f` for each [Namespace] in the `api`. `f` will be passed the [Namespace]
-/// currently being operated on and a [TypeRef] to that namespace within the overall hierarchy.
+/// currently being operated on and a [EntityId] to that namespace within the overall hierarchy.
 ///
 /// `'a` is the lifetime of the [Api] bound.
 /// `'b` is the lifetime of the [Builder::build] process.
 fn recurse_api<'a, 'b, I, F>(api: &'b Api<'a>, f: F) -> Vec<ValidationError<'a>>
 where
     I: Iterator<Item = ValidationError<'a>>,
-    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, TypeRef<'a>) -> I,
+    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId<'a>) -> I,
 {
-    recurse_namespaces(api, api, TypeRef::default(), f)
+    recurse_namespaces(api, api, EntityId::default(), f)
 }
 
 fn recurse_namespaces<'a, 'b, I, F>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    type_ref: TypeRef<'a>,
+    entity_id: EntityId<'a>,
     f: F,
 ) -> Vec<ValidationError<'a>>
 where
     I: Iterator<Item = ValidationError<'a>>,
-    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, TypeRef<'a>) -> I,
+    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId<'a>) -> I,
 {
     let child_errors = namespace
         .namespaces()
-        .flat_map(|child| recurse_namespaces(api, child, type_ref.child(child.name), f));
+        .flat_map(|child| recurse_namespaces(api, child, entity_id.child(child.name), f));
 
     child_errors
-        .chain(f(api, namespace, type_ref.clone()))
+        .chain(f(api, namespace, entity_id.clone()))
         .collect_vec()
 }
 
@@ -297,7 +297,7 @@ mod tests {
             use crate::model::builder::tests::merge::test_namespace;
             use crate::model::builder::tests::test_builder;
             use crate::model::metadata::Chunk;
-            use crate::model::{Builder, TypeRef};
+            use crate::model::{Builder, EntityId};
             use crate::test_util::executor::TestExecutor;
 
             #[test]
@@ -314,7 +314,7 @@ mod tests {
                 );
                 assert_eq!(builder.metadata.chunks.len(), 1);
                 let chunk_metadata = builder.metadata.chunks.get(0).unwrap();
-                assert_eq!(chunk_metadata.root_namespace, TypeRef::from(["blah"]));
+                assert_eq!(chunk_metadata.root_namespace, EntityId::from(["blah"]));
                 assert_eq!(chunk_metadata.relative_file_path, file_path);
             }
 
@@ -628,7 +628,7 @@ mod tests {
                 assert_contains_error, build_from_input, test_builder,
             };
             use crate::model::builder::ValidationError;
-            use crate::model::TypeRef;
+            use crate::model::EntityId;
             use crate::test_util::executor::TestExecutor;
 
             #[test]
@@ -650,11 +650,11 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_type_ref = TypeRef::from(["ns"]);
+                let expected_entity_id = EntityId::from(["ns"]);
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidDtoName(expected_type_ref, expected_index),
+                    ValidationError::InvalidDtoName(expected_entity_id, expected_index),
                 );
             }
 
@@ -680,11 +680,11 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_type_ref = TypeRef::from(["ns", "dto"]);
+                let expected_entity_id = EntityId::from(["ns", "dto"]);
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidFieldName(expected_type_ref, expected_index),
+                    ValidationError::InvalidFieldName(expected_entity_id, expected_index),
                 );
             }
 
@@ -719,7 +719,7 @@ mod tests {
                 assert_contains_error, build_from_input, test_builder,
             };
             use crate::model::builder::ValidationError;
-            use crate::model::TypeRef;
+            use crate::model::EntityId;
             use crate::test_util::executor::TestExecutor;
 
             #[test]
@@ -741,11 +741,11 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_type_ref = TypeRef::from(["ns"]);
+                let expected_entity_id = EntityId::from(["ns"]);
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidRpcName(expected_type_ref, expected_index),
+                    ValidationError::InvalidRpcName(expected_entity_id, expected_index),
                 );
             }
 
@@ -767,11 +767,11 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_type_ref = TypeRef::from(["ns", "rpc"]);
+                let expected_entity_id = EntityId::from(["ns", "rpc"]);
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidFieldName(expected_type_ref, expected_index),
+                    ValidationError::InvalidFieldName(expected_entity_id, expected_index),
                 );
             }
 

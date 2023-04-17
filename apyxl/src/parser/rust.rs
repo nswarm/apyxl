@@ -2,7 +2,9 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 
-use crate::model::{Api, Dto, Field, Namespace, NamespaceChild, Rpc, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{
+    Api, Dto, EntityId, Field, Namespace, NamespaceChild, Rpc, UNDEFINED_NAMESPACE,
+};
 use crate::Parser as ApyxlParser;
 use crate::{model, Input};
 
@@ -37,20 +39,18 @@ impl ApyxlParser for Rust {
     }
 }
 
-fn type_ref<'a>() -> impl Parser<'a, &'a str, TypeRef<'a>, Error<'a>> {
+fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId<'a>, Error<'a>> {
     text::ident()
         .separated_by(just("::"))
         .at_least(1)
         .collect::<Vec<_>>()
-        .map(|components| TypeRef {
-            fully_qualified_type_name: components,
-        })
+        .map(|components| EntityId { path: components })
 }
 
 fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
     text::ident()
         .then_ignore(just(':').padded())
-        .then(type_ref())
+        .then(entity_id())
         .padded()
         .map(|(name, ty)| Field {
             name,
@@ -113,7 +113,7 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('(').padded(), just(')').padded());
-    let return_type = just("->").ignore_then(whitespace()).ignore_then(type_ref());
+    let return_type = just("->").ignore_then(whitespace()).ignore_then(entity_id());
     name.then(params)
         .then(return_type.or_not())
         .then_ignore(expr_block().padded())

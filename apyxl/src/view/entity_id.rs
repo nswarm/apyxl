@@ -4,24 +4,27 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 
 #[derive(Debug, Copy, Clone)]
-pub struct TypeRef<'v, 'a> {
-    target: &'v model::TypeRef<'a>,
-    xforms: &'v Vec<Box<dyn TypeRefTransform>>,
+pub struct EntityId<'v, 'a> {
+    target: &'v model::EntityId<'a>,
+    xforms: &'v Vec<Box<dyn EntityIdTransform>>,
 }
 
-pub trait TypeRefTransform: Debug {
+pub trait EntityIdTransform: Debug {
     fn fully_qualified_type_name(&self, _: &mut Vec<Cow<str>>) {}
 }
 
-impl<'v, 'a> TypeRef<'v, 'a> {
-    pub fn new(target: &'v model::TypeRef<'a>, xforms: &'v Vec<Box<dyn TypeRefTransform>>) -> Self {
+impl<'v, 'a> EntityId<'v, 'a> {
+    pub fn new(
+        target: &'v model::EntityId<'a>,
+        xforms: &'v Vec<Box<dyn EntityIdTransform>>,
+    ) -> Self {
         Self { target, xforms }
     }
 
     pub fn fully_qualified_type_name(&self) -> Vec<Cow<str>> {
         let mut value = self
             .target
-            .fully_qualified_type_name
+            .path
             .iter()
             .map(|s| Cow::Borrowed(*s))
             .collect_vec();
@@ -54,10 +57,10 @@ mod tests {
             let root = view.api();
             let dto = root.find_dto(&["dto"].into()).unwrap();
             let fields = dto.fields().collect_vec();
-            let type_ref = fields.get(0).unwrap().ty();
+            let field_type_id = fields.get(0).unwrap().ty();
 
             assert_eq!(
-                type_ref
+                field_type_id
                     .fully_qualified_type_name()
                     .iter()
                     .map(|s| s.as_ref())

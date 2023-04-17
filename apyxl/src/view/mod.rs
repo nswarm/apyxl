@@ -2,19 +2,19 @@ use std::fmt::Debug;
 
 pub use attributes::*;
 pub use dto::*;
+pub use entity_id::*;
 pub use field::*;
 pub use namespace::*;
 pub use rpc::*;
-pub use type_ref::*;
 
 use crate::model;
 
 mod attributes;
 mod dto;
+mod entity_id;
 mod field;
 mod namespace;
 mod rpc;
-mod type_ref;
 
 // In everything in this module and submodules:
 //   'v: view
@@ -33,7 +33,7 @@ pub struct Transforms {
     pub dto_field: Vec<Box<dyn FieldTransform>>,
     pub rpc: Vec<Box<dyn RpcTransform>>,
     pub rpc_param: Vec<Box<dyn FieldTransform>>,
-    pub type_ref_xforms: Vec<Box<dyn TypeRefTransform>>,
+    pub entity_id_xforms: Vec<Box<dyn EntityIdTransform>>,
     pub attr_xforms: Vec<Box<dyn AttributeTransform>>,
 }
 
@@ -81,7 +81,7 @@ mod tests {
 
     use crate::model;
     use crate::view::{
-        DtoTransform, FieldTransform, NamespaceTransform, RpcTransform, TypeRef, TypeRefTransform,
+        DtoTransform, EntityId, EntityIdTransform, FieldTransform, NamespaceTransform, RpcTransform,
     };
 
     #[derive(Default, Debug)]
@@ -113,7 +113,7 @@ mod tests {
             *value = Cow::Owned(TestRenamer::renamed(value))
         }
     }
-    impl TypeRefTransform for TestRenamer {
+    impl EntityIdTransform for TestRenamer {
         fn fully_qualified_type_name(&self, value: &mut Vec<Cow<str>>) {
             value.push(Cow::Borrowed(TestRenamer::SUFFIX))
         }

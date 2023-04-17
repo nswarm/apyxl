@@ -1,4 +1,4 @@
-use crate::model::TypeRef;
+use crate::model::EntityId;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
@@ -11,7 +11,7 @@ pub struct Metadata<'a> {
 pub struct Chunk<'a> {
     /// The namespace that all entities within the chunk reside.
     /// Entities will still need to be filtered by the [Chunk::ATTRIBUTE].
-    pub root_namespace: TypeRef<'a>,
+    pub root_namespace: EntityId<'a>,
 
     /// See [crate::input::Chunk].
     pub relative_file_path: PathBuf,
