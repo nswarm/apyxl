@@ -1,3 +1,4 @@
+use crate::model::chunk::Chunk;
 use crate::Output;
 use anyhow::Result;
 use log::error;
@@ -68,6 +69,14 @@ impl<'a, O: Output> Indented<'_, O> {
 }
 
 impl<O: Output> Output for Indented<'_, O> {
+    fn start_chunk(&mut self, chunk: &Chunk) {
+        self.output.start_chunk(chunk)
+    }
+
+    fn end_chunk(&mut self, chunk: &Chunk) {
+        self.output.end_chunk(chunk)
+    }
+
     fn write_str(&mut self, data: &str) -> Result<()> {
         self.write_pending_indent()?;
         self.output.write_str(data)

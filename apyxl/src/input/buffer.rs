@@ -1,20 +1,21 @@
 use std::cell::RefCell;
 
-use crate::input::{Chunk, Input};
+use crate::input::Input;
+use crate::{input, model};
 
 /// Stores all data in a single `chunk`.
 #[derive(Default)]
 pub struct Buffer {
-    chunk: Chunk,
+    chunk: input::Chunk,
     read: RefCell<bool>,
 }
 
 impl Buffer {
     pub fn new(data: impl ToString) -> Self {
         Self {
-            chunk: Chunk {
+            chunk: input::Chunk {
                 data: data.to_string(),
-                relative_file_path: None,
+                chunk: model::Chunk::default(),
             },
             read: RefCell::new(false),
         }
@@ -22,7 +23,7 @@ impl Buffer {
 }
 
 impl Input for Buffer {
-    fn next_chunk(&self) -> Option<&Chunk> {
+    fn next_chunk(&self) -> Option<&input::Chunk> {
         if *self.read.borrow() {
             return None;
         }

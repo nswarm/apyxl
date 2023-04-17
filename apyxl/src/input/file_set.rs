@@ -2,14 +2,15 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 
+use crate::{input, model};
 use anyhow::{Context, Result};
 
-use crate::input::{Chunk, Input};
+use crate::input::Input;
 
 /// Input from one or more files in a file system.
 #[derive(Default)]
 pub struct FileSet {
-    chunks: Vec<Chunk>,
+    chunks: Vec<input::Chunk>,
     cursor: RefCell<usize>,
 }
 
@@ -31,9 +32,9 @@ impl FileSet {
             let content = fs::read_to_string(&file_path).with_context(|| {
                 format!("Failed to read file to string: {}", file_path.display())
             })?;
-            s.chunks.push(Chunk {
+            s.chunks.push(input::Chunk {
                 data: content.to_string(),
-                relative_file_path: Some(relative_file_path),
+                chunk: model::Chunk::with_relative_file_path(relative_file_path),
             });
         }
         Ok(s)
@@ -41,7 +42,7 @@ impl FileSet {
 }
 
 impl Input for FileSet {
-    fn next_chunk(&self) -> Option<&Chunk> {
+    fn next_chunk(&self) -> Option<&input::Chunk> {
         let cursor = *self.cursor.borrow();
         if cursor >= self.chunks.len() {
             return None;
@@ -87,13 +88,13 @@ mod tests {
         assert_eq!(
             input
                 .next_chunk()
-                .map(|c| c.relative_file_path.clone().unwrap()),
+                .map(|c| c.chunk.relative_file_path.clone().unwrap()),
             Some(path0)
         );
         assert_eq!(
             input
                 .next_chunk()
-                .map(|c| c.relative_file_path.clone().unwrap()),
+                .map(|c| c.chunk.relative_file_path.clone().unwrap()),
             Some(path1)
         );
         Ok(())

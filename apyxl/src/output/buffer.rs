@@ -1,3 +1,4 @@
+use crate::model::chunk::Chunk;
 use crate::output::Output;
 use anyhow::Result;
 
@@ -13,6 +14,14 @@ impl ToString for Buffer {
 }
 
 impl Output for Buffer {
+    fn start_chunk(&mut self, chunk: &Chunk) {
+        todo!()
+    }
+
+    fn end_chunk(&mut self, chunk: &Chunk) {
+        todo!()
+    }
+
     fn write_str(&mut self, data: &str) -> Result<()> {
         self.data.push_str(data);
         Ok(())

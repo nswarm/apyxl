@@ -48,12 +48,12 @@ impl<'a> Builder<'a> {
     /// A version of [Builder::merge] that does the following in addition to the [Api] merge:
     /// - Adds the appropriate [chunk::Metadata] to the builder's [Metadata].
     /// - Applies the [chunk::Attribute] to all entities in the namespace recursively.
-    pub fn merge_from_chunk(&mut self, mut namespace: Namespace<'a>, chunk: &input::Chunk) {
-        if let Some(relative_file_path) = &chunk.relative_file_path {
+    pub fn merge_from_chunk(&mut self, mut namespace: Namespace<'a>, input_chunk: &input::Chunk) {
+        if let Some(relative_file_path) = &input_chunk.chunk.relative_file_path {
             let root_namespace = self.current_namespace_id();
             self.metadata_mut().chunks.push(chunk::Metadata {
                 root_namespace,
-                relative_file_path: chunk.relative_file_path.clone(),
+                chunk: input_chunk.chunk.clone(),
             });
             namespace.apply_attr_to_children_recursively(|attr| {
                 attr.chunk
@@ -303,13 +303,13 @@ mod tests {
                     test_namespace(1),
                     &input::Chunk {
                         data: "unused".to_string(),
-                        relative_file_path: file_path.clone(),
+                        chunk: model::Chunk::with_relative_file_path(file_path.clone().unwrap()),
                     },
                 );
                 assert_eq!(builder.metadata.chunks.len(), 1);
                 let chunk_metadata = builder.metadata.chunks.get(0).unwrap();
                 assert_eq!(chunk_metadata.root_namespace, EntityId::from(["blah"]));
-                assert_eq!(chunk_metadata.relative_file_path, file_path);
+                assert_eq!(chunk_metadata.chunk.relative_file_path, file_path);
             }
 
             #[test]
@@ -333,7 +333,7 @@ mod tests {
                     to_merge,
                     &input::Chunk {
                         data: "unused".to_string(),
-                        relative_file_path: Some(file_path.clone()),
+                        chunk: model::Chunk::with_relative_file_path(file_path.clone()),
                     },
                 );
 
