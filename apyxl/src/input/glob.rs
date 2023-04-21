@@ -32,7 +32,7 @@ fn walk_glob(root: &Path, glob: &str) -> Result<Vec<PathBuf>> {
     let glob = globset::Glob::new(
         glob_path
             .to_str()
-            .ok_or_else(|| anyhow!("Could not convert glob path '{:?}' to OS str", glob_path))?,
+            .ok_or_else(|| anyhow!("could not convert glob path '{:?}' to OS str", glob_path))?,
     )?
     .compile_matcher();
     for entry in WalkDir::new(root) {

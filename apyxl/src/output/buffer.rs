@@ -14,12 +14,7 @@ impl ToString for Buffer {
 }
 
 impl Output for Buffer {
-    fn start_chunk(&mut self, _: &Chunk) -> Result<()> {
-        // Buffer does nothing with chunks.
-        Ok(())
-    }
-
-    fn end_chunk(&mut self, _: &Chunk) -> Result<()> {
+    fn write_chunk(&mut self, _: &Chunk) -> Result<()> {
         // Buffer does nothing with chunks.
         Ok(())
     }

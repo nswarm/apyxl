@@ -9,15 +9,11 @@ use crate::output::Output;
 pub struct StdOut {}
 
 impl Output for StdOut {
-    fn start_chunk(&mut self, chunk: &Chunk) -> Result<()> {
+    fn write_chunk(&mut self, chunk: &Chunk) -> Result<()> {
         if let Some(path) = &chunk.relative_file_path {
             stdout().write("-------------------".as_bytes())?;
             stdout().write(format!("--- CHUNK: {} \n", path.to_string_lossy()).as_bytes())?;
         }
-        Ok(())
-    }
-
-    fn end_chunk(&mut self, _: &Chunk) -> Result<()> {
         Ok(())
     }
 
