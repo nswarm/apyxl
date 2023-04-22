@@ -1,3 +1,4 @@
+use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -12,9 +13,11 @@ pub struct EntityId<'v, 'a> {
     xforms: &'v Vec<Box<dyn EntityIdTransform>>,
 }
 
-pub trait EntityIdTransform: Debug {
+pub trait EntityIdTransform: Debug + DynClone {
     fn path(&self, _: &mut Vec<Cow<str>>) {}
 }
+
+dyn_clone::clone_trait_object!(EntityIdTransform);
 
 impl<'v, 'a> EntityId<'v, 'a> {
     pub fn new(
@@ -52,6 +55,7 @@ mod tests {
 
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::TestRenamer;
+    use crate::view::Transformer;
 
     #[test]
     fn path() {

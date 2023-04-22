@@ -1,5 +1,6 @@
 use crate::model;
-use crate::view::{Attributes, Dto, Rpc, Transforms};
+use crate::view::{Attributes, Dto, Rpc, SubView, Transformer, Transforms};
+use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -19,7 +20,7 @@ pub enum NamespaceChild<'v, 'a> {
     Namespace(Namespace<'v, 'a>),
 }
 
-pub trait NamespaceTransform: Debug {
+pub trait NamespaceTransform: Debug + DynClone {
     fn name(&self, _: &mut Cow<str>) {}
 
     /// `true`: included.
@@ -41,6 +42,8 @@ pub trait NamespaceTransform: Debug {
     }
 }
 
+dyn_clone::clone_trait_object!(NamespaceTransform);
+
 impl<'v, 'a> NamespaceChild<'v, 'a> {
     pub fn new(target: &'v model::NamespaceChild<'a>, xforms: &'v Transforms) -> Self {
         match target {
@@ -56,6 +59,12 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
 impl<'v, 'a> Namespace<'v, 'a> {
     pub fn new(target: &'v model::Namespace<'a>, xforms: &'v Transforms) -> Self {
         Self { target, xforms }
+    }
+
+    /// Clone the [Namespace] and referenced [Transforms] into a new [SubView]. The [SubView] gives
+    /// a view into the [Model] starting at this [Namespace] with support for additional [Transforms].
+    pub fn sub_view(&self) -> SubView {
+        SubView::new(self.target, self.xforms.clone())
     }
 
     pub fn name(&self) -> Cow<str> {
@@ -151,7 +160,7 @@ mod tests {
 
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::{TestFilter, TestRenamer};
-    use crate::view::NamespaceChild;
+    use crate::view::{NamespaceChild, Transformer};
 
     #[test]
     fn name() {

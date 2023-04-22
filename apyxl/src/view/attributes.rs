@@ -1,4 +1,5 @@
 use crate::model;
+use dyn_clone::DynClone;
 use std::fmt::Debug;
 
 #[derive(Debug, Copy, Clone)]
@@ -16,9 +17,11 @@ impl<'v> Attributes<'v> {
     }
 }
 
-pub trait AttributeTransform: Debug {
+pub trait AttributeTransform: Debug + DynClone {
     // todo
 }
+
+dyn_clone::clone_trait_object!(AttributeTransform);
 
 #[cfg(test)]
 mod tests {

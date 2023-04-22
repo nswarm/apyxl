@@ -1,4 +1,6 @@
+use itertools::Itertools;
 use std::fmt::Debug;
+use std::io::Read;
 
 pub use attributes::*;
 pub use dto::*;
@@ -6,6 +8,7 @@ pub use entity_id::*;
 pub use field::*;
 pub use namespace::*;
 pub use rpc::*;
+pub use sub_view::*;
 
 use crate::model;
 
@@ -15,6 +18,7 @@ mod entity_id;
 mod field;
 mod namespace;
 mod rpc;
+mod sub_view;
 
 // In everything in this module and submodules:
 //   'v: view
@@ -26,15 +30,15 @@ pub struct Model<'v, 'a> {
     xforms: Transforms,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct Transforms {
-    pub namespace: Vec<Box<dyn NamespaceTransform>>,
-    pub dto: Vec<Box<dyn DtoTransform>>,
-    pub dto_field: Vec<Box<dyn FieldTransform>>,
-    pub rpc: Vec<Box<dyn RpcTransform>>,
-    pub rpc_param: Vec<Box<dyn FieldTransform>>,
-    pub entity_id_xforms: Vec<Box<dyn EntityIdTransform>>,
-    pub attr_xforms: Vec<Box<dyn AttributeTransform>>,
+    namespace: Vec<Box<dyn NamespaceTransform>>,
+    dto: Vec<Box<dyn DtoTransform>>,
+    dto_field: Vec<Box<dyn FieldTransform>>,
+    rpc: Vec<Box<dyn RpcTransform>>,
+    rpc_param: Vec<Box<dyn FieldTransform>>,
+    entity_id_xforms: Vec<Box<dyn EntityIdTransform>>,
+    attr_xforms: Vec<Box<dyn AttributeTransform>>,
 }
 
 impl<'v, 'a> Model<'v, 'a> {
@@ -53,30 +57,64 @@ impl<'v, 'a> Model<'v, 'a> {
     pub fn metadata(&self) -> &model::Metadata {
         &self.model.metadata
     }
+}
 
-    pub fn with_namespace_transform(mut self, xform: impl NamespaceTransform + 'static) -> Self {
-        self.xforms.namespace.push(Box::new(xform));
+impl Transformer for Model<'_, '_> {
+    fn xforms(&mut self) -> &mut Transforms {
+        &mut self.xforms
+    }
+}
+
+trait Transformer: Sized {
+    fn xforms(&mut self) -> &mut Transforms;
+
+    fn with_namespace_transform(mut self, xform: impl NamespaceTransform + 'static) -> Self {
+        self.xforms().namespace.push(Box::new(xform));
         self
     }
 
-    pub fn with_dto_transform(mut self, xform: impl DtoTransform + 'static) -> Self {
-        self.xforms.dto.push(Box::new(xform));
+    fn with_dto_transform(mut self, xform: impl DtoTransform + 'static) -> Self {
+        self.xforms().dto.push(Box::new(xform));
         self
     }
 
-    pub fn with_rpc_transform(mut self, xform: impl RpcTransform + 'static) -> Self {
-        self.xforms.rpc.push(Box::new(xform));
+    fn with_rpc_transform(mut self, xform: impl RpcTransform + 'static) -> Self {
+        self.xforms().rpc.push(Box::new(xform));
         self
     }
 
-    pub fn with_field_transform(mut self, xform: impl FieldTransform + 'static) -> Self {
-        self.xforms.dto_field.push(Box::new(xform));
+    fn with_field_transform(mut self, xform: impl FieldTransform + 'static) -> Self {
+        self.xforms().dto_field.push(Box::new(xform));
         self
     }
 
-    pub fn with_entity_id_transform(mut self, xform: impl EntityIdTransform + 'static) -> Self {
-        self.xforms.entity_id_xforms.push(Box::new(xform));
+    fn with_entity_id_transform(mut self, xform: impl EntityIdTransform + 'static) -> Self {
+        self.xforms().entity_id_xforms.push(Box::new(xform));
         self
+    }
+}
+
+impl Transforms {
+    pub fn namespace(&self) -> impl Iterator<Item = &Box<dyn NamespaceTransform>> {
+        self.namespace.iter()
+    }
+    pub fn dto(&self) -> impl Iterator<Item = &Box<dyn DtoTransform>> {
+        self.dto.iter()
+    }
+    pub fn dto_field(&self) -> impl Iterator<Item = &Box<dyn FieldTransform>> {
+        self.dto_field.iter()
+    }
+    pub fn rpc(&self) -> impl Iterator<Item = &Box<dyn RpcTransform>> {
+        self.rpc.iter()
+    }
+    pub fn rpc_param(&self) -> impl Iterator<Item = &Box<dyn FieldTransform>> {
+        self.rpc_param.iter()
+    }
+    pub fn entity_id_xforms(&self) -> impl Iterator<Item = &Box<dyn EntityIdTransform>> {
+        self.entity_id_xforms.iter()
+    }
+    pub fn attr_xforms(&self) -> impl Iterator<Item = &Box<dyn AttributeTransform>> {
+        self.attr_xforms.iter()
     }
 }
 
@@ -89,7 +127,7 @@ mod tests {
         DtoTransform, EntityIdTransform, FieldTransform, NamespaceTransform, RpcTransform,
     };
 
-    #[derive(Default, Debug)]
+    #[derive(Default, Debug, Clone)]
     pub struct TestRenamer {}
     impl TestRenamer {
         pub const SUFFIX: &'static str = "renamed";
@@ -98,6 +136,7 @@ mod tests {
             format!("{}_{}", name, TestRenamer::SUFFIX)
         }
     }
+
     impl NamespaceTransform for TestRenamer {
         fn name(&self, value: &mut Cow<str>) {
             *value = Cow::Owned(TestRenamer::renamed(value))
@@ -124,7 +163,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct TestFilter {}
     impl NamespaceTransform for TestFilter {
         fn filter_namespace(&self, namespace: &model::Namespace) -> bool {

@@ -1,5 +1,6 @@
 use crate::model;
 use crate::view::{Attributes, Field, Transforms};
+use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -11,7 +12,7 @@ pub struct Dto<'v, 'a> {
     xforms: &'v Transforms,
 }
 
-pub trait DtoTransform: Debug {
+pub trait DtoTransform: Debug + DynClone {
     fn name(&self, _: &mut Cow<str>) {}
 
     /// `true`: included.
@@ -20,6 +21,8 @@ pub trait DtoTransform: Debug {
         true
     }
 }
+
+dyn_clone::clone_trait_object!(DtoTransform);
 
 impl<'v, 'a> Dto<'v, 'a> {
     pub fn new(target: &'v model::Dto<'a>, xforms: &'v Transforms) -> Self {
@@ -62,6 +65,7 @@ impl<'v, 'a> Dto<'v, 'a> {
 mod tests {
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::{TestFilter, TestRenamer};
+    use crate::view::Transformer;
     use itertools::Itertools;
 
     #[test]

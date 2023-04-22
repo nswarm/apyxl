@@ -1,5 +1,6 @@
 use crate::model;
 use crate::view::{Attributes, EntityId, Field, Transforms};
+use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -11,7 +12,7 @@ pub struct Rpc<'v, 'a> {
     xforms: &'v Transforms,
 }
 
-pub trait RpcTransform: Debug {
+pub trait RpcTransform: Debug + DynClone {
     fn name(&self, _: &mut Cow<str>) {}
     fn return_type(&self, _: &mut model::EntityId) {}
 
@@ -21,6 +22,8 @@ pub trait RpcTransform: Debug {
         true
     }
 }
+
+dyn_clone::clone_trait_object!(RpcTransform);
 
 impl<'v, 'a> Rpc<'v, 'a> {
     pub fn new(target: &'v model::Rpc<'a>, xforms: &'v Transforms) -> Self {
@@ -70,6 +73,7 @@ impl<'v, 'a> Rpc<'v, 'a> {
 mod tests {
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::{TestFilter, TestRenamer};
+    use crate::view::Transformer;
     use itertools::Itertools;
 
     #[test]

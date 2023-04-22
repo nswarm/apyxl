@@ -1,7 +1,9 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use itertools::Itertools;
+use std::borrow::Cow;
 
 use crate::generator::Generator;
+use crate::model::chunk::ChunkFilter;
 use crate::output::{Indented, Output};
 use crate::view::{Dto, EntityId, Field, Model, Namespace, Rpc};
 
@@ -13,7 +15,31 @@ const INDENT: &str = "    ";
 impl Generator for Rust {
     fn generate<O: Output>(&mut self, model: Model, output: &mut O) -> Result<()> {
         let mut o = Indented::new(output, INDENT);
-        write_namespace_contents(model.api(), &mut o)
+        write_namespace_contents(model.api(), &mut o)?;
+
+        // model.clone().with_namespace_transform(ChunkFilter::);
+
+        // for metadata in &model.metadata().chunks {
+        //     let path = metadata
+        //         .chunk
+        //         .relative_file_path
+        //         .as_ref()
+        //         .map(|p| p.to_string_lossy())
+        //         .unwrap_or(Cow::Borrowed(""));
+        //     let namespace = match model.api().find_namespace(&metadata.root_namespace) {
+        //         None => {
+        //             return Err(anyhow!(
+        //                 "could not find root namespace with id '{}' for chunk with path '{}'",
+        //                 metadata.root_namespace,
+        //                 path
+        //             ))
+        //         }
+        //         Some(namespace) => namespace,
+        //     };
+        //     namespace.
+        // }
+
+        Ok(())
     }
 }
 

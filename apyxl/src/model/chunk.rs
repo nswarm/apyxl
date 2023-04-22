@@ -38,7 +38,7 @@ pub struct Attribute {
     pub relative_file_paths: Vec<PathBuf>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChunkFilter {
     pub relative_file_path: PathBuf,
 }

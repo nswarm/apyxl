@@ -1,3 +1,4 @@
+use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
@@ -14,9 +15,11 @@ pub struct Field<'v, 'a> {
     attr_xforms: &'v Vec<Box<dyn AttributeTransform>>,
 }
 
-pub trait FieldTransform: Debug {
+pub trait FieldTransform: Debug + DynClone {
     fn name(&self, _: &mut Cow<str>) {}
 }
+
+dyn_clone::clone_trait_object!(FieldTransform);
 
 impl<'v, 'a> Field<'v, 'a> {
     pub fn new(
@@ -56,6 +59,7 @@ mod tests {
 
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::TestRenamer;
+    use crate::view::Transformer;
 
     #[test]
     fn name() {
