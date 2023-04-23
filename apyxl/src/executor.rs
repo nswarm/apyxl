@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
+use log::info;
 
 use crate::generator::Generator;
 use crate::input::Input;
@@ -8,18 +9,18 @@ use crate::output::Output;
 use crate::parser::Parser;
 
 #[derive(Default)]
-pub struct Executor<'a, I: Input, P: Parser, G: Generator, O: Output> {
+pub struct Executor<'a, I: Input, P: Parser> {
     input: Option<&'a mut I>,
     parser: Option<&'a P>,
-    generator_infos: Vec<GeneratorInfo<'a, G, O>>,
+    generator_infos: Vec<GeneratorInfo<'a>>,
 }
 
-pub struct GeneratorInfo<'a, G: Generator, O: Output> {
-    generator: &'a mut G,
-    outputs: Vec<&'a mut O>,
+pub struct GeneratorInfo<'a> {
+    generator: &'a mut dyn Generator,
+    outputs: Vec<&'a mut dyn Output>,
 }
 
-impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> {
+impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
     pub fn input(mut self, input: &'a mut I) -> Self {
         self.input = Some(input);
         self
@@ -30,7 +31,11 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
         self
     }
 
-    pub fn generator(mut self, generator: &'a mut G, outputs: Vec<&'a mut O>) -> Self {
+    pub fn generator<G: Generator>(
+        mut self,
+        generator: &'a mut G,
+        outputs: Vec<&'a mut dyn Output>,
+    ) -> Self {
         self.generator_infos
             .push(GeneratorInfo { generator, outputs });
         self
@@ -55,7 +60,10 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
             }
         }
 
+        info!("Parsing...");
         let model_builder = parser.parse(input)?;
+
+        info!("Validating model...");
         let model = match model_builder.build() {
             Ok(model) => model,
             Err(errors) => {
@@ -68,7 +76,10 @@ impl<'a, I: Input, P: Parser, G: Generator, O: Output> Executor<'a, I, P, G, O> 
 
         for info in self.generator_infos {
             for output in info.outputs {
-                // todo log generating for abc to output xyz
+                info!(
+                    "Generating for generator '{:?}' to output '{:?}'...",
+                    info.generator, output
+                );
                 info.generator.generate(model.view(), output)?;
             }
         }
@@ -139,59 +150,55 @@ mod tests {
 
         #[test]
         fn missing_input() {
-            let result =
-                Executor::<input::Buffer, FakeParser, FakeGenerator, output::Buffer>::default()
-                    // no input
-                    .parser(&FakeParser::default())
-                    .generator(
-                        &mut FakeGenerator::default(),
-                        vec![&mut output::Buffer::default()],
-                    )
-                    .execute();
+            let result = Executor::<input::Buffer, FakeParser>::default()
+                // no input
+                .parser(&FakeParser::default())
+                .generator(
+                    &mut FakeGenerator::default(),
+                    vec![&mut output::Buffer::default()],
+                )
+                .execute();
             assert!(result.is_err())
         }
 
         #[test]
         fn missing_parser() {
             let parser = FakeParser::default();
-            let result =
-                Executor::<input::Buffer, FakeParser, FakeGenerator, output::Buffer>::default()
-                    .input(&mut input::Buffer::new(parser.test_data(1)))
-                    // no parser
-                    .generator(
-                        &mut FakeGenerator::default(),
-                        vec![&mut output::Buffer::default()],
-                    )
-                    .execute();
+            let result = Executor::<input::Buffer, FakeParser>::default()
+                .input(&mut input::Buffer::new(parser.test_data(1)))
+                // no parser
+                .generator(
+                    &mut FakeGenerator::default(),
+                    vec![&mut output::Buffer::default()],
+                )
+                .execute();
             assert!(result.is_err())
         }
 
         #[test]
         fn missing_generator() {
             let parser = FakeParser::default();
-            let result =
-                Executor::<input::Buffer, FakeParser, FakeGenerator, output::Buffer>::default()
-                    .input(&mut input::Buffer::new(parser.test_data(1)))
-                    .parser(&parser)
-                    // no generator
-                    .execute();
+            let result = Executor::<input::Buffer, FakeParser>::default()
+                .input(&mut input::Buffer::new(parser.test_data(1)))
+                .parser(&parser)
+                // no generator
+                .execute();
             assert!(result.is_err())
         }
 
         #[test]
         fn missing_output() {
             let parser = FakeParser::default();
-            let result =
-                Executor::<input::Buffer, FakeParser, FakeGenerator, output::Buffer>::default()
-                    .input(&mut input::Buffer::new(parser.test_data(1)))
-                    .parser(&FakeParser::default())
-                    .generator(
-                        &mut FakeGenerator::default(),
-                        vec![
-                            /* no outputs */
-                        ],
-                    )
-                    .execute();
+            let result = Executor::<input::Buffer, FakeParser>::default()
+                .input(&mut input::Buffer::new(parser.test_data(1)))
+                .parser(&FakeParser::default())
+                .generator(
+                    &mut FakeGenerator::default(),
+                    vec![
+                        /* no outputs */
+                    ],
+                )
+                .execute();
             assert!(result.is_err())
         }
     }
@@ -250,7 +257,7 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     struct FakeGenerator {
         delimiter: String,
     }
@@ -271,7 +278,7 @@ mod tests {
     }
 
     impl Generator for FakeGenerator {
-        fn generate<O: Output>(&mut self, model: view::Model, output: &mut O) -> Result<()> {
+        fn generate(&mut self, model: view::Model, output: &mut dyn Output) -> Result<()> {
             let dto_names = model
                 .api()
                 .dtos()

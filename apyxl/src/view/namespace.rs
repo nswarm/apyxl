@@ -1,8 +1,10 @@
-use crate::model;
-use crate::view::{Attributes, Dto, Rpc, SubView, Transformer, Transforms};
-use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
+
+use dyn_clone::DynClone;
+
+use crate::model;
+use crate::view::{Attributes, Dto, Rpc, SubView, Transforms};
 
 /// A named, nestable wrapper for a set of API entities.
 /// Wraps [model::Namespace].

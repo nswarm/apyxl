@@ -1,12 +1,14 @@
-use crate::model::Chunk;
-use crate::Output;
-use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-#[derive(Default)]
+use anyhow::{anyhow, Context, Result};
+
+use crate::model::Chunk;
+use crate::Output;
+
+#[derive(Debug, Default)]
 pub struct FileSet {
     output_root: PathBuf,
     current: Option<(Chunk, File)>,
@@ -15,6 +17,7 @@ pub struct FileSet {
 impl FileSet {
     pub fn new<P: Into<PathBuf>>(output_root: P) -> Result<Self> {
         let output_root = output_root.into();
+        fs::create_dir_all(&output_root)?;
         let dir_metadata = fs::metadata(&output_root).context("output_root")?;
         if !dir_metadata.is_dir() {
             return Err(anyhow!("specified 'output_root' must be a directory"));
@@ -36,9 +39,9 @@ impl Output for FileSet {
         let path = chunk.relative_file_path.as_ref().ok_or_else(|| {
             anyhow!("all chunks must have file paths when generating to a FileSet")
         })?;
-        fs::create_dir_all(&self.output_root)?;
+        let path = self.output_root.join(path);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(self.output_root.join(parent))?;
+            fs::create_dir_all(parent)?;
         }
         self.current = Some((chunk.clone(), File::create(path)?));
         Ok(())
@@ -67,19 +70,22 @@ impl Output for FileSet {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use anyhow::Result;
+    use tempfile::tempdir;
+
     use crate::model::Chunk;
     use crate::output::file_set::FileSet;
     use crate::Output;
-    use anyhow::Result;
-    use std::fs;
-    use tempfile::tempdir;
 
     mod new {
-        use crate::output::FileSet;
-        use anyhow::Result;
         use std::fs::File;
-        use std::path::PathBuf;
+
+        use anyhow::Result;
         use tempfile::tempdir;
+
+        use crate::output::FileSet;
 
         #[test]
         fn success() -> Result<()> {
@@ -89,14 +95,19 @@ mod tests {
         }
 
         #[test]
-        fn path_doesnt_exist_errors() {
-            assert!(FileSet::new(PathBuf::from("doesnt/exist")).is_err());
+        fn path_doesnt_exist_is_created() -> Result<()> {
+            let root = tempdir()?;
+            let path = root.path().join("asdf");
+            assert!(FileSet::new(&path).is_ok());
+            assert!(path.exists());
+            Ok(())
         }
 
         #[test]
         fn path_is_not_dir_errors() -> Result<()> {
             let root = tempdir()?;
             let file_path = root.path().join("asdf");
+            File::create(&file_path)?;
             assert!(FileSet::new(file_path).is_err());
             Ok(())
         }
@@ -111,12 +122,14 @@ mod tests {
     }
 
     mod chunk {
+        use std::fs;
+
+        use anyhow::Result;
+        use tempfile::tempdir;
+
         use crate::model::Chunk;
         use crate::output::FileSet;
         use crate::Output;
-        use anyhow::Result;
-        use std::fs;
-        use tempfile::tempdir;
 
         #[test]
         fn creates_file_per_chunk() -> Result<()> {

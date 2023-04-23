@@ -1,6 +1,4 @@
-use itertools::Itertools;
 use std::fmt::Debug;
-use std::io::Read;
 
 pub use attributes::*;
 pub use dto::*;
@@ -65,7 +63,7 @@ impl Transformer for Model<'_, '_> {
     }
 }
 
-trait Transformer: Sized {
+pub(crate) trait Transformer: Sized {
     fn xforms(&mut self) -> &mut Transforms;
 
     fn with_namespace_transform(mut self, xform: impl NamespaceTransform + 'static) -> Self {

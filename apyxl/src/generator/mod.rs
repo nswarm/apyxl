@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::fmt::Debug;
 
 pub use dbg::Dbg;
 pub use rust::Rust;
@@ -9,6 +10,6 @@ use crate::view;
 mod dbg;
 mod rust;
 
-pub trait Generator {
-    fn generate<O: Output>(&mut self, model: view::Model, output: &mut O) -> Result<()>;
+pub trait Generator: Debug {
+    fn generate(&mut self, model: view::Model, output: &mut dyn Output) -> Result<()>;
 }

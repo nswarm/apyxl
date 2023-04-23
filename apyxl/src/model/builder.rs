@@ -110,7 +110,7 @@ impl<'a> Builder<'a> {
         if errors.is_empty() {
             Ok(Model {
                 api: self.api,
-                metadata: Metadata::default(),
+                metadata: self.metadata,
             })
         } else {
             Err(errors)
@@ -838,6 +838,32 @@ mod tests {
                     &build_from_input(&mut exe),
                     ValidationError::InvalidNamespaceName(["ns", UNDEFINED_NAMESPACE].into()),
                 );
+            }
+        }
+
+        mod metadata {
+            use std::path::PathBuf;
+
+            use anyhow::Result;
+
+            use crate::model::{chunk, Builder, EntityId, ValidationError};
+
+            #[test]
+            fn passed_through() -> Result<(), Vec<ValidationError<'static>>> {
+                let mut builder = Builder::default();
+                let chunk_metadata = chunk::Metadata {
+                    root_namespace: EntityId::new(&["hi"]),
+                    chunk: chunk::Chunk::with_relative_file_path(PathBuf::from("hi")),
+                };
+                builder.metadata.chunks.push(chunk_metadata.clone());
+                let model = builder.build()?;
+                let actual_chunk_metadata = model.metadata.chunks.get(0).unwrap();
+                assert_eq!(
+                    actual_chunk_metadata.root_namespace,
+                    chunk_metadata.root_namespace
+                );
+                assert_eq!(actual_chunk_metadata.chunk, chunk_metadata.chunk);
+                Ok(())
             }
         }
     }

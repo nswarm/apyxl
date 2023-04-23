@@ -23,3 +23,47 @@ impl Transformer for SubView<'_> {
         &mut self.xforms
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_util::executor::TestExecutor;
+    use crate::view::tests::TestFilter;
+    use crate::view::Transformer;
+    use itertools::Itertools;
+
+    #[test]
+    fn filters() {
+        let mut exe = TestExecutor::new(
+            r#"
+                    mod visible {}
+                    mod hidden {}
+                    struct visible {}
+                    struct hidden {}
+                    fn visible() {}
+                    fn hidden() {}
+                "#,
+        );
+        let model = exe.model();
+        let view = model.view();
+        let root = view.api();
+        let sub_view = root.sub_view().with_namespace_transform(TestFilter {});
+        let namespace = sub_view.namespace();
+
+        assert_eq!(namespace.namespaces().count(), 1);
+        assert_eq!(namespace.dtos().count(), 1);
+        assert_eq!(namespace.rpcs().count(), 1);
+
+        assert_eq!(
+            namespace.namespaces().collect_vec().get(0).unwrap().name(),
+            "visible"
+        );
+        assert_eq!(
+            namespace.dtos().collect_vec().get(0).unwrap().name(),
+            "visible"
+        );
+        assert_eq!(
+            namespace.rpcs().collect_vec().get(0).unwrap().name(),
+            "visible"
+        );
+    }
+}

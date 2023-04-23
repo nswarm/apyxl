@@ -2,6 +2,7 @@ use crate::model::chunk::Chunk;
 use crate::Output;
 use anyhow::Result;
 use log::error;
+use std::fmt::{Debug, Formatter};
 
 /// Indented wraps an existing output and keeps track of current indentation level.
 ///
@@ -9,15 +10,15 @@ use log::error;
 /// call at which point the indentation will be applied before the new characters. This allows more
 /// intuitive usage of [Indented::indent], in particular: the order in which you call [Output::newline]
 /// and [Indented::indent] does not matter.
-pub struct Indented<'a, O: Output> {
+pub struct Indented<'a> {
     depth: u32,
     has_pending_indent: bool,
     indent: &'a str,
-    output: &'a mut O,
+    output: &'a mut dyn Output,
 }
 
-impl<'a, O: Output> Indented<'_, O> {
-    pub fn new(output: &'a mut O, indent: &'a str) -> Indented<'a, O> {
+impl<'a> Indented<'_> {
+    pub fn new(output: &'a mut dyn Output, indent: &'a str) -> Indented<'a> {
         Indented {
             depth: 0,
             // Start true in case indent is modified before the first write, it would be expected
@@ -68,7 +69,13 @@ impl<'a, O: Output> Indented<'_, O> {
     }
 }
 
-impl<O: Output> Output for Indented<'_, O> {
+impl Debug for Indented<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.output.fmt(f)
+    }
+}
+
+impl Output for Indented<'_> {
     fn write_chunk(&mut self, chunk: &Chunk) -> Result<()> {
         self.output.write_chunk(chunk)
     }

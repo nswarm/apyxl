@@ -27,7 +27,6 @@ impl FileSet {
         };
         for relative_path in relative_paths {
             let relative_file_path = relative_path.as_ref().to_path_buf();
-
             let file_path = root_path.as_ref().join(&relative_file_path);
             let content = fs::read_to_string(&file_path).with_context(|| {
                 format!("Failed to read file to string: {}", file_path.display())

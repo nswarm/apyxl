@@ -15,14 +15,14 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn with_relative_file_path(relative_file_path: PathBuf) -> Self {
+    pub fn with_relative_file_path<P: Into<PathBuf>>(relative_file_path: P) -> Self {
         Self {
-            relative_file_path: Some(relative_file_path),
+            relative_file_path: Some(relative_file_path.into()),
         }
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Metadata<'a> {
     /// The namespace that all entities within the chunk reside.
     /// Entities will still need to be filtered by the [Attribute] via the [ChunkFilter]
@@ -40,7 +40,15 @@ pub struct Attribute {
 
 #[derive(Debug, Clone)]
 pub struct ChunkFilter {
-    pub relative_file_path: PathBuf,
+    relative_file_path: PathBuf,
+}
+
+impl ChunkFilter {
+    pub fn new<P: Into<PathBuf>>(relative_file_path: P) -> Self {
+        Self {
+            relative_file_path: relative_file_path.into(),
+        }
+    }
 }
 
 impl NamespaceTransform for ChunkFilter {
@@ -60,6 +68,35 @@ impl NamespaceTransform for ChunkFilter {
 fn filter_attributes(attr: &Attributes, relative_file_path: &PathBuf) -> bool {
     attr.chunk
         .as_ref()
-        .map(|chunk| chunk.relative_file_paths.contains(relative_file_path))
+        .filter(|chunk| chunk.relative_file_paths.contains(relative_file_path))
         .is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    mod filter {
+        use crate::model;
+        use crate::model::chunk::{filter_attributes, Attribute, ChunkFilter};
+        use crate::view::Attributes;
+        use std::path::PathBuf;
+
+        #[test]
+        fn true_if_chunk_contains_path() {
+            let mut model = model::Attributes::default();
+            model.chunk = Some(Attribute {
+                relative_file_paths: vec![PathBuf::from("a/b/c"), PathBuf::from("d/e/f")],
+            });
+            assert!(filter_attributes(&model, &PathBuf::from("a/b/c")));
+            assert!(filter_attributes(&model, &PathBuf::from("d/e/f")));
+        }
+
+        #[test]
+        fn false_if_chunk_does_not_contain_path() {
+            let mut model = model::Attributes::default();
+            model.chunk = Some(Attribute {
+                relative_file_paths: vec![PathBuf::from("a/b/c"), PathBuf::from("d/e/f")],
+            });
+            assert!(!filter_attributes(&model, &PathBuf::from("x/y/z")));
+        }
+    }
 }

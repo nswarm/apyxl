@@ -5,14 +5,15 @@ use anyhow::Result;
 
 use crate::output::Output;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StdOut {}
 
 impl Output for StdOut {
     fn write_chunk(&mut self, chunk: &Chunk) -> Result<()> {
         if let Some(path) = &chunk.relative_file_path {
-            stdout().write("-------------------".as_bytes())?;
+            stdout().write("---\n".as_bytes())?;
             stdout().write(format!("--- CHUNK: {} \n", path.to_string_lossy()).as_bytes())?;
+            stdout().write("---\n".as_bytes())?;
         }
         Ok(())
     }

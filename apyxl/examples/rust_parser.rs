@@ -3,6 +3,7 @@ use apyxl::input;
 use apyxl::{generator, output, parser, Executor};
 
 fn main() -> Result<()> {
+    env_logger::init();
     let mut input = input::Buffer::new(
         r#"
 

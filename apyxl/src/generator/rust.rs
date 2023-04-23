@@ -1,49 +1,58 @@
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
-use std::borrow::Cow;
+use log::debug;
 
 use crate::generator::Generator;
 use crate::model::chunk::ChunkFilter;
 use crate::output::{Indented, Output};
-use crate::view::{Dto, EntityId, Field, Model, Namespace, Rpc};
+use crate::view::{Dto, EntityId, Field, Model, Namespace, Rpc, Transformer};
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Rust {}
 
 const INDENT: &str = "    ";
 
 impl Generator for Rust {
-    fn generate<O: Output>(&mut self, model: Model, output: &mut O) -> Result<()> {
+    fn generate(&mut self, model: Model, output: &mut dyn Output) -> Result<()> {
         let mut o = Indented::new(output, INDENT);
-        write_namespace_contents(model.api(), &mut o)?;
 
-        // model.clone().with_namespace_transform(ChunkFilter::);
+        // Write without chunks.
+        // -- todo need Output to be 'chunked' or not
+        // write_namespace_contents(model.api(), &mut o)?;
 
-        // for metadata in &model.metadata().chunks {
-        //     let path = metadata
-        //         .chunk
-        //         .relative_file_path
-        //         .as_ref()
-        //         .map(|p| p.to_string_lossy())
-        //         .unwrap_or(Cow::Borrowed(""));
-        //     let namespace = match model.api().find_namespace(&metadata.root_namespace) {
-        //         None => {
-        //             return Err(anyhow!(
-        //                 "could not find root namespace with id '{}' for chunk with path '{}'",
-        //                 metadata.root_namespace,
-        //                 path
-        //             ))
-        //         }
-        //         Some(namespace) => namespace,
-        //     };
-        //     namespace.
-        // }
+        // Write with chunks.
+        for metadata in &model.metadata().chunks {
+            let api = model.api();
+            let namespace = match api.find_namespace(&metadata.root_namespace) {
+                None => {
+                    return Err(anyhow!(
+                        "could not find root namespace with id '{}' for chunk with path '{:?}'",
+                        metadata.root_namespace,
+                        metadata.chunk
+                    ))
+                }
+                Some(namespace) => namespace,
+            };
+            let path = metadata.chunk.relative_file_path.as_ref().ok_or(anyhow!(
+                "all chunks must have a relative_file_path when using chunked API"
+            ))?;
+            debug!(
+                "writing chunk: path '{}' namespace '{}'",
+                path.display(),
+                metadata.root_namespace
+            );
+            let sub_view = namespace
+                .sub_view()
+                .with_namespace_transform(ChunkFilter::new(path));
+            o.write_chunk(&metadata.chunk)?;
+            write_namespace_contents(sub_view.namespace(), &mut o)?;
+        }
 
         Ok(())
     }
 }
 
-fn write_namespace<O: Output>(namespace: Namespace, o: &mut Indented<O>) -> Result<()> {
+fn write_namespace(namespace: Namespace, o: &mut Indented) -> Result<()> {
     o.write_str("pub mod ")?;
     o.write_str(&namespace.name())?;
     o.write(' ')?;
@@ -52,7 +61,7 @@ fn write_namespace<O: Output>(namespace: Namespace, o: &mut Indented<O>) -> Resu
     write_block_end(o)
 }
 
-fn write_namespace_contents<O: Output>(namespace: Namespace, o: &mut Indented<O>) -> Result<()> {
+fn write_namespace_contents(namespace: Namespace, o: &mut Indented) -> Result<()> {
     for rpc in namespace.rpcs() {
         write_rpc(rpc, o)?;
         o.newline()?;
@@ -71,7 +80,7 @@ fn write_namespace_contents<O: Output>(namespace: Namespace, o: &mut Indented<O>
     Ok(())
 }
 
-fn write_dto<O: Output>(dto: Dto, o: &mut Indented<O>) -> Result<()> {
+fn write_dto(dto: Dto, o: &mut Indented) -> Result<()> {
     write_dto_start(dto, o)?;
 
     for field in dto.fields() {
@@ -82,7 +91,7 @@ fn write_dto<O: Output>(dto: Dto, o: &mut Indented<O>) -> Result<()> {
     write_block_end(o)
 }
 
-fn write_rpc<O: Output>(rpc: Rpc, o: &mut Indented<O>) -> Result<()> {
+fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {
     o.write_str("pub fn ")?;
     o.write_str(&rpc.name())?;
 
@@ -109,37 +118,37 @@ fn write_rpc<O: Output>(rpc: Rpc, o: &mut Indented<O>) -> Result<()> {
     o.newline()
 }
 
-fn write_dto_start<O: Output>(dto: Dto, o: &mut Indented<O>) -> Result<()> {
+fn write_dto_start(dto: Dto, o: &mut Indented) -> Result<()> {
     o.write_str("struct ")?;
     o.write_str(&dto.name())?;
     o.write(' ')?;
     write_block_start(o)
 }
 
-fn write_block_start<O: Output>(o: &mut Indented<O>) -> Result<()> {
+fn write_block_start(o: &mut Indented) -> Result<()> {
     o.write_str("{")?;
     o.indent(1);
     o.newline()
 }
 
-fn write_block_end<O: Output>(o: &mut Indented<O>) -> Result<()> {
+fn write_block_end(o: &mut Indented) -> Result<()> {
     o.indent(-1);
     o.write_str("}")?;
     o.newline()
 }
 
-fn write_field<O: Output>(field: Field, o: &mut O) -> Result<()> {
+fn write_field(field: Field, o: &mut dyn Output) -> Result<()> {
     write_param(field, o)?;
     o.write(',')
 }
 
-fn write_param<O: Output>(field: Field, o: &mut O) -> Result<()> {
+fn write_param(field: Field, o: &mut dyn Output) -> Result<()> {
     o.write_str(&field.name())?;
     o.write_str(": ")?;
     write_entity_id(field.ty(), o)
 }
 
-fn write_entity_id<O: Output>(entity_id: EntityId, o: &mut O) -> Result<()> {
+fn write_entity_id(entity_id: EntityId, o: &mut dyn Output) -> Result<()> {
     write_joined(
         &entity_id.path().iter().map(|s| s.as_ref()).collect_vec(),
         "::",
@@ -148,7 +157,7 @@ fn write_entity_id<O: Output>(entity_id: EntityId, o: &mut O) -> Result<()> {
 }
 
 /// Writes the `components` joined with `separator` without unnecessary allocations.
-fn write_joined<O: Output>(components: &[&str], separator: &str, o: &mut O) -> Result<()> {
+fn write_joined(components: &[&str], separator: &str, o: &mut dyn Output) -> Result<()> {
     let len = components.len();
     for (i, component) in components.iter().enumerate() {
         o.write_str(component)?;
