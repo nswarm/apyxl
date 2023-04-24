@@ -1,5 +1,9 @@
 use std::fmt::Debug;
 
+use anyhow::anyhow;
+use anyhow::Result;
+use log::debug;
+
 pub use attributes::*;
 pub use dto::*;
 pub use entity_id::*;
@@ -9,6 +13,8 @@ pub use rpc::*;
 pub use sub_view::*;
 
 use crate::model;
+use crate::model::chunk::ChunkFilter;
+use crate::model::Chunk;
 
 mod attributes;
 mod dto;
@@ -39,7 +45,7 @@ pub struct Transforms {
     attr_xforms: Vec<Box<dyn AttributeTransform>>,
 }
 
-impl<'v, 'a> Model<'v, 'a> {
+impl<'v: 'a, 'a> Model<'v, 'a> {
     pub fn new(model: &'v model::Model<'a>) -> Self {
         Self {
             model,
@@ -47,8 +53,37 @@ impl<'v, 'a> Model<'v, 'a> {
         }
     }
 
+    /// Get the full combined API root with all transforms applied.
     pub fn api(&'v self) -> Namespace<'v, 'a> {
         Namespace::new(&self.model.api, &self.xforms)
+    }
+
+    /// Iterate over [Chunk]s, where each subsection of the API can be viewed through a [SubView]
+    /// with all transforms, as well as a [ChunkFilter] for the appropriate chunk applied.
+    pub fn api_chunked_iter(&self) -> impl Iterator<Item = Result<(&Chunk, SubView<'a>)>> {
+        self.metadata().chunks.iter().map(|metadata| {
+            let namespace = match self.model.api.find_namespace(&metadata.root_namespace) {
+                None => {
+                    return Err(anyhow!(
+                        "could not find root namespace with id '{}' for chunk with path '{:?}'",
+                        metadata.root_namespace,
+                        metadata.chunk
+                    ))
+                }
+                Some(namespace) => namespace,
+            };
+            let path = metadata.chunk.relative_file_path.as_ref().ok_or(anyhow!(
+                "all chunks must have a relative_file_path when using chunked API"
+            ))?;
+            debug!(
+                "writing chunk: path '{}' namespace '{}'",
+                path.display(),
+                metadata.root_namespace
+            );
+            let sub_view = SubView::new(namespace, self.xforms.clone())
+                .with_namespace_transform(ChunkFilter::new(path));
+            Ok((&metadata.chunk, sub_view))
+        })
     }
 
     // todo view::Metadata + metadata xforms

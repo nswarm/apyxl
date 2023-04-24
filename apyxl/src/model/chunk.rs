@@ -75,10 +75,10 @@ fn filter_attributes(attr: &Attributes, relative_file_path: &PathBuf) -> bool {
 #[cfg(test)]
 mod tests {
     mod filter {
-        use crate::model;
-        use crate::model::chunk::{filter_attributes, Attribute, ChunkFilter};
-        use crate::view::Attributes;
         use std::path::PathBuf;
+
+        use crate::model;
+        use crate::model::chunk::{filter_attributes, Attribute};
 
         #[test]
         fn true_if_chunk_contains_path() {

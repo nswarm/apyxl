@@ -26,10 +26,11 @@ impl Transformer for SubView<'_> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::TestFilter;
-    use crate::view::Transformer;
-    use itertools::Itertools;
+    use crate::view::{SubView, Transformer, Transforms};
 
     #[test]
     fn filters() {
@@ -44,9 +45,8 @@ mod tests {
                 "#,
         );
         let model = exe.model();
-        let view = model.view();
-        let root = view.api();
-        let sub_view = root.sub_view().with_namespace_transform(TestFilter {});
+        let sub_view =
+            SubView::new(&model.api, Transforms::default()).with_namespace_transform(TestFilter {});
         let namespace = sub_view.namespace();
 
         assert_eq!(namespace.namespaces().count(), 1);

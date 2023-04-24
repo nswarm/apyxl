@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use dyn_clone::DynClone;
 
 use crate::model;
-use crate::view::{Attributes, Dto, Rpc, SubView, Transforms};
+use crate::view::{Attributes, Dto, Rpc, Transforms};
 
 /// A named, nestable wrapper for a set of API entities.
 /// Wraps [model::Namespace].
@@ -63,10 +63,11 @@ impl<'v, 'a> Namespace<'v, 'a> {
         Self { target, xforms }
     }
 
-    /// Clone the [Namespace] and referenced [Transforms] into a new [SubView]. The [SubView] gives
-    /// a view into the [Model] starting at this [Namespace] with support for additional [Transforms].
-    pub fn sub_view(&self) -> SubView {
-        SubView::new(self.target, self.xforms.clone())
+    pub fn clone_with_new_transforms(&self, xforms: &'v Transforms) -> Self {
+        Self {
+            target: self.target,
+            xforms,
+        }
     }
 
     pub fn name(&self) -> Cow<str> {

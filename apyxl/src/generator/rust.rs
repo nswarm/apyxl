@@ -1,11 +1,9 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use itertools::Itertools;
-use log::debug;
 
 use crate::generator::Generator;
-use crate::model::chunk::ChunkFilter;
 use crate::output::{Indented, Output};
-use crate::view::{Dto, EntityId, Field, Model, Namespace, Rpc, Transformer};
+use crate::view::{Dto, EntityId, Field, Model, Namespace, Rpc};
 
 #[derive(Debug, Default)]
 pub struct Rust {}
@@ -16,35 +14,13 @@ impl Generator for Rust {
     fn generate(&mut self, model: Model, output: &mut dyn Output) -> Result<()> {
         let mut o = Indented::new(output, INDENT);
 
-        // Write without chunks.
-        // -- todo need Output to be 'chunked' or not
-        // write_namespace_contents(model.api(), &mut o)?;
+        // Write combined API w/out chunks.
+        write_namespace_contents(model.api(), &mut o)?;
 
-        // Write with chunks.
-        for metadata in &model.metadata().chunks {
-            let api = model.api();
-            let namespace = match api.find_namespace(&metadata.root_namespace) {
-                None => {
-                    return Err(anyhow!(
-                        "could not find root namespace with id '{}' for chunk with path '{:?}'",
-                        metadata.root_namespace,
-                        metadata.chunk
-                    ))
-                }
-                Some(namespace) => namespace,
-            };
-            let path = metadata.chunk.relative_file_path.as_ref().ok_or(anyhow!(
-                "all chunks must have a relative_file_path when using chunked API"
-            ))?;
-            debug!(
-                "writing chunk: path '{}' namespace '{}'",
-                path.display(),
-                metadata.root_namespace
-            );
-            let sub_view = namespace
-                .sub_view()
-                .with_namespace_transform(ChunkFilter::new(path));
-            o.write_chunk(&metadata.chunk)?;
+        // Write chunked API.
+        for result in model.api_chunked_iter() {
+            let (chunk, sub_view) = result?;
+            o.write_chunk(chunk)?;
             write_namespace_contents(sub_view.namespace(), &mut o)?;
         }
 

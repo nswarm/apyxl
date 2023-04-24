@@ -8,6 +8,8 @@ use anyhow::{anyhow, Context, Result};
 use crate::model::Chunk;
 use crate::Output;
 
+/// Creates a file for each [Chunk] within the `output_root` using the [Chunk]'s `relative_file_path`.
+/// Any data written without a [Chunk] is ignored.
 #[derive(Debug, Default)]
 pub struct FileSet {
     output_root: PathBuf,
@@ -48,17 +50,15 @@ impl Output for FileSet {
     }
 
     fn write_str(&mut self, data: &str) -> Result<()> {
-        match &mut self.current {
-            None => return Err(anyhow!("cannot 'write_str' without an active chunk")),
-            Some((_, file)) => file.write_all(data.as_bytes())?,
+        if let Some((_, file)) = &mut self.current {
+            file.write_all(data.as_bytes())?;
         }
         Ok(())
     }
 
     fn write(&mut self, data: char) -> Result<()> {
-        match &mut self.current {
-            None => return Err(anyhow!("cannot 'write' without an active chunk")),
-            Some((_, file)) => file.write_all(&[data as u8])?,
+        if let Some((_, file)) = &mut self.current {
+            file.write_all(&[data as u8])?;
         }
         Ok(())
     }
