@@ -78,18 +78,18 @@ impl<'a> Builder<'a> {
             });
         }
         self.namespace_stack.push(name);
-        debug!("entering namespace: {:?}", self.namespace_stack);
+        debug!("entered namespace: {:?}", self.namespace_stack);
     }
 
     /// Remove the most recently-added namespace from the stack.
     pub fn exit_namespace(&mut self) {
-        debug!("exiting namespace {:?}", self.namespace_stack);
+        debug!("exited namespace: {:?}", self.namespace_stack);
         self.namespace_stack.pop();
     }
 
     /// Clear the entire namespace stack.
     pub fn clear_namespace(&mut self) {
-        debug!("clearing entire namespace stack {:?}", self.namespace_stack);
+        debug!("clear namespace: ({:?})", self.namespace_stack);
         self.namespace_stack.clear()
     }
 

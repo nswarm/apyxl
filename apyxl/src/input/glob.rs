@@ -43,7 +43,7 @@ fn walk_glob(root: &Path, glob: &str) -> Result<Vec<PathBuf>> {
         if !glob.is_match(entry.path()) {
             continue;
         }
-        paths.push(entry.path().to_path_buf());
+        paths.push(entry.path().strip_prefix(root)?.to_path_buf());
     }
     Ok(paths)
 }
@@ -52,6 +52,7 @@ fn walk_glob(root: &Path, glob: &str) -> Result<Vec<PathBuf>> {
 mod tests {
     use std::fs;
     use std::fs::File;
+    use std::path::PathBuf;
 
     use anyhow::Result;
     use tempfile::tempdir;
@@ -64,14 +65,14 @@ mod tests {
         fs::create_dir_all(root.path().join("a/b"))?;
         fs::create_dir_all(root.path().join("a/c"))?;
         fs::create_dir_all(root.path().join("d/e"))?;
-        let path0 = root.path().join("a/b/file0.rs");
-        let path1 = root.path().join("a/b/file1.rs");
-        let path2 = root.path().join("a/c/file2.rs");
-        let path3 = root.path().join("d/e/file3.rs");
-        File::create(&path0)?;
-        File::create(&path1)?;
-        File::create(&path2)?;
-        File::create(path3)?;
+        let path0 = PathBuf::from("a/b/file0.rs");
+        let path1 = PathBuf::from("a/b/file1.rs");
+        let path2 = PathBuf::from("a/c/file2.rs");
+        let path3 = PathBuf::from("d/e/file3.rs");
+        File::create(root.path().join(&path0))?;
+        File::create(root.path().join(&path1))?;
+        File::create(root.path().join(&path2))?;
+        File::create(root.path().join(&path3))?;
         let paths = walk_glob(root.path(), "a/**/*.rs")?;
         assert_eq!(paths, vec![path0, path1, path2,]);
         Ok(())

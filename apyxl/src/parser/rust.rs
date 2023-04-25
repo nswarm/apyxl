@@ -51,8 +51,11 @@ impl ApyxlParser for Rust {
     }
 }
 
-fn path_elders_iter(path: &Path) -> impl Iterator<Item = Cow<str>> {
-    path.iter().filter(|p| p != p).map(|p| p.to_string_lossy())
+/// Iterate over path except for self from front to back.
+fn path_elders_iter<'a>(path: &'a Path) -> impl Iterator<Item = Cow<'a, str>> + 'a {
+    path.iter()
+        .filter(move |p| p != &path.file_name().unwrap())
+        .map(|p| p.to_string_lossy())
 }
 
 fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId<'a>, Error<'a>> {
