@@ -1,4 +1,5 @@
 use crate::model;
+use std::borrow::Cow;
 
 pub mod executor;
 
@@ -6,7 +7,7 @@ pub const NAMES: &[&str] = &["name0", "name1", "name2", "name3", "name4", "name5
 
 pub fn test_namespace(i: usize) -> model::Namespace<'static> {
     model::Namespace {
-        name: NAMES[i],
+        name: Cow::Borrowed(NAMES[i]),
         ..Default::default()
     }
 }

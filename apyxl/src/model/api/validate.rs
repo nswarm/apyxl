@@ -37,7 +37,7 @@ pub enum ValidationError<'a> {
     DuplicateRpc(EntityId<'a>),
 }
 
-pub fn namespace_names<'a, 'b>(
+pub fn namespace_names<'a, 'b: 'a>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
     entity_id: EntityId<'a>,
@@ -45,7 +45,7 @@ pub fn namespace_names<'a, 'b>(
     namespace.namespaces().filter_map(move |child| {
         if child.name == UNDEFINED_NAMESPACE {
             Some(ValidationError::InvalidNamespaceName(
-                entity_id.child(child.name),
+                entity_id.child(&child.name),
             ))
         } else {
             None

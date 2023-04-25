@@ -1,11 +1,13 @@
-use std::fmt::{Display, Formatter};
+use std::borrow::Cow;
 
 use itertools::Itertools;
 
+pub use entity_id::EntityId;
 pub use validate::ValidationError;
 
 use crate::model::chunk;
 
+mod entity_id;
 pub mod validate;
 
 /// A complete set of entities that make up an API.
@@ -17,7 +19,7 @@ pub const UNDEFINED_NAMESPACE: &str = "_";
 /// A named, nestable wrapper for a set of API entities.
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Namespace<'a> {
-    pub name: &'a str,
+    pub name: Cow<'a, str>,
     pub children: Vec<NamespaceChild<'a>>,
     pub attributes: Attributes,
 }
@@ -52,20 +54,6 @@ pub struct Rpc<'a> {
     pub params: Vec<Field<'a>>,
     pub return_type: Option<EntityId<'a>>,
     pub attributes: Attributes,
-}
-
-/// A reference to another entity within the [Api].
-#[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
-pub struct EntityId<'a> {
-    /// The path through other entities in the [Api] to get to the referred to entity. This will
-    /// typically be a path through the hierarchy of [NamespaceChild], but can also refer to
-    /// sub-child items like [Dto] fields or [Rpc] parameters.
-    ///
-    /// Examples:
-    ///     `namespace1.namespace2.DtoName`
-    ///     `namespace1.namespace2.DtoName.field0`
-    ///     `namespace1.RpcName.param0`
-    pub path: Vec<&'a str>,
 }
 
 /// Additional metadata attached to entities.
@@ -212,12 +200,12 @@ impl<'a> Namespace<'a> {
     /// Find a [Dto] by [EntityId] relative to this [Namespace].
     pub fn find_dto(&self, entity_id: &EntityId) -> Option<&Dto<'a>> {
         if !entity_id.has_namespace() {
-            return entity_id.name().and_then(|name| self.dto(name));
+            return entity_id.name().and_then(|name| self.dto(&name));
         }
         let namespace = self.find_namespace(&entity_id.namespace());
         let name = entity_id.name();
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.dto(name),
+            (Some(namespace), Some(name)) => namespace.dto(&name),
             _ => None,
         }
     }
@@ -225,12 +213,12 @@ impl<'a> Namespace<'a> {
     /// Find a [Dto] by [EntityId] relative to this [Namespace].
     pub fn find_dto_mut(&mut self, entity_id: &EntityId) -> Option<&mut Dto<'a>> {
         if !entity_id.has_namespace() {
-            return entity_id.name().and_then(|name| self.dto_mut(name));
+            return entity_id.name().and_then(|name| self.dto_mut(&name));
         }
         let namespace = self.find_namespace_mut(&entity_id.namespace());
         let name = entity_id.name();
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.dto_mut(name),
+            (Some(namespace), Some(name)) => namespace.dto_mut(&name),
             _ => None,
         }
     }
@@ -240,7 +228,7 @@ impl<'a> Namespace<'a> {
         let namespace = self.find_namespace(&entity_id.namespace());
         let name = entity_id.name();
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.rpc(name),
+            (Some(namespace), Some(name)) => namespace.rpc(&name),
             _ => None,
         }
     }
@@ -250,7 +238,7 @@ impl<'a> Namespace<'a> {
         let namespace = self.find_namespace_mut(&entity_id.namespace());
         let name = entity_id.name();
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.rpc_mut(name),
+            (Some(namespace), Some(name)) => namespace.rpc_mut(&name),
             _ => None,
         }
     }
@@ -330,69 +318,6 @@ impl<'a> Rpc<'a> {
 
     pub fn param_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
         self.params.iter_mut().find(|param| param.name == name)
-    }
-}
-
-impl<'a> EntityId<'a> {
-    pub fn new(path: &[&'a str]) -> Self {
-        Self {
-            path: path.to_vec(),
-        }
-    }
-
-    pub fn parent(&self) -> Option<Self> {
-        let path = &self.path;
-        if path.is_empty() {
-            return None;
-        }
-        let len = path.len() - 1;
-        Some(Self {
-            path: path[..len].to_vec(),
-        })
-    }
-
-    pub fn child(&self, name: &'a str) -> Self {
-        let mut child = self.clone();
-        child.path.push(name);
-        child
-    }
-
-    pub fn has_namespace(&self) -> bool {
-        self.path.len() > 1
-    }
-
-    /// Returns an iterator over the part of the path _before_ the name, which represents the
-    /// namespace it is a part of as an iterator over the type ref.
-    pub fn namespace_iter<'b>(&'b self) -> impl Iterator<Item = &'a str> + 'b {
-        let len = self.path.len();
-        self.path.iter().copied().take(len - 1)
-    }
-
-    /// Returns the part of the path _before_ the name
-    pub fn namespace(&self) -> EntityId<'a> {
-        EntityId::new(&self.namespace_iter().collect::<Vec<_>>())
-    }
-
-    /// The name is always the last part of the type path.
-    pub fn name(&self) -> Option<&'a str> {
-        self.path.last().copied()
-    }
-}
-
-impl<'a, T> From<T> for EntityId<'a>
-where
-    T: AsRef<[&'a str]>,
-{
-    fn from(value: T) -> Self {
-        Self {
-            path: value.as_ref().to_vec(),
-        }
-    }
-}
-
-impl Display for EntityId<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.path.iter().join("."))
     }
 }
 
@@ -507,6 +432,8 @@ mod tests {
     }
 
     mod find {
+        use std::borrow::Cow;
+
         use crate::model::api::tests::{complex_api, complex_namespace};
         use crate::model::EntityId;
         use crate::test_util::{test_dto, test_namespace, test_rpc, NAMES};
@@ -514,8 +441,8 @@ mod tests {
         #[test]
         fn dto() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::new(&[test_dto(1).name]);
-            let entity_id2 = EntityId::new(&[test_dto(2).name]);
+            let entity_id1 = EntityId::from(&[test_dto(1).name]);
+            let entity_id2 = EntityId::from(&[test_dto(2).name]);
             assert_eq!(api.find_dto(&entity_id1), Some(&test_dto(1)));
             assert_eq!(api.find_dto_mut(&entity_id2), Some(&mut test_dto(2)));
         }
@@ -523,8 +450,8 @@ mod tests {
         #[test]
         fn rpc() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::new(&[test_dto(1).name]);
-            let entity_id2 = EntityId::new(&[test_dto(2).name]);
+            let entity_id1 = EntityId::from(&[test_dto(1).name]);
+            let entity_id2 = EntityId::from(&[test_dto(2).name]);
             assert_eq!(api.find_rpc(&entity_id1), Some(&test_rpc(1)),);
             assert_eq!(api.find_rpc_mut(&entity_id2), Some(&mut test_rpc(2)),);
         }
@@ -532,8 +459,8 @@ mod tests {
         #[test]
         fn namespace() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::new(&[complex_namespace(1).name]);
-            let entity_id2 = EntityId::new(&[complex_namespace(2).name]);
+            let entity_id1 = EntityId::owned(&[complex_namespace(1).name]);
+            let entity_id2 = EntityId::owned(&[complex_namespace(2).name]);
             assert_eq!(api.find_namespace(&entity_id1), Some(&complex_namespace(1)));
             assert_eq!(
                 api.find_namespace_mut(&entity_id2),
@@ -544,7 +471,7 @@ mod tests {
         #[test]
         fn child() {
             let api = complex_api();
-            let entity_id = EntityId::new(&[complex_namespace(1).name, NAMES[3]]);
+            let entity_id = EntityId::owned(&[complex_namespace(1).name, Cow::Borrowed(NAMES[3])]);
             assert_eq!(api.find_dto(&entity_id), Some(&test_dto(3)));
             assert_eq!(api.find_rpc(&entity_id), Some(&test_rpc(3)));
             assert_eq!(api.find_namespace(&entity_id), Some(&test_namespace(3)));
@@ -553,8 +480,11 @@ mod tests {
         #[test]
         fn multi_depth_child() {
             let api = complex_api();
-            let entity_id =
-                EntityId::new(&[complex_namespace(1).name, test_namespace(4).name, NAMES[5]]);
+            let entity_id = EntityId::owned(&[
+                complex_namespace(1).name,
+                test_namespace(4).name,
+                Cow::Borrowed(NAMES[5]),
+            ]);
             assert_eq!(api.find_dto(&entity_id), Some(&test_dto(5)));
         }
     }

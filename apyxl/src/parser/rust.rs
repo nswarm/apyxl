@@ -1,6 +1,10 @@
 use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
+use itertools::Itertools;
+use log::debug;
+use std::borrow::Cow;
+use std::path::Path;
 
 use crate::model::{
     Api, Dto, EntityId, Field, Namespace, NamespaceChild, Rpc, UNDEFINED_NAMESPACE,
@@ -18,6 +22,13 @@ impl ApyxlParser for Rust {
         let mut builder = model::Builder::default();
 
         while let Some((chunk, data)) = input.next_chunk() {
+            debug!("parsing chunk {:?}", chunk.relative_file_path);
+            if let Some(file_path) = &chunk.relative_file_path {
+                for component in path_elders_iter(file_path) {
+                    builder.enter_namespace(&component)
+                }
+            }
+
             let children = namespace_children(namespace())
                 .padded()
                 .then_ignore(end())
@@ -27,16 +38,21 @@ impl ApyxlParser for Rust {
 
             builder.merge_from_chunk(
                 Api {
-                    name: UNDEFINED_NAMESPACE,
+                    name: Cow::Borrowed(UNDEFINED_NAMESPACE),
                     children,
                     attributes: Default::default(),
                 },
                 chunk,
             );
+            builder.clear_namespace();
         }
 
         Ok(builder)
     }
+}
+
+fn path_elders_iter(path: &Path) -> impl Iterator<Item = Cow<str>> {
+    path.iter().filter(|p| p != p).map(|p| p.to_string_lossy())
 }
 
 fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId<'a>, Error<'a>> {
@@ -44,7 +60,12 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId<'a>, Error<'a>> {
         .separated_by(just("::"))
         .at_least(1)
         .collect::<Vec<_>>()
-        .map(|components| EntityId { path: components })
+        .map(|components| EntityId {
+            path: components
+                .into_iter()
+                .map(|s| Cow::Borrowed(s))
+                .collect_vec(),
+        })
 }
 
 fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
@@ -153,7 +174,7 @@ fn namespace<'a>() -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
             .ignore_then(text::ident())
             .then(body)
             .map(|(name, children)| Namespace {
-                name,
+                name: Cow::Borrowed(name),
                 children,
                 attributes: Default::default(),
             })
@@ -331,6 +352,7 @@ mod tests {
 
     mod rpc {
         use chumsky::Parser;
+        use std::borrow::Cow;
 
         use crate::parser::rust::rpc;
         use crate::parser::rust::tests::TestError;
@@ -388,7 +410,7 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 1);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
+            assert_eq!(rpc.params[0].ty.name(), Some(Cow::Borrowed("ParamType0")));
             Ok(())
         }
 
@@ -403,11 +425,11 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
+            assert_eq!(rpc.params[0].ty.name(), Some(Cow::Borrowed("ParamType0")));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
+            assert_eq!(rpc.params[1].ty.name(), Some(Cow::Borrowed("ParamType1")));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
+            assert_eq!(rpc.params[2].ty.name(), Some(Cow::Borrowed("ParamType2")));
             Ok(())
         }
 
@@ -425,11 +447,11 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
+            assert_eq!(rpc.params[0].ty.name(), Some(Cow::Borrowed("ParamType0")));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
+            assert_eq!(rpc.params[1].ty.name(), Some(Cow::Borrowed("ParamType1")));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
+            assert_eq!(rpc.params[2].ty.name(), Some(Cow::Borrowed("ParamType2")));
             Ok(())
         }
 
@@ -442,7 +464,10 @@ mod tests {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(rpc.return_type.map(|x| x.name()), Some(Some("Asdfg")));
+            assert_eq!(
+                rpc.return_type.map(|x| x.name()),
+                Some(Some(Cow::Borrowed("Asdfg")))
+            );
             Ok(())
         }
 
@@ -455,7 +480,10 @@ mod tests {
             "#,
                 )
                 .into_result()?;
-            assert_eq!(rpc.return_type.map(|x| x.name()), Some(Some("Asdfg")));
+            assert_eq!(
+                rpc.return_type.map(|x| x.name()),
+                Some(Some(Cow::Borrowed("Asdfg")))
+            );
             Ok(())
         }
     }

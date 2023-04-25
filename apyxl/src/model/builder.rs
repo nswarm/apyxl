@@ -1,5 +1,7 @@
 use anyhow::Result;
 use itertools::Itertools;
+use log::debug;
+use std::borrow::Cow;
 
 use crate::model::api::validate;
 use crate::model::{
@@ -13,7 +15,7 @@ use crate::model::{
 /// perform validation across the entire [Api] and return the final [Model].
 pub struct Builder<'a> {
     api: Api<'a>,
-    namespace_stack: Vec<&'a str>,
+    namespace_stack: Vec<String>,
     metadata: Metadata<'a>,
 }
 
@@ -21,7 +23,7 @@ impl Default for Builder<'_> {
     fn default() -> Self {
         Self {
             api: Api {
-                name: UNDEFINED_NAMESPACE,
+                name: Cow::Borrowed(UNDEFINED_NAMESPACE),
                 ..Default::default()
             },
             namespace_stack: Default::default(),
@@ -67,19 +69,28 @@ impl<'a> Builder<'a> {
 
     /// Add `namespace` to the current namespace stack of the Builder. Any [Api]s merged will be
     /// nested within the full namespace specified by the stack.
-    pub fn enter_namespace(&mut self, name: &'a str) {
-        if self.current_namespace().namespace(name).is_none() {
+    pub fn enter_namespace<S: ToString>(&mut self, name: S) {
+        let name = name.to_string();
+        if self.current_namespace().namespace(&name).is_none() {
             self.current_namespace_mut().add_namespace(Namespace {
-                name,
+                name: Cow::Owned(name.clone()),
                 ..Default::default()
             });
         }
         self.namespace_stack.push(name);
+        debug!("entering namespace: {:?}", self.namespace_stack);
     }
 
     /// Remove the most recently-added namespace from the stack.
     pub fn exit_namespace(&mut self) {
+        debug!("exiting namespace {:?}", self.namespace_stack);
         self.namespace_stack.pop();
+    }
+
+    /// Clear the entire namespace stack.
+    pub fn clear_namespace(&mut self) {
+        debug!("clearing entire namespace stack {:?}", self.namespace_stack);
+        self.namespace_stack.clear()
     }
 
     /// Finalize and validate the model.
@@ -126,16 +137,17 @@ impl<'a> Builder<'a> {
     }
 
     pub fn current_namespace_id(&self) -> EntityId<'a> {
-        self.namespace_stack.clone().into()
+        EntityId::owned(&self.namespace_stack)
     }
 
     pub fn current_namespace(&self) -> &Namespace<'a> {
-        self.api.find_namespace(&self.namespace_stack.as_slice().into())
+        self.api.find_namespace(&self.current_namespace_id())
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
 
     pub fn current_namespace_mut(&mut self) -> &mut Namespace<'a> {
-        self.api.find_namespace_mut(&self.namespace_stack.as_slice().into())
+        let entity_id = self.current_namespace_id();
+        self.api.find_namespace_mut(&entity_id)
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
 
@@ -149,7 +161,7 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
     namespace
         .take_namespaces()
         .into_iter()
-        .sorted_unstable_by_key(|ns| ns.name)
+        .sorted_unstable_by_key(|ns| ns.name.to_string())
         .coalesce(|mut lhs, rhs| {
             if rhs.name == lhs.name {
                 lhs.merge(rhs);
@@ -171,6 +183,7 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
 /// `'b` is the lifetime of the [Builder::build] process.
 fn recurse_api<'a, 'b, I, F>(api: &'b Api<'a>, f: F) -> Vec<ValidationError<'a>>
 where
+    'b: 'a,
     I: Iterator<Item = ValidationError<'a>>,
     F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId<'a>) -> I,
 {
@@ -184,12 +197,13 @@ fn recurse_namespaces<'a, 'b, I, F>(
     f: F,
 ) -> Vec<ValidationError<'a>>
 where
+    'b: 'a,
     I: Iterator<Item = ValidationError<'a>>,
     F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId<'a>) -> I,
 {
     let child_errors = namespace
         .namespaces()
-        .flat_map(|child| recurse_namespaces(api, child, entity_id.child(child.name), f));
+        .flat_map(|child| recurse_namespaces(api, child, entity_id.child(&child.name), f));
 
     child_errors
         .chain(f(api, namespace, entity_id.clone()))
@@ -226,6 +240,7 @@ mod tests {
 
     mod merge {
         use crate::model::{Dto, Namespace, NamespaceChild};
+        use std::borrow::Cow;
 
         mod no_current_namespace {
             use crate::model::builder::tests::merge::{
@@ -233,6 +248,7 @@ mod tests {
                 NS_NAMES,
             };
             use crate::model::{Builder, Namespace, NamespaceChild, UNDEFINED_NAMESPACE};
+            use std::borrow::Cow;
 
             #[test]
             fn name_is_root() {
@@ -275,7 +291,7 @@ mod tests {
                         // Duplicates preserved.
                         test_child_namespace(1),
                         NamespaceChild::Namespace(Namespace {
-                            name: NS_NAMES[1],
+                            name: Cow::Borrowed(NS_NAMES[1]),
                             children: vec![test_child_dto(2)],
                             ..Default::default()
                         })
@@ -304,7 +320,7 @@ mod tests {
                 );
                 assert_eq!(builder.metadata.chunks.len(), 1);
                 let chunk_metadata = builder.metadata.chunks.get(0).unwrap();
-                assert_eq!(chunk_metadata.root_namespace, EntityId::from(["blah"]));
+                assert_eq!(chunk_metadata.root_namespace, EntityId::from(&["blah"]));
                 assert_eq!(chunk_metadata.chunk.relative_file_path, file_path);
             }
 
@@ -467,7 +483,7 @@ mod tests {
 
         fn test_named_namespace(name: &'static str, i: usize) -> Namespace<'static> {
             Namespace {
-                name,
+                name: Cow::Borrowed(name),
                 children: vec![test_child_dto(i)],
                 ..Default::default()
             }
@@ -852,7 +868,7 @@ mod tests {
             fn passed_through() -> Result<(), Vec<ValidationError<'static>>> {
                 let mut builder = Builder::default();
                 let chunk_metadata = chunk::Metadata {
-                    root_namespace: EntityId::new(&["hi"]),
+                    root_namespace: EntityId::from(&["hi"]),
                     chunk: chunk::Chunk::with_relative_file_path(PathBuf::from("hi")),
                 };
                 builder.metadata.chunks.push(chunk_metadata.clone());

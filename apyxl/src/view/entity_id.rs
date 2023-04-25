@@ -2,8 +2,6 @@ use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
 
-use itertools::Itertools;
-
 use crate::model;
 
 /// A reference to another entity within the [Api].
@@ -36,12 +34,7 @@ impl<'v, 'a> EntityId<'v, 'a> {
     ///     `namespace1.namespace2.DtoName.field0`
     ///     `namespace1.RpcName.param0`
     pub fn path(&self) -> Vec<Cow<str>> {
-        let mut value = self
-            .target
-            .path
-            .iter()
-            .map(|s| Cow::Borrowed(*s))
-            .collect_vec();
+        let mut value = self.target.path.clone();
         for x in self.xforms {
             x.path(&mut value)
         }

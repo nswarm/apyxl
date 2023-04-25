@@ -94,6 +94,7 @@ fn errors_to_string(errors: &[ValidationError<'_>]) -> String {
 #[cfg(test)]
 mod tests {
     use anyhow::{anyhow, Result};
+    use std::borrow::Cow;
 
     use crate::generator::Generator;
     use crate::input::Input;
@@ -233,7 +234,7 @@ mod tests {
         fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>> {
             let mut builder = model::Builder::default();
             builder.merge(Api {
-                name: UNDEFINED_NAMESPACE,
+                name: Cow::Borrowed(UNDEFINED_NAMESPACE),
                 children: input
                     .next_chunk()
                     .ok_or_else(|| anyhow!("no input data!"))?
