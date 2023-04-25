@@ -194,11 +194,11 @@ mod tests {
     }
 
     #[test]
-    fn write_without_current_chunk_errors() -> Result<()> {
+    fn write_without_current_chunk_is_ignored() -> Result<()> {
         let root = tempdir()?;
         let mut output = FileSet::new(root.path())?;
-        assert!(output.write_str("content").is_err());
-        assert!(output.write('!').is_err());
+        assert!(output.write_str("content").is_ok());
+        assert!(output.write('!').is_ok());
         Ok(())
     }
 }

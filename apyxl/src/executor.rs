@@ -87,7 +87,7 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
     }
 }
 
-fn errors_to_string(errors: &[ValidationError<'_>]) -> String {
+fn errors_to_string(errors: &[ValidationError]) -> String {
     errors.iter().map(|e| format!("{}", e)).join("\n")
 }
 

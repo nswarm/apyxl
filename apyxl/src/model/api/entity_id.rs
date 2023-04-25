@@ -16,6 +16,14 @@ pub struct EntityId<'a> {
     pub path: Vec<Cow<'a, str>>,
 }
 
+/// Equivalent to EntityId except with no internal references. This type is explicitly purely owned
+/// for cases when the implicit reference of `Cow` is too restrictive.
+#[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
+pub struct OwnedEntityId {
+    /// See [EntityId::path].
+    pub path: Vec<String>,
+}
+
 impl<'a> EntityId<'a> {
     pub fn borrowed<S: AsRef<&'a str>>(path: &[S]) -> Self {
         Self {
@@ -35,6 +43,12 @@ impl<'a> EntityId<'a> {
                 .map(ToString::to_string)
                 .map(Cow::Owned)
                 .collect_vec(),
+        }
+    }
+
+    pub fn to_owned(&self) -> OwnedEntityId {
+        OwnedEntityId {
+            path: self.path.iter().map(|s| s.to_string()).collect_vec(),
         }
     }
 
@@ -93,7 +107,24 @@ where
     }
 }
 
+impl<'a, T> From<T> for OwnedEntityId
+where
+    T: AsRef<[&'a str]>,
+{
+    fn from(value: T) -> Self {
+        Self {
+            path: value.as_ref().iter().map(|s| s.to_string()).collect_vec(),
+        }
+    }
+}
+
 impl Display for EntityId<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.path.iter().join("."))
+    }
+}
+
+impl Display for OwnedEntityId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.path.iter().join("."))
     }

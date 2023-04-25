@@ -99,7 +99,7 @@ impl<'a> Builder<'a> {
     /// - Errors for [Dto]s with identical paths (aka duplicate definitions).
     /// - Errors for [Rpc]s with identical paths (aka duplicate definitions).
     /// - Errors for [EntityId]s with missing types.
-    pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError<'a>>> {
+    pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError>> {
         dedupe_namespace_children(&mut self.api);
 
         let errors = [
@@ -124,6 +124,8 @@ impl<'a> Builder<'a> {
                 metadata: self.metadata,
             })
         } else {
+            // todo zzz
+            // Err(vec![])
             Err(errors)
         }
     }
@@ -181,10 +183,10 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
 ///
 /// `'a` is the lifetime of the [Api] bound.
 /// `'b` is the lifetime of the [Builder::build] process.
-fn recurse_api<'a, 'b, I, F>(api: &'b Api<'a>, f: F) -> Vec<ValidationError<'a>>
+fn recurse_api<'a, 'b, I, F>(api: &'b Api<'a>, f: F) -> Vec<ValidationError>
 where
     'b: 'a,
-    I: Iterator<Item = ValidationError<'a>>,
+    I: Iterator<Item = ValidationError>,
     F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId<'a>) -> I,
 {
     recurse_namespaces(api, api, EntityId::default(), f)
@@ -195,10 +197,10 @@ fn recurse_namespaces<'a, 'b, I, F>(
     namespace: &'b Namespace<'a>,
     entity_id: EntityId<'a>,
     f: F,
-) -> Vec<ValidationError<'a>>
+) -> Vec<ValidationError>
 where
     'b: 'a,
-    I: Iterator<Item = ValidationError<'a>>,
+    I: Iterator<Item = ValidationError>,
     F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId<'a>) -> I,
 {
     let child_errors = namespace
@@ -660,7 +662,7 @@ mod tests {
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidDtoName(expected_entity_id, expected_index),
+                    ValidationError::InvalidDtoName(expected_entity_id.to_owned(), expected_index),
                 );
             }
 
@@ -690,7 +692,10 @@ mod tests {
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidFieldName(expected_entity_id, expected_index),
+                    ValidationError::InvalidFieldName(
+                        expected_entity_id.to_owned(),
+                        expected_index,
+                    ),
                 );
             }
 
@@ -712,7 +717,7 @@ mod tests {
                     &result,
                     ValidationError::InvalidFieldType(
                         ["dto"].into(),
-                        "field1",
+                        "field1".to_string(),
                         expected_index,
                         ["ns", "dto"].into(),
                     ),
@@ -751,7 +756,7 @@ mod tests {
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidRpcName(expected_entity_id, expected_index),
+                    ValidationError::InvalidRpcName(expected_entity_id.to_owned(), expected_index),
                 );
             }
 
@@ -777,7 +782,10 @@ mod tests {
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidFieldName(expected_entity_id, expected_index),
+                    ValidationError::InvalidFieldName(
+                        expected_entity_id.to_owned(),
+                        expected_index,
+                    ),
                 );
             }
 
@@ -796,7 +804,7 @@ mod tests {
                     &result,
                     ValidationError::InvalidFieldType(
                         ["rpc"].into(),
-                        "param1",
+                        "param1".to_string(),
                         expected_index,
                         ["ns", "dto"].into(),
                     ),
@@ -865,7 +873,7 @@ mod tests {
             use crate::model::{chunk, Builder, EntityId, ValidationError};
 
             #[test]
-            fn passed_through() -> Result<(), Vec<ValidationError<'static>>> {
+            fn passed_through() -> Result<(), Vec<ValidationError>> {
                 let mut builder = Builder::default();
                 let chunk_metadata = chunk::Metadata {
                     root_namespace: EntityId::from(&["hi"]),
@@ -884,7 +892,7 @@ mod tests {
         }
     }
 
-    fn build_from_input(exe: &mut TestExecutor) -> Result<Model, Vec<ValidationError<'_>>> {
+    fn build_from_input(exe: &mut TestExecutor) -> Result<Model, Vec<ValidationError>> {
         test_builder(exe).build()
     }
 
@@ -896,7 +904,7 @@ mod tests {
     }
 
     fn assert_contains_error(
-        build_result: &Result<Model, Vec<ValidationError<'_>>>,
+        build_result: &Result<Model, Vec<ValidationError>>,
         error: ValidationError,
     ) {
         let errors = build_result
