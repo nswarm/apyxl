@@ -110,6 +110,7 @@ fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
             ty,
             attributes: Default::default(),
         })
+        .padded_by(multi_comment())
 }
 
 fn dto<'a>() -> impl Parser<'a, &'a str, Dto<'a>, Error<'a>> {
@@ -117,6 +118,7 @@ fn dto<'a>() -> impl Parser<'a, &'a str, Dto<'a>, Error<'a>> {
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
+        .padded_by(multi_comment())
         .delimited_by(just('{').padded(), just('}').padded());
     let name = text::keyword("struct").padded().ignore_then(text::ident());
     name.then(fields).map(|(name, fields)| Dto {
@@ -156,6 +158,10 @@ fn comment<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
     choice((line_comment(), block_comment()))
 }
 
+fn multi_comment<'a>() -> impl Parser<'a, &'a str, Vec<&'a str>, Error<'a>> {
+    comment().padded().repeated().collect::<Vec<_>>()
+}
+
 fn expr_block<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
     let body = none_of("{}").repeated().at_least(1).slice().map(&str::trim);
     recursive(|nested| {
@@ -180,6 +186,7 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
+        .padded_by(multi_comment())
         .delimited_by(just('(').padded(), just(')').padded());
     let return_type = just("->")
         .ignore_then(whitespace())
@@ -203,7 +210,7 @@ fn namespace_children<'a>(
         rpc().map(NamespaceChild::Rpc),
         namespace.map(NamespaceChild::Namespace),
     ))
-    .padded_by(comment().padded().repeated().collect::<Vec<_>>())
+    .padded_by(multi_comment())
     .repeated()
     .collect::<Vec<_>>()
 }
@@ -445,6 +452,27 @@ mod tests {
             assert_eq!(dto.fields[1].name, "field1");
             Ok(())
         }
+
+        #[test]
+        fn fields_with_comments() -> Result<(), TestError> {
+            let dto = dto()
+                .parse(
+                    r#"
+            struct StructName {
+                // asdf
+                // asdf
+                field0: i32, /* asdf */ field1: f32,
+                // asdf
+            }
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(dto.name, "StructName");
+            assert_eq!(dto.fields.len(), 2);
+            assert_eq!(dto.fields[0].name, "field0");
+            assert_eq!(dto.fields[1].name, "field1");
+            Ok(())
+        }
     }
 
     mod rpc {
@@ -516,6 +544,32 @@ mod tests {
                 .parse(
                     r#"
             fn rpc_name(param0: ParamType0, param1: ParamType1, param2: ParamType2) {}
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(rpc.params.len(), 3);
+            assert_eq!(rpc.params[0].name, "param0");
+            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
+            assert_eq!(rpc.params[1].name, "param1");
+            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
+            assert_eq!(rpc.params[2].name, "param2");
+            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
+            Ok(())
+        }
+
+        #[test]
+        fn multiple_params_with_comments() -> Result<(), TestError> {
+            let rpc = rpc()
+                .parse(
+                    r#"
+            fn rpc_name(
+                // asdf
+                // asdf
+                param0: ParamType0, /* asdf */ param1: ParamType1,
+                // asdf
+                param2: ParamType2 /* asdf */
+                // asdf
+            ) {}
             "#,
                 )
                 .into_result()?;
