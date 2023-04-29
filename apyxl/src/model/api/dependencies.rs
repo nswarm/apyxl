@@ -99,14 +99,6 @@ impl Dependencies {
         }
         None
     }
-
-    fn node_count(&self) -> usize {
-        self.graph.node_count()
-    }
-
-    fn edge_count(&self) -> usize {
-        self.graph.edge_count()
-    }
 }
 
 #[cfg(test)]
@@ -264,7 +256,7 @@ mod tests {
                     assert!(deps.node(&EntityId::new(["dto"])).is_some());
                     assert!(deps.node(&EntityId::new(["ns0", "dto"])).is_some());
                     assert!(deps.node(&EntityId::new(["ns0", "ns1", "dto"])).is_some());
-                    assert_eq!(deps.node_count(), 3);
+                    assert_eq!(deps.graph.node_count(), 3);
                 },
             );
         }
@@ -285,7 +277,7 @@ mod tests {
                     assert!(deps.node(&EntityId::new(["rpc"])).is_some());
                     assert!(deps.node(&EntityId::new(["ns0", "rpc"])).is_some());
                     assert!(deps.node(&EntityId::new(["ns0", "ns1", "rpc"])).is_some());
-                    assert_eq!(deps.node_count(), 3);
+                    assert_eq!(deps.graph.node_count(), 3);
                 },
             );
         }
@@ -306,7 +298,7 @@ mod tests {
             }
             "#,
                 |deps| {
-                    assert_eq!(deps.edge_count(), 2);
+                    assert_eq!(deps.graph.edge_count(), 2);
                 },
             );
         }
@@ -320,7 +312,7 @@ mod tests {
             fn rpc(param: dto0, param: dto1) {}
             "#,
                 |deps| {
-                    assert_eq!(deps.edge_count(), 2);
+                    assert_eq!(deps.graph.edge_count(), 2);
                 },
             );
         }
@@ -333,7 +325,7 @@ mod tests {
             fn rpc() -> dto0 {}
             "#,
                 |deps| {
-                    assert_eq!(deps.edge_count(), 1);
+                    assert_eq!(deps.graph.edge_count(), 1);
                 },
             );
         }
@@ -345,9 +337,9 @@ mod tests {
         let api = exe.api();
         let mut dependencies = Dependencies::default();
         dependencies.build(&api);
-        assert_eq!(dependencies.node_count(), 2);
+        assert_eq!(dependencies.graph.node_count(), 2);
         dependencies.build(&Api::default());
-        assert_eq!(dependencies.node_count(), 0);
+        assert_eq!(dependencies.graph.node_count(), 0);
     }
 
     fn run_test<F: Fn(&Dependencies)>(data: &str, f: F) {

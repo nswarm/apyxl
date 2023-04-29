@@ -1,9 +1,10 @@
+use std::borrow::Cow;
+use std::path::Path;
+
 use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 use log::debug;
-use std::borrow::Cow;
-use std::path::Path;
 
 use crate::model::{
     Api, Dto, EntityId, Field, Namespace, NamespaceChild, Rpc, UNDEFINED_NAMESPACE,
@@ -57,8 +58,23 @@ fn path_elders_iter<'a>(path: &'a Path) -> impl Iterator<Item = Cow<'a, str>> + 
         .map(|p| p.to_string_lossy())
 }
 
+const ALLOWED_TYPE_NAME_CHARS: &str = "_&";
+
+fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+    any()
+        // first char
+        .filter(|c: &char| c.is_ascii_alphabetic() || ALLOWED_TYPE_NAME_CHARS.contains(*c))
+        // remaining chars
+        .then(
+            any()
+                .filter(|c: &char| c.is_ascii_alphanumeric() || *c == '_')
+                .repeated(),
+        )
+        .slice()
+}
+
 fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
-    text::ident()
+    type_name()
         .separated_by(just("::"))
         .at_least(1)
         .collect::<Vec<_>>()
@@ -235,6 +251,34 @@ mod tests {
         assert!(model.api().rpc("rpc").is_some());
         assert!(model.api().namespace("namespace").is_some());
         Ok(())
+    }
+
+    mod entity_id {
+        use chumsky::Parser;
+
+        use crate::parser::rust::entity_id;
+        use crate::parser::rust::tests::TestError;
+
+        #[test]
+        fn starts_with_underscore() -> Result<(), TestError> {
+            let id = entity_id().parse("_type").into_result()?;
+            assert_eq!(id.path, vec!["_type"]);
+            Ok(())
+        }
+
+        #[test]
+        fn with_path() -> Result<(), TestError> {
+            let id = entity_id().parse("a::b::c").into_result()?;
+            assert_eq!(id.path, vec!["a", "b", "c"]);
+            Ok(())
+        }
+
+        #[test]
+        fn reference() -> Result<(), TestError> {
+            let id = entity_id().parse("&str").into_result()?;
+            assert_eq!(id.path, vec!["&str"]);
+            Ok(())
+        }
     }
 
     mod namespace {
@@ -506,26 +550,15 @@ mod tests {
     }
 
     mod comments {
+        use chumsky::Parser;
+
         use crate::parser::rust::tests::TestError;
-        use crate::parser::rust::{comment, dto, namespace};
-        use chumsky::prelude::choice;
-        use chumsky::{IterParser, Parser};
+        use crate::parser::rust::{comment, namespace};
 
         #[test]
         fn line_comment() -> Result<(), TestError> {
             let value = comment().parse("// line comment").into_result()?;
             assert_eq!(value, "line comment");
-            Ok(())
-        }
-
-        #[test]
-        fn line_comment_with_newline() -> Result<(), TestError> {
-            let value = choice((comment().padded().map(|_| ""), dto().padded().map(|_| "")))
-                .repeated()
-                .collect()
-                .parse("\n\n \t // line comment\n \t struct dto {}")
-                .into_result()?;
-            // assert_eq!(value, "line comment");
             Ok(())
         }
 
@@ -538,7 +571,7 @@ mod tests {
 
         #[test]
         fn line_comment_inside_namespace() -> Result<(), TestError> {
-            let value = namespace()
+            namespace()
                 .parse(
                     r#"
                     mod ns { // comment
@@ -555,7 +588,7 @@ mod tests {
 
         #[test]
         fn block_comment_inside_namespace() -> Result<(), TestError> {
-            let value = namespace()
+            namespace()
                 .parse(
                     r#"
                     mod ns { /* comment */
