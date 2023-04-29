@@ -29,8 +29,11 @@ impl ApyxlParser for Rust {
                 }
             }
 
-            let children = namespace_children(namespace())
+            let children = choice((use_decl().ignored(), comment().ignored()))
                 .padded()
+                .repeated()
+                .collect::<Vec<_>>()
+                .ignore_then(namespace_children(namespace()).padded())
                 .then_ignore(end())
                 .parse(&data)
                 .into_result()
@@ -71,6 +74,17 @@ fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
                 .repeated(),
         )
         .slice()
+}
+
+fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
+    text::keyword("pub")
+        .then(whitespace().at_least(1))
+        .or_not()
+        .then(text::keyword("use"))
+        .then(whitespace().at_least(1))
+        .then(text::ident().separated_by(just("::")).at_least(1))
+        .then(just(';'))
+        .ignored()
 }
 
 fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
@@ -242,6 +256,11 @@ mod tests {
     fn root_namespace() -> Result<()> {
         let mut input = input::Buffer::new(
             r#"
+        // comment
+        use asdf;
+        // comment
+        // comment
+        pub use asdf;
         fn rpc() {}
         struct dto {}
         mod namespace {}
