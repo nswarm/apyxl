@@ -191,12 +191,12 @@ pub mod ns0 {
                             fields: vec![
                                 model::Field {
                                     name: "field0",
-                                    ty: model::EntityId::from(&["Type0"]),
+                                    ty: model::EntityId::new(["Type0"]),
                                     attributes: Default::default(),
                                 },
                                 model::Field {
                                     name: "field1",
-                                    ty: model::EntityId::from(&["Type1"]),
+                                    ty: model::EntityId::new(["Type1"]),
                                     attributes: Default::default(),
                                 },
                             ],
@@ -226,12 +226,12 @@ pub mod ns0 {
                             params: vec![
                                 model::Field {
                                     name: "param0",
-                                    ty: model::EntityId::from(&["Type0"]),
+                                    ty: model::EntityId::new(["Type0"]),
                                     attributes: Default::default(),
                                 },
                                 model::Field {
                                     name: "param1",
-                                    ty: model::EntityId::from(&["Type1"]),
+                                    ty: model::EntityId::new(["Type1"]),
                                     attributes: Default::default(),
                                 },
                             ],
@@ -260,7 +260,7 @@ pub mod ns0 {
                         &model::Rpc {
                             name: "rpc_name",
                             params: vec![],
-                            return_type: Some(model::EntityId::from(&["ReturnType"])),
+                            return_type: Some(model::EntityId::new(["ReturnType"])),
                             attributes: Default::default(),
                         },
                         &Transforms::default(),
@@ -280,7 +280,7 @@ pub mod ns0 {
                     view::Field::new(
                         &model::Field {
                             name: "asdf",
-                            ty: model::EntityId::from(&["Type"]),
+                            ty: model::EntityId::new(["Type"]),
                             attributes: Default::default(),
                         },
                         &vec![],
@@ -296,7 +296,7 @@ pub mod ns0 {
 
     #[test]
     fn entity_id() -> Result<()> {
-        let entity_id = model::EntityId::from(&["asdf"]);
+        let entity_id = model::EntityId::new(["asdf"]);
         assert_output(
             |o| write_entity_id(view::EntityId::new(&entity_id, &vec![]), o),
             "asdf",

@@ -94,7 +94,7 @@ impl<'v, 'a> Namespace<'v, 'a> {
         Attributes::new(&self.target.attributes, &self.xforms.attr_xforms)
     }
 
-    pub fn find_namespace(&'a self, id: &model::EntityId<'a>) -> Option<Namespace<'v, 'a>> {
+    pub fn find_namespace(&'a self, id: &model::EntityId) -> Option<Namespace<'v, 'a>> {
         self.target
             .find_namespace(id)
             .filter(|namespace| {
@@ -106,14 +106,14 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .map(|namespace| Namespace::new(namespace, self.xforms))
     }
 
-    pub fn find_dto(&'a self, id: &model::EntityId<'a>) -> Option<Dto<'v, 'a>> {
+    pub fn find_dto(&'a self, id: &model::EntityId) -> Option<Dto<'v, 'a>> {
         self.target
             .find_dto(id)
             .filter(|dto| self.xforms.namespace.iter().all(|x| x.filter_dto(dto)))
             .map(|dto| Dto::new(dto, self.xforms))
     }
 
-    pub fn find_rpc(&'a self, id: &model::EntityId<'a>) -> Option<Rpc<'v, 'a>> {
+    pub fn find_rpc(&'a self, id: &model::EntityId) -> Option<Rpc<'v, 'a>> {
         self.target
             .find_rpc(id)
             .filter(|rpc| self.xforms.namespace.iter().all(|x| x.filter_rpc(rpc)))
@@ -159,6 +159,7 @@ impl<'v, 'a> Namespace<'v, 'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::EntityId;
     use itertools::Itertools;
 
     use crate::test_util::executor::TestExecutor;
@@ -180,11 +181,13 @@ mod tests {
 
         assert_eq!(root.name(), TestRenamer::renamed("_"));
         assert_eq!(
-            root.find_namespace(&["ns0"].into()).unwrap().name(),
+            root.find_namespace(&EntityId::new(["ns0"])).unwrap().name(),
             TestRenamer::renamed("ns0")
         );
         assert_eq!(
-            root.find_namespace(&["ns0", "ns1"].into()).unwrap().name(),
+            root.find_namespace(&EntityId::new(["ns0", "ns1"]))
+                .unwrap()
+                .name(),
             TestRenamer::renamed("ns1")
         );
     }
@@ -203,12 +206,12 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_id = ["ns0", "visible"].into();
-        let expected = model.api.find_namespace(&visible_id);
+        let visible_id = EntityId::new(["ns0", "visible"]);
+        let expected = model.api().find_namespace(&visible_id);
         let found = root.find_namespace(&visible_id);
         assert_eq!(found.map(|v| v.target), expected);
 
-        let hidden_id = ["ns0", "hidden"].into();
+        let hidden_id = EntityId::new(["ns0", "hidden"]);
         let found = root.find_namespace(&hidden_id);
         assert!(found.is_none());
     }
@@ -227,12 +230,12 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_id = ["ns0", "visible"].into();
-        let expected = model.api.find_dto(&visible_id).unwrap();
+        let visible_id = EntityId::new(["ns0", "visible"]);
+        let expected = model.api().find_dto(&visible_id).unwrap();
         let found = root.find_dto(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name);
 
-        let hidden_id = ["ns0", "hidden"].into();
+        let hidden_id = EntityId::new(["ns0", "hidden"]);
         let found = root.find_dto(&hidden_id);
         assert!(found.is_none());
     }
@@ -251,12 +254,12 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_id = ["ns0", "visible"].into();
-        let expected = model.api.find_rpc(&visible_id).unwrap();
+        let visible_id = EntityId::new(["ns0", "visible"]);
+        let expected = model.api().find_rpc(&visible_id).unwrap();
         let found = root.find_rpc(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name);
 
-        let hidden_id = ["ns0", "hidden"].into();
+        let hidden_id = EntityId::new(["ns0", "hidden"]);
         let found = root.find_rpc(&hidden_id);
         assert!(found.is_none());
     }

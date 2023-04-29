@@ -1,10 +1,9 @@
 use itertools::Itertools;
-use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 
 /// A reference to another entity within the [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
-pub struct EntityId<'a> {
+pub struct EntityId {
     /// The path through other entities in the [Api] to get to the referred to entity. This will
     /// typically be a path through the hierarchy of [NamespaceChild], but can also refer to
     /// sub-child items like [Dto] fields or [Rpc] parameters.
@@ -13,42 +12,17 @@ pub struct EntityId<'a> {
     ///     `namespace1.namespace2.DtoName`
     ///     `namespace1.namespace2.DtoName.field0`
     ///     `namespace1.RpcName.param0`
-    pub path: Vec<Cow<'a, str>>,
-}
-
-/// Equivalent to EntityId except with no internal references. This type is explicitly purely owned
-/// for cases when the implicit reference of `Cow` is too restrictive.
-#[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
-pub struct OwnedEntityId {
-    /// See [EntityId::path].
     pub path: Vec<String>,
 }
 
-impl<'a> EntityId<'a> {
-    pub fn borrowed<S: AsRef<&'a str>>(path: &[S]) -> Self {
+impl EntityId {
+    pub fn new<T, S>(value: T) -> Self
+    where
+        S: ToString,
+        T: AsRef<[S]>,
+    {
         Self {
-            path: path
-                .iter()
-                .map(AsRef::as_ref)
-                .map(|s| *s)
-                .map(Cow::Borrowed)
-                .collect_vec(),
-        }
-    }
-
-    pub fn owned<S: ToString>(path: &[S]) -> Self {
-        Self {
-            path: path
-                .iter()
-                .map(ToString::to_string)
-                .map(Cow::Owned)
-                .collect_vec(),
-        }
-    }
-
-    pub fn to_owned(&self) -> OwnedEntityId {
-        OwnedEntityId {
-            path: self.path.iter().map(|s| s.to_string()).collect_vec(),
+            path: value.as_ref().iter().map(|s| s.to_string()).collect_vec(),
         }
     }
 
@@ -63,9 +37,9 @@ impl<'a> EntityId<'a> {
         })
     }
 
-    pub fn child(&self, name: &'a str) -> Self {
+    pub fn child<S: ToString>(&self, name: S) -> Self {
         let mut child = self.clone();
-        child.path.push(Cow::Borrowed(name));
+        child.path.push(name.to_string());
         child
     }
 
@@ -74,7 +48,7 @@ impl<'a> EntityId<'a> {
     }
 
     /// Returns the part of the path _before_ the name.
-    pub fn namespace(&self) -> EntityId<'a> {
+    pub fn namespace(&self) -> EntityId {
         EntityId {
             path: self
                 .path
@@ -86,45 +60,12 @@ impl<'a> EntityId<'a> {
     }
 
     /// The name is always the last part of the type path.
-    pub fn name(&self) -> Option<Cow<'a, str>> {
-        self.path.last().cloned()
+    pub fn name(&self) -> Option<&str> {
+        self.path.last().map(|s| s.as_str())
     }
 }
 
-impl<'a, T> From<T> for EntityId<'a>
-where
-    T: AsRef<[&'a str]>,
-{
-    fn from(value: T) -> Self {
-        Self {
-            path: value
-                .as_ref()
-                .iter()
-                .map(|s| *s)
-                .map(Cow::Borrowed)
-                .collect_vec(),
-        }
-    }
-}
-
-impl<'a, T> From<T> for OwnedEntityId
-where
-    T: AsRef<[&'a str]>,
-{
-    fn from(value: T) -> Self {
-        Self {
-            path: value.as_ref().iter().map(|s| s.to_string()).collect_vec(),
-        }
-    }
-}
-
-impl Display for EntityId<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.path.iter().join("."))
-    }
-}
-
-impl Display for OwnedEntityId {
+impl Display for EntityId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.path.iter().join("."))
     }

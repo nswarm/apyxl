@@ -23,10 +23,10 @@ impl Chunk {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct Metadata<'a> {
+pub struct Metadata {
     /// The namespace that all entities within the chunk reside.
     /// Entities will still need to be filtered by the [Attribute] via the [ChunkFilter]
-    pub root_namespace: EntityId<'a>,
+    pub root_namespace: EntityId,
 
     /// Information stored about the chunk.
     pub chunk: Chunk,

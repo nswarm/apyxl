@@ -63,6 +63,7 @@ impl<'v, 'a> Dto<'v, 'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::EntityId;
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::{TestFilter, TestRenamer};
     use crate::view::Transformer;
@@ -85,11 +86,13 @@ mod tests {
         let root = view.api();
 
         assert_eq!(
-            root.find_dto(&["ns0", "dto0"].into()).unwrap().name(),
+            root.find_dto(&EntityId::new(["ns0", "dto0"]))
+                .unwrap()
+                .name(),
             TestRenamer::renamed("dto0")
         );
         assert_eq!(
-            root.find_dto(&["ns0", "ns1", "dto1"].into())
+            root.find_dto(&EntityId::new(["ns0", "ns1", "dto1"]))
                 .unwrap()
                 .name(),
             TestRenamer::renamed("dto1")
@@ -110,7 +113,7 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_dto_transform(TestFilter {});
         let root = view.api();
-        let dto = root.find_dto(&["dto"].into()).unwrap();
+        let dto = root.find_dto(&EntityId::new(["dto"])).unwrap();
         let fields = dto.fields().map(|f| f.name().to_string()).collect_vec();
 
         assert_eq!(fields, vec!["visible0", "visible1"]);

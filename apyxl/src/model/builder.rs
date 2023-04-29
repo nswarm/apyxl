@@ -1,7 +1,8 @@
+use std::borrow::Cow;
+
 use anyhow::Result;
 use itertools::Itertools;
 use log::debug;
-use std::borrow::Cow;
 
 use crate::model::api::validate;
 use crate::model::{
@@ -16,7 +17,7 @@ use crate::model::{
 pub struct Builder<'a> {
     api: Api<'a>,
     namespace_stack: Vec<String>,
-    metadata: Metadata<'a>,
+    metadata: Metadata,
 }
 
 impl Default for Builder<'_> {
@@ -103,43 +104,38 @@ impl<'a> Builder<'a> {
         dedupe_namespace_children(&mut self.api);
 
         let errors = [
-            recurse_api(&self.api, validate::namespace_names),
-            recurse_api(&self.api, validate::dto_names),
-            recurse_api(&self.api, validate::dto_field_names),
-            recurse_api(&self.api, validate::dto_field_types),
-            recurse_api(&self.api, validate::rpc_names),
-            recurse_api(&self.api, validate::rpc_param_names),
-            recurse_api(&self.api, validate::rpc_param_types),
-            recurse_api(&self.api, validate::rpc_return_types),
-            recurse_api(&self.api, validate::no_duplicate_dtos),
-            recurse_api(&self.api, validate::no_duplicate_rpcs),
+            validate::recurse_api(&self.api, validate::namespace_names),
+            validate::recurse_api(&self.api, validate::dto_names),
+            validate::recurse_api(&self.api, validate::dto_field_names),
+            validate::recurse_api(&self.api, validate::dto_field_types),
+            validate::recurse_api(&self.api, validate::rpc_names),
+            validate::recurse_api(&self.api, validate::rpc_param_names),
+            validate::recurse_api(&self.api, validate::rpc_param_types),
+            validate::recurse_api(&self.api, validate::rpc_return_types),
+            validate::recurse_api(&self.api, validate::no_duplicate_dtos),
+            validate::recurse_api(&self.api, validate::no_duplicate_rpcs),
         ]
         .into_iter()
         .flatten()
         .collect_vec();
 
         if errors.is_empty() {
-            Ok(Model {
-                api: self.api,
-                metadata: self.metadata,
-            })
+            Ok(Model::new(self.api, self.metadata))
         } else {
-            // todo zzz
-            // Err(vec![])
             Err(errors)
         }
     }
 
-    pub fn metadata(&self) -> &Metadata<'_> {
+    pub fn metadata(&self) -> &Metadata {
         &self.metadata
     }
 
-    pub fn metadata_mut(&mut self) -> &mut Metadata<'a> {
+    pub fn metadata_mut(&mut self) -> &mut Metadata {
         &mut self.metadata
     }
 
-    pub fn current_namespace_id(&self) -> EntityId<'a> {
-        EntityId::owned(&self.namespace_stack)
+    pub fn current_namespace_id(&self) -> EntityId {
+        EntityId::new(&self.namespace_stack)
     }
 
     pub fn current_namespace(&self) -> &Namespace<'a> {
@@ -178,40 +174,6 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
         });
 }
 
-/// Calls the function `f` for each [Namespace] in the `api`. `f` will be passed the [Namespace]
-/// currently being operated on and a [EntityId] to that namespace within the overall hierarchy.
-///
-/// `'a` is the lifetime of the [Api] bound.
-/// `'b` is the lifetime of the [Builder::build] process.
-fn recurse_api<'a, 'b, I, F>(api: &'b Api<'a>, f: F) -> Vec<ValidationError>
-where
-    'b: 'a,
-    I: Iterator<Item = ValidationError>,
-    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId<'a>) -> I,
-{
-    recurse_namespaces(api, api, EntityId::default(), f)
-}
-
-fn recurse_namespaces<'a, 'b, I, F>(
-    api: &'b Api<'a>,
-    namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
-    f: F,
-) -> Vec<ValidationError>
-where
-    'b: 'a,
-    I: Iterator<Item = ValidationError>,
-    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId<'a>) -> I,
-{
-    let child_errors = namespace
-        .namespaces()
-        .flat_map(|child| recurse_namespaces(api, child, entity_id.child(&child.name), f));
-
-    child_errors
-        .chain(f(api, namespace, entity_id.clone()))
-        .collect_vec()
-}
-
 #[cfg(test)]
 mod tests {
     use crate::model::{Builder, Model, ValidationError};
@@ -241,16 +203,18 @@ mod tests {
     }
 
     mod merge {
-        use crate::model::{Dto, Namespace, NamespaceChild};
         use std::borrow::Cow;
 
+        use crate::model::{Dto, Namespace, NamespaceChild};
+
         mod no_current_namespace {
+            use std::borrow::Cow;
+
             use crate::model::builder::tests::merge::{
                 test_child_dto, test_child_namespace, test_named_namespace, test_namespace,
                 NS_NAMES,
             };
             use crate::model::{Builder, Namespace, NamespaceChild, UNDEFINED_NAMESPACE};
-            use std::borrow::Cow;
 
             #[test]
             fn name_is_root() {
@@ -322,7 +286,7 @@ mod tests {
                 );
                 assert_eq!(builder.metadata.chunks.len(), 1);
                 let chunk_metadata = builder.metadata.chunks.get(0).unwrap();
-                assert_eq!(chunk_metadata.root_namespace, EntityId::from(&["blah"]));
+                assert_eq!(chunk_metadata.root_namespace, EntityId::new(["blah"]));
                 assert_eq!(chunk_metadata.chunk.relative_file_path, file_path);
             }
 
@@ -349,34 +313,38 @@ mod tests {
                 let api = builder.build().unwrap().api;
                 // Existing shouldn't have attribute.
                 assert!(!chunk_attr_contains_file_path(
-                    &api.find_namespace(&["ns0"].into()).unwrap().attributes,
-                    &file_path
-                ));
-                assert!(!chunk_attr_contains_file_path(
-                    &api.find_namespace(&["ns0", "ns1"].into())
+                    &api.find_namespace(&EntityId::new(["ns0"]))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(!chunk_attr_contains_file_path(
-                    &api.find_dto(&["ns0", "dto"].into()).unwrap().attributes,
+                    &api.find_namespace(&EntityId::new(["ns0", "ns1"]))
+                        .unwrap()
+                        .attributes,
+                    &file_path
+                ));
+                assert!(!chunk_attr_contains_file_path(
+                    &api.find_dto(&EntityId::new(["ns0", "dto"]))
+                        .unwrap()
+                        .attributes,
                     &file_path
                 ));
                 // Merged should have correct attribute.
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_namespace(&["ns0", "ns2"].into())
+                    &api.find_namespace(&EntityId::new(["ns0", "ns2"]))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_dto(&["ns0", "ns2", "dto"].into())
+                    &api.find_dto(&EntityId::new(["ns0", "ns2", "dto"]))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_rpc(&["ns0", "ns2", "rpc"].into())
+                    &api.find_rpc(&EntityId::new(["ns0", "ns2", "rpc"]))
                         .unwrap()
                         .attributes,
                     &file_path
@@ -586,6 +554,7 @@ mod tests {
         mod validate_duplicates {
             use crate::model::builder::tests::{assert_contains_error, build_from_input};
             use crate::model::builder::ValidationError;
+            use crate::model::EntityId;
             use crate::test_util::executor::TestExecutor;
 
             #[test]
@@ -599,7 +568,10 @@ mod tests {
                 "#,
                 );
                 let result = build_from_input(&mut exe);
-                assert_contains_error(&result, ValidationError::DuplicateDto(["ns", "dto"].into()));
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateDto(EntityId::new(["ns", "dto"])),
+                );
             }
 
             #[test]
@@ -613,7 +585,10 @@ mod tests {
                 "#,
                 );
                 let result = build_from_input(&mut exe);
-                assert_contains_error(&result, ValidationError::DuplicateRpc(["ns", "rpc"].into()));
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateRpc(EntityId::new(["ns", "rpc"])),
+                );
             }
 
             #[test]
@@ -653,12 +628,12 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_dto_mut(&["ns", "dto2"].into())
+                    .find_dto_mut(&EntityId::new(["ns", "dto2"]))
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from(["ns"]);
+                let expected_entity_id = EntityId::new(["ns"]);
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -681,14 +656,14 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_dto_mut(&["ns", "dto"].into())
+                    .find_dto_mut(&EntityId::new(["ns", "dto"]))
                     .unwrap()
                     .field_mut("field1")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from(["ns", "dto"]);
+                let expected_entity_id = EntityId::new(["ns", "dto"]);
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -716,10 +691,10 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
-                        ["dto"].into(),
+                        EntityId::new(["dto"]),
                         "field1".to_string(),
                         expected_index,
-                        ["ns", "dto"].into(),
+                        EntityId::new(["ns", "dto"]),
                     ),
                 );
             }
@@ -747,12 +722,12 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_rpc_mut(&["ns", "rpc2"].into())
+                    .find_rpc_mut(&EntityId::new(["ns", "rpc2"]))
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from(["ns"]);
+                let expected_entity_id = EntityId::new(["ns"]);
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -771,14 +746,14 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_rpc_mut(&["ns", "rpc"].into())
+                    .find_rpc_mut(&EntityId::new(["ns", "rpc"]))
                     .unwrap()
                     .param_mut("param1")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from(["ns", "rpc"]);
+                let expected_entity_id = EntityId::new(["ns", "rpc"]);
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -803,10 +778,10 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
-                        ["rpc"].into(),
+                        EntityId::new(["rpc"]),
                         "param1".to_string(),
                         expected_index,
-                        ["ns", "dto"].into(),
+                        EntityId::new(["ns", "dto"]),
                     ),
                 );
             }
@@ -823,7 +798,10 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidRpcReturnType(["rpc"].into(), ["ns", "dto"].into()),
+                    ValidationError::InvalidRpcReturnType(
+                        EntityId::new(["rpc"]),
+                        EntityId::new(["ns", "dto"]),
+                    ),
                 );
             }
         }
@@ -831,7 +809,7 @@ mod tests {
         mod validate_namespace {
             use crate::model::builder::tests::{assert_contains_error, build_from_input};
             use crate::model::builder::ValidationError;
-            use crate::model::{Builder, UNDEFINED_NAMESPACE};
+            use crate::model::{Builder, EntityId, UNDEFINED_NAMESPACE};
             use crate::test_util::executor::TestExecutor;
 
             #[test]
@@ -845,7 +823,7 @@ mod tests {
                 let mut exe = TestExecutor::new("mod zzzz {}".replace("zzzz", UNDEFINED_NAMESPACE));
                 assert_contains_error(
                     &build_from_input(&mut exe),
-                    ValidationError::InvalidNamespaceName([UNDEFINED_NAMESPACE].into()),
+                    ValidationError::InvalidNamespaceName(EntityId::new([UNDEFINED_NAMESPACE])),
                 );
             }
 
@@ -860,7 +838,10 @@ mod tests {
                 );
                 assert_contains_error(
                     &build_from_input(&mut exe),
-                    ValidationError::InvalidNamespaceName(["ns", UNDEFINED_NAMESPACE].into()),
+                    ValidationError::InvalidNamespaceName(EntityId::new([
+                        "ns",
+                        UNDEFINED_NAMESPACE,
+                    ])),
                 );
             }
         }
@@ -876,7 +857,7 @@ mod tests {
             fn passed_through() -> Result<(), Vec<ValidationError>> {
                 let mut builder = Builder::default();
                 let chunk_metadata = chunk::Metadata {
-                    root_namespace: EntityId::from(&["hi"]),
+                    root_namespace: EntityId::new(["hi"]),
                     chunk: chunk::Chunk::with_relative_file_path(PathBuf::from("hi")),
                 };
                 builder.metadata.chunks.push(chunk_metadata.clone());

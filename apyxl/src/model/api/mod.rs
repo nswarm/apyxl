@@ -2,11 +2,13 @@ use std::borrow::Cow;
 
 use itertools::Itertools;
 
+pub use dependencies::Dependencies;
 pub use entity_id::EntityId;
 pub use validate::ValidationError;
 
 use crate::model::chunk;
 
+mod dependencies;
 mod entity_id;
 pub mod validate;
 
@@ -43,7 +45,7 @@ pub struct Dto<'a> {
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Field<'a> {
     pub name: &'a str,
-    pub ty: EntityId<'a>,
+    pub ty: EntityId,
     pub attributes: Attributes,
 }
 
@@ -52,7 +54,7 @@ pub struct Field<'a> {
 pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
-    pub return_type: Option<EntityId<'a>>,
+    pub return_type: Option<EntityId>,
     pub attributes: Attributes,
 }
 
@@ -325,7 +327,7 @@ impl<'a> Rpc<'a> {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::model::{chunk, Api, Namespace};
+    use crate::model::{chunk, Api, EntityId, Namespace};
     use crate::test_util::executor::TestExecutor;
     use crate::test_util::{test_dto, test_namespace, test_rpc};
 
@@ -441,8 +443,8 @@ mod tests {
         #[test]
         fn dto() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::from(&[test_dto(1).name]);
-            let entity_id2 = EntityId::from(&[test_dto(2).name]);
+            let entity_id1 = EntityId::new([test_dto(1).name]);
+            let entity_id2 = EntityId::new([test_dto(2).name]);
             assert_eq!(api.find_dto(&entity_id1), Some(&test_dto(1)));
             assert_eq!(api.find_dto_mut(&entity_id2), Some(&mut test_dto(2)));
         }
@@ -450,8 +452,8 @@ mod tests {
         #[test]
         fn rpc() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::from(&[test_dto(1).name]);
-            let entity_id2 = EntityId::from(&[test_dto(2).name]);
+            let entity_id1 = EntityId::new([test_dto(1).name]);
+            let entity_id2 = EntityId::new([test_dto(2).name]);
             assert_eq!(api.find_rpc(&entity_id1), Some(&test_rpc(1)),);
             assert_eq!(api.find_rpc_mut(&entity_id2), Some(&mut test_rpc(2)),);
         }
@@ -459,8 +461,8 @@ mod tests {
         #[test]
         fn namespace() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::owned(&[complex_namespace(1).name]);
-            let entity_id2 = EntityId::owned(&[complex_namespace(2).name]);
+            let entity_id1 = EntityId::new(&[complex_namespace(1).name]);
+            let entity_id2 = EntityId::new(&[complex_namespace(2).name]);
             assert_eq!(api.find_namespace(&entity_id1), Some(&complex_namespace(1)));
             assert_eq!(
                 api.find_namespace_mut(&entity_id2),
@@ -471,7 +473,7 @@ mod tests {
         #[test]
         fn child() {
             let api = complex_api();
-            let entity_id = EntityId::owned(&[complex_namespace(1).name, Cow::Borrowed(NAMES[3])]);
+            let entity_id = EntityId::new(&[complex_namespace(1).name, Cow::Borrowed(NAMES[3])]);
             assert_eq!(api.find_dto(&entity_id), Some(&test_dto(3)));
             assert_eq!(api.find_rpc(&entity_id), Some(&test_rpc(3)));
             assert_eq!(api.find_namespace(&entity_id), Some(&test_namespace(3)));
@@ -480,7 +482,7 @@ mod tests {
         #[test]
         fn multi_depth_child() {
             let api = complex_api();
-            let entity_id = EntityId::owned(&[
+            let entity_id = EntityId::new(&[
                 complex_namespace(1).name,
                 test_namespace(4).name,
                 Cow::Borrowed(NAMES[5]),
@@ -494,22 +496,22 @@ mod tests {
 
         #[test]
         fn no_parent() {
-            let ty = EntityId::from([]);
+            let ty = EntityId::default();
             assert_eq!(ty.parent(), None);
         }
 
         #[test]
         fn parent_is_root() {
-            let ty = EntityId::from(["dto"]);
-            assert_eq!(ty.parent(), Some([].into()));
+            let ty = EntityId::new(["dto"]);
+            assert_eq!(ty.parent(), Some(EntityId::default()));
         }
 
         #[test]
         fn typical() {
-            let ty = EntityId::from(["ns0", "ns1", "dto"]);
+            let ty = EntityId::new(["ns0", "ns1", "dto"]);
             let parent = ty.parent();
-            assert_eq!(parent, Some(["ns0", "ns1"].into()));
-            assert_eq!(parent.unwrap().parent(), Some(["ns0"].into()));
+            assert_eq!(parent, Some(EntityId::new(["ns0", "ns1"])));
+            assert_eq!(parent.unwrap().parent(), Some(EntityId::new(["ns0"])));
         }
     }
 
@@ -529,7 +531,7 @@ mod tests {
         );
         let mut api = exe.api();
         let expected_chunk = PathBuf::from("a/b/c");
-        api.find_namespace_mut(&["ns0"].into())
+        api.find_namespace_mut(&EntityId::new(["ns0"]))
             .unwrap()
             .apply_attr_to_children_recursively(|attr| {
                 attr.chunk
@@ -538,7 +540,7 @@ mod tests {
                     .push(expected_chunk.clone())
             });
         assert_eq!(
-            api.find_namespace(&["ns0", "ns1"].into())
+            api.find_namespace(&EntityId::new(["ns0", "ns1"]))
                 .unwrap()
                 .attributes
                 .chunk
@@ -548,7 +550,7 @@ mod tests {
             vec![expected_chunk.clone()]
         );
         assert_eq!(
-            api.find_dto(&["ns0", "dto"].into())
+            api.find_dto(&EntityId::new(["ns0", "dto"]))
                 .unwrap()
                 .attributes
                 .chunk
@@ -558,7 +560,7 @@ mod tests {
             vec![expected_chunk.clone()]
         );
         assert_eq!(
-            api.find_rpc(&["ns0", "rpc"].into())
+            api.find_rpc(&EntityId::new(["ns0", "rpc"]))
                 .unwrap()
                 .attributes
                 .chunk
@@ -568,7 +570,7 @@ mod tests {
             vec![expected_chunk.clone()]
         );
         assert_eq!(
-            api.find_dto(&["ns0", "ns1", "dto"].into())
+            api.find_dto(&EntityId::new(["ns0", "ns1", "dto"]))
                 .unwrap()
                 .attributes
                 .chunk
@@ -578,7 +580,7 @@ mod tests {
             vec![expected_chunk.clone()]
         );
         assert_eq!(
-            api.find_rpc(&["ns0", "ns1", "rpc"].into())
+            api.find_rpc(&EntityId::new(["ns0", "ns1", "rpc"]))
                 .unwrap()
                 .attributes
                 .chunk

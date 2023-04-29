@@ -45,8 +45,8 @@ mod tests {
                 "#,
         );
         let model = exe.model();
-        let sub_view =
-            SubView::new(&model.api, Transforms::default()).with_namespace_transform(TestFilter {});
+        let sub_view = SubView::new(&model.api(), Transforms::default())
+            .with_namespace_transform(TestFilter {});
         let namespace = sub_view.namespace();
 
         assert_eq!(namespace.namespaces().count(), 1);

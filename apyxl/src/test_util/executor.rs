@@ -1,3 +1,4 @@
+use crate::model::Metadata;
 use crate::{input, model, parser, Parser};
 
 #[derive(Default)]
@@ -22,9 +23,6 @@ impl TestExecutor {
     }
 
     pub fn model(&mut self) -> model::Model {
-        model::Model {
-            api: self.api(),
-            ..Default::default()
-        }
+        model::Model::new(self.api(), Metadata::default())
     }
 }

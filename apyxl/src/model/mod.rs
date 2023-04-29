@@ -12,11 +12,30 @@ pub mod metadata;
 /// In-memory representation of a fully parsed and validated API.
 #[derive(Debug, Default)]
 pub struct Model<'a> {
-    pub api: Api<'a>,
-    pub metadata: Metadata<'a>,
+    api: Api<'a>,
+    metadata: Metadata,
+    dependencies: Dependencies,
 }
 
-impl Model<'_> {
+impl<'a> Model<'a> {
+    pub fn new(api: Api<'a>, metadata: Metadata) -> Self {
+        let mut model = Self {
+            api,
+            metadata,
+            dependencies: Default::default(),
+        };
+        model.dependencies.build(&model.api);
+        model
+    }
+
+    pub fn api(&self) -> &Api {
+        &self.api
+    }
+
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
     pub fn view(&self) -> view::Model {
         view::Model::new(self)
     }

@@ -55,14 +55,14 @@ impl<'v: 'a, 'a> Model<'v, 'a> {
 
     /// Get the full combined API root with all transforms applied.
     pub fn api(&'v self) -> Namespace<'v, 'a> {
-        Namespace::new(&self.model.api, &self.xforms)
+        Namespace::new(&self.model.api(), &self.xforms)
     }
 
     /// Iterate over [Chunk]s, where each subsection of the API can be viewed through a [SubView]
     /// with all transforms, as well as a [ChunkFilter] for the appropriate chunk applied.
     pub fn api_chunked_iter(&self) -> impl Iterator<Item = Result<(&Chunk, SubView<'a>)>> {
         self.metadata().chunks.iter().map(|metadata| {
-            let namespace = match self.model.api.find_namespace(&metadata.root_namespace) {
+            let namespace = match self.model.api().find_namespace(&metadata.root_namespace) {
                 None => {
                     return Err(anyhow!(
                         "could not find root namespace with id '{}' for chunk with path '{:?}'",
@@ -88,7 +88,7 @@ impl<'v: 'a, 'a> Model<'v, 'a> {
 
     // todo view::Metadata + metadata xforms
     pub fn metadata(&self) -> &model::Metadata {
-        &self.model.metadata
+        &self.model.metadata()
     }
 }
 

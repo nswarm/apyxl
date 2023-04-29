@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
-use itertools::Itertools;
 use log::debug;
 use std::borrow::Cow;
 use std::path::Path;
@@ -58,7 +57,7 @@ fn path_elders_iter<'a>(path: &'a Path) -> impl Iterator<Item = Cow<'a, str>> + 
         .map(|p| p.to_string_lossy())
 }
 
-fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId<'a>, Error<'a>> {
+fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
     text::ident()
         .separated_by(just("::"))
         .at_least(1)
@@ -66,8 +65,8 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId<'a>, Error<'a>> {
         .map(|components| EntityId {
             path: components
                 .into_iter()
-                .map(|s| Cow::Borrowed(s))
-                .collect_vec(),
+                .map(str::to_string)
+                .collect::<Vec<String>>(),
         })
 }
 
@@ -215,10 +214,10 @@ mod tests {
         "#,
         );
         let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
-        assert_eq!(model.api.name, UNDEFINED_NAMESPACE);
-        assert!(model.api.dto("dto").is_some());
-        assert!(model.api.rpc("rpc").is_some());
-        assert!(model.api.namespace("namespace").is_some());
+        assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
+        assert!(model.api().dto("dto").is_some());
+        assert!(model.api().rpc("rpc").is_some());
+        assert!(model.api().namespace("namespace").is_some());
         Ok(())
     }
 
@@ -355,7 +354,6 @@ mod tests {
 
     mod rpc {
         use chumsky::Parser;
-        use std::borrow::Cow;
 
         use crate::parser::rust::rpc;
         use crate::parser::rust::tests::TestError;
@@ -413,7 +411,7 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 1);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some(Cow::Borrowed("ParamType0")));
+            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
             Ok(())
         }
 
@@ -428,11 +426,11 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some(Cow::Borrowed("ParamType0")));
+            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name(), Some(Cow::Borrowed("ParamType1")));
+            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name(), Some(Cow::Borrowed("ParamType2")));
+            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
             Ok(())
         }
 
@@ -450,11 +448,11 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some(Cow::Borrowed("ParamType0")));
+            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name(), Some(Cow::Borrowed("ParamType1")));
+            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name(), Some(Cow::Borrowed("ParamType2")));
+            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
             Ok(())
         }
 
@@ -468,8 +466,8 @@ mod tests {
                 )
                 .into_result()?;
             assert_eq!(
-                rpc.return_type.map(|x| x.name()),
-                Some(Some(Cow::Borrowed("Asdfg")))
+                rpc.return_type.as_ref().map(|x| x.name()),
+                Some(Some("Asdfg"))
             );
             Ok(())
         }
@@ -484,8 +482,8 @@ mod tests {
                 )
                 .into_result()?;
             assert_eq!(
-                rpc.return_type.map(|x| x.name()),
-                Some(Some(Cow::Borrowed("Asdfg")))
+                rpc.return_type.as_ref().map(|x| x.name()),
+                Some(Some("Asdfg"))
             );
             Ok(())
         }

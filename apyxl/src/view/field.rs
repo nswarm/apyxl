@@ -55,6 +55,7 @@ impl<'v, 'a> Field<'v, 'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::EntityId;
     use itertools::Itertools;
 
     use crate::test_util::executor::TestExecutor;
@@ -73,7 +74,7 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_field_transform(TestRenamer {});
         let root = view.api();
-        let dto = root.find_dto(&["dto"].into()).unwrap();
+        let dto = root.find_dto(&EntityId::new(["dto"])).unwrap();
         let fields = dto.fields().collect_vec();
         let field = fields.get(0).unwrap();
 

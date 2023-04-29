@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::model::api::entity_id::OwnedEntityId;
 use crate::model::{Api, EntityId, Field, Namespace, UNDEFINED_NAMESPACE};
 
 #[derive(Error, Debug, Eq, PartialEq)]
@@ -12,36 +11,36 @@ pub enum ValidationError {
         "Invalid namespace found at path {0}. Only the root namespace can be named {}.",
         UNDEFINED_NAMESPACE
     )]
-    InvalidNamespaceName(OwnedEntityId),
+    InvalidNamespaceName(EntityId),
 
     #[error("Invalid DTO name within namespace '{0}', index #{1}. DTO names cannot be empty.")]
-    InvalidDtoName(OwnedEntityId, usize),
+    InvalidDtoName(EntityId, usize),
 
     #[error("Invalid RPC name within namespace '{0}', index #{1}. RPC names cannot be empty.")]
-    InvalidRpcName(OwnedEntityId, usize),
+    InvalidRpcName(EntityId, usize),
 
     #[error("Invalid field name at '{0}', index {1}. Field names cannot be empty.")]
-    InvalidFieldName(OwnedEntityId, usize),
+    InvalidFieldName(EntityId, usize),
 
     #[error(
         "Invalid field type '{0}::{1}', index {2}. Type '{3}' must be a valid DTO in the API."
     )]
-    InvalidFieldType(OwnedEntityId, String, usize, OwnedEntityId),
+    InvalidFieldType(EntityId, String, usize, EntityId),
 
     #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO in the API.")]
-    InvalidRpcReturnType(OwnedEntityId, OwnedEntityId),
+    InvalidRpcReturnType(EntityId, EntityId),
 
     #[error("Duplicate DTO definition: '{0}'")]
-    DuplicateDto(OwnedEntityId),
+    DuplicateDto(EntityId),
 
     #[error("Duplicate RPC definition: '{0}'")]
-    DuplicateRpc(OwnedEntityId),
+    DuplicateRpc(EntityId),
 }
 
 pub fn namespace_names<'a, 'b: 'a>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace.namespaces().filter_map(move |child| {
         if child.name == UNDEFINED_NAMESPACE {
@@ -57,7 +56,7 @@ pub fn namespace_names<'a, 'b: 'a>(
 pub fn no_duplicate_dtos<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace
         .dtos()
@@ -68,7 +67,7 @@ pub fn no_duplicate_dtos<'a, 'b>(
 pub fn no_duplicate_rpcs<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace
         .rpcs()
@@ -79,7 +78,7 @@ pub fn no_duplicate_rpcs<'a, 'b>(
 pub fn dto_names<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace.dtos().enumerate().filter_map(move |(i, dto)| {
         if dto.name.is_empty() {
@@ -96,7 +95,7 @@ pub fn dto_names<'a, 'b>(
 pub fn dto_field_names<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace
         .dtos()
@@ -106,7 +105,7 @@ pub fn dto_field_names<'a, 'b>(
 pub fn dto_field_types<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace
         .dtos()
@@ -116,7 +115,7 @@ pub fn dto_field_types<'a, 'b>(
 pub fn rpc_names<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace.rpcs().enumerate().filter_map(move |(i, rpc)| {
         if rpc.name.is_empty() {
@@ -130,7 +129,7 @@ pub fn rpc_names<'a, 'b>(
 pub fn rpc_param_names<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace
         .rpcs()
@@ -140,7 +139,7 @@ pub fn rpc_param_names<'a, 'b>(
 pub fn rpc_param_types<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace
         .rpcs()
@@ -150,7 +149,7 @@ pub fn rpc_param_types<'a, 'b>(
 pub fn rpc_return_types<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
     namespace
         .rpcs()
@@ -170,7 +169,7 @@ pub fn rpc_return_types<'a, 'b>(
 pub fn field_names<'a, 'b>(
     _: &'b Api<'a>,
     fields: impl Iterator<Item = &'b Field<'a>> + 'a + 'b,
-    entity_id: EntityId<'a>,
+    entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'a + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
         if field.name.is_empty() {
@@ -184,7 +183,7 @@ pub fn field_names<'a, 'b>(
 pub fn field_types<'a, 'b: 'a>(
     api: &'b Api<'a>,
     fields: impl Iterator<Item = &'b Field<'a>> + 'b,
-    parent_entity_id: EntityId<'a>,
+    parent_entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'a + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
         let mut iter_ty = parent_entity_id.clone();
@@ -217,6 +216,40 @@ fn find_type_relative(find_ty: &EntityId, api: &Api, namespace_ty: EntityId) -> 
     namespace.find_dto(find_ty).is_some()
 }
 
+/// Calls the function `f` for each [Namespace] in the `api`. `f` will be passed the [Namespace]
+/// currently being operated on and a [EntityId] to that namespace within the overall hierarchy.
+///
+/// `'a` is the lifetime of the [Api] bound.
+/// `'b` is the lifetime of the [Builder::build] process.
+pub(crate) fn recurse_api<'a, 'b, I, F>(api: &'b Api<'a>, f: F) -> Vec<ValidationError>
+where
+    'b: 'a,
+    I: Iterator<Item = ValidationError>,
+    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId) -> I,
+{
+    recurse_namespaces(api, api, EntityId::default(), f)
+}
+
+fn recurse_namespaces<'a, 'b, I, F>(
+    api: &'b Api<'a>,
+    namespace: &'b Namespace<'a>,
+    entity_id: EntityId,
+    f: F,
+) -> Vec<ValidationError>
+where
+    'b: 'a,
+    I: Iterator<Item = ValidationError>,
+    F: Copy + Fn(&'b Api<'a>, &'b Namespace<'a>, EntityId) -> I,
+{
+    let child_errors = namespace
+        .namespaces()
+        .flat_map(|child| recurse_namespaces(api, child, entity_id.child(&child.name), f));
+
+    child_errors
+        .chain(f(api, namespace, entity_id.clone()))
+        .collect_vec()
+}
+
 #[cfg(test)]
 mod tests {
     // note: many tested via actual code paths in builder.
@@ -243,7 +276,7 @@ mod tests {
                     struct dto2 {}
                 }
                 "#,
-                &["dto0"].into(),
+                &EntityId::new(["dto0"]),
             );
         }
 
@@ -261,7 +294,7 @@ mod tests {
                     }
                 }
                 "#,
-                &["ns0", "ns1", "dto0"].into(),
+                &EntityId::new(["ns0", "ns1", "dto0"]),
             );
         }
 
@@ -278,7 +311,7 @@ mod tests {
                     }
                 }
                 "#,
-                &["ns0", "ns1", "dto0"].into(),
+                &EntityId::new(["ns0", "ns1", "dto0"]),
             );
         }
 
@@ -297,7 +330,7 @@ mod tests {
                 }
                 struct dto2 {}
                 "#,
-                &["ns0", "ns1", "dto0"].into(),
+                &EntityId::new(["ns0", "ns1", "dto0"]),
             );
         }
 
@@ -318,7 +351,7 @@ mod tests {
                     }
                 }
                 "#,
-                &["ns0", "dto0"].into(),
+                &EntityId::new(["ns0", "dto0"]),
             );
         }
 
@@ -343,7 +376,7 @@ mod tests {
                     }
                 }
                 "#,
-                &["ns0", "ns1", "dto0"].into(),
+                &EntityId::new(["ns0", "ns1", "dto0"]),
             );
         }
 
@@ -368,7 +401,7 @@ mod tests {
                     }
                 }
                 "#,
-                &["ns0", "ns1", "ns2", "dto0"].into(),
+                &EntityId::new(["ns0", "ns1", "ns2", "dto0"]),
             );
         }
 
