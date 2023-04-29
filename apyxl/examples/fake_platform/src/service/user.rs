@@ -13,7 +13,7 @@ struct Display {
 // pub type Id = u128; todo aliases?
 #[derive(Default)]
 pub struct Id {
-    value: u128,
+    // value: u128,
 }
 
 // todo methods on dto types

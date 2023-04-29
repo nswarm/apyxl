@@ -114,18 +114,29 @@ fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
 }
 
 fn dto<'a>() -> impl Parser<'a, &'a str, Dto<'a>, Error<'a>> {
+    let attr = just("#[")
+        .then(any().and_is(just("]").not()).repeated().slice())
+        .then(just(']'));
     let fields = field()
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
         .padded_by(multi_comment())
         .delimited_by(just('{').padded(), just('}').padded());
-    let name = text::keyword("struct").padded().ignore_then(text::ident());
-    name.then(fields).map(|(name, fields)| Dto {
-        name,
-        fields,
-        attributes: Default::default(),
-    })
+    let name = text::keyword("pub")
+        .then(whitespace().at_least(1))
+        .or_not()
+        .ignore_then(text::keyword("struct").padded())
+        .ignore_then(text::ident());
+    attr.or_not()
+        .padded()
+        .ignore_then(name)
+        .then(fields)
+        .map(|(name, fields)| Dto {
+            name,
+            fields,
+            attributes: Default::default(),
+        })
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -425,6 +436,35 @@ mod tests {
             let dto = dto()
                 .parse(
                     r#"
+            struct StructName {}
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(dto.name, "StructName");
+            assert_eq!(dto.fields.len(), 0);
+            Ok(())
+        }
+
+        #[test]
+        fn pub_struct() -> Result<(), TestError> {
+            let dto = dto()
+                .parse(
+                    r#"
+            pub struct StructName {}
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(dto.name, "StructName");
+            assert_eq!(dto.fields.len(), 0);
+            Ok(())
+        }
+
+        #[test]
+        fn ignore_derive() -> Result<(), TestError> {
+            let dto = dto()
+                .parse(
+                    r#"
+            #[derive(Whatever)]
             struct StructName {}
             "#,
                 )
