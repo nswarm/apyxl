@@ -206,10 +206,12 @@ fn namespace<'a>() -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
         mod_keyword
             .padded()
             .ignore_then(text::ident())
-            .then(body)
+            // or_not to allow declaration-only in the form:
+            //      mod name;
+            .then(just(';').padded().map(|_| None).or(body.map(|c| Some(c))))
             .map(|(name, children)| Namespace {
                 name: Cow::Borrowed(name),
-                children,
+                children: children.unwrap_or(vec![]),
                 attributes: Default::default(),
             })
     })
@@ -287,6 +289,20 @@ mod tests {
         use crate::model::NamespaceChild;
         use crate::parser::rust::namespace;
         use crate::parser::rust::tests::TestError;
+
+        #[test]
+        fn declaration() -> Result<(), TestError> {
+            let namespace = namespace()
+                .parse(
+                    r#"
+            mod empty;
+            "#,
+                )
+                .into_result()?;
+            assert_eq!(namespace.name, "empty");
+            assert!(namespace.children.is_empty());
+            Ok(())
+        }
 
         #[test]
         fn empty() -> Result<(), TestError> {
