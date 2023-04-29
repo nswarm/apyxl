@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use std::fmt::{Display, Formatter};
+use std::hash::Hash;
 
 /// A reference to another entity within the [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
@@ -41,6 +42,12 @@ impl EntityId {
         let mut child = self.clone();
         child.path.push(name.to_string());
         child
+    }
+
+    pub fn concat(&self, other: &EntityId) -> Self {
+        Self {
+            path: [self.path.clone(), other.path.clone()].concat(),
+        }
     }
 
     pub fn has_namespace(&self) -> bool {
