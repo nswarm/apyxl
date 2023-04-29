@@ -103,19 +103,34 @@ enum ExprBlock<'a> {
     Nested(Vec<ExprBlock<'a>>),
 }
 
-fn expr_block<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
-    let block_comment = any()
+fn block_comment<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+    any()
         .and_is(just("*/").not())
         .repeated()
         .slice()
         .map(&str::trim)
-        .delimited_by(just("/*"), just("*/"));
-    let line_comment = just("//").ignore_then(none_of('\n').repeated().slice().map(&str::trim));
+        .delimited_by(just("/*"), just("*/"))
+}
+
+fn line_comment<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+    just("//").ignore_then(
+        any()
+            .and_is(just('\n').not())
+            .repeated()
+            .slice()
+            .map(&str::trim),
+    )
+}
+
+fn comment<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+    choice((line_comment(), block_comment()))
+}
+
+fn expr_block<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
     let body = none_of("{}").repeated().at_least(1).slice().map(&str::trim);
     recursive(|nested| {
         choice((
-            block_comment.padded().map(ExprBlock::Comment),
-            line_comment.padded().map(ExprBlock::Comment),
+            comment().boxed().padded().map(ExprBlock::Comment),
             nested.map(ExprBlock::Nested),
             body.map(ExprBlock::Body),
         ))
@@ -154,10 +169,11 @@ fn namespace_children<'a>(
     namespace: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
-        dto().padded().map(NamespaceChild::Dto),
-        rpc().padded().map(NamespaceChild::Rpc),
-        namespace.padded().map(NamespaceChild::Namespace),
+        dto().map(NamespaceChild::Dto),
+        rpc().map(NamespaceChild::Rpc),
+        namespace.map(NamespaceChild::Namespace),
     ))
+    .padded_by(comment().padded().repeated().collect::<Vec<_>>())
     .repeated()
     .collect::<Vec<_>>()
 }
@@ -485,6 +501,72 @@ mod tests {
                 rpc.return_type.as_ref().map(|x| x.name()),
                 Some(Some("Asdfg"))
             );
+            Ok(())
+        }
+    }
+
+    mod comments {
+        use crate::parser::rust::tests::TestError;
+        use crate::parser::rust::{comment, dto, namespace};
+        use chumsky::prelude::choice;
+        use chumsky::{IterParser, Parser};
+
+        #[test]
+        fn line_comment() -> Result<(), TestError> {
+            let value = comment().parse("// line comment").into_result()?;
+            assert_eq!(value, "line comment");
+            Ok(())
+        }
+
+        #[test]
+        fn line_comment_with_newline() -> Result<(), TestError> {
+            let value = choice((comment().padded().map(|_| ""), dto().padded().map(|_| "")))
+                .repeated()
+                .collect()
+                .parse("\n\n \t // line comment\n \t struct dto {}")
+                .into_result()?;
+            // assert_eq!(value, "line comment");
+            Ok(())
+        }
+
+        #[test]
+        fn block_comment() -> Result<(), TestError> {
+            let value = comment().parse("/* block comment */").into_result()?;
+            assert_eq!(value, "block comment");
+            Ok(())
+        }
+
+        #[test]
+        fn line_comment_inside_namespace() -> Result<(), TestError> {
+            let value = namespace()
+                .parse(
+                    r#"
+                    mod ns { // comment
+                        // comment
+                        // comment
+                        struct dto {} // comment
+                        // comment
+                    }
+                    "#,
+                )
+                .into_result()?;
+            Ok(())
+        }
+
+        #[test]
+        fn block_comment_inside_namespace() -> Result<(), TestError> {
+            let value = namespace()
+                .parse(
+                    r#"
+                    mod ns { /* comment */
+                        /* comment */
+                        /* comment */
+                        struct dto {} /* comment */
+                        /* comment */
+                    }
+                    "#,
+                )
+                .into_result()?;
             Ok(())
         }
     }
