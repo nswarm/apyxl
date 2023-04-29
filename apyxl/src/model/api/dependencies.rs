@@ -99,11 +99,19 @@ impl Dependencies {
         }
         None
     }
+
+    fn node_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
+    fn edge_count(&self) -> usize {
+        self.graph.edge_count()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::model::Dependencies;
+    use crate::model::{Api, Dependencies};
     use crate::test_util::executor::TestExecutor;
 
     mod contains_node {
@@ -238,41 +246,108 @@ mod tests {
 
     mod adds_nodes_for_each {
         use crate::model::api::dependencies::tests::run_test;
+        use crate::model::EntityId;
 
         #[test]
         fn dto() {
-            // run_test(r#""#, |deps| deps.node_map.contains_key());
-            // todo check node count
+            run_test(
+                r#"
+            struct dto {}
+            mod ns0 {
+                struct dto {}
+                mod ns1 {
+                    struct dto {}
+                }
+            }
+            "#,
+                |deps| {
+                    assert!(deps.node(&EntityId::new(["dto"])).is_some());
+                    assert!(deps.node(&EntityId::new(["ns0", "dto"])).is_some());
+                    assert!(deps.node(&EntityId::new(["ns0", "ns1", "dto"])).is_some());
+                    assert_eq!(deps.node_count(), 3);
+                },
+            );
         }
 
         #[test]
         fn rpc() {
-            todo!("nyi")
-            // todo check node count
+            run_test(
+                r#"
+            fn rpc() {}
+            mod ns0 {
+                fn rpc() {}
+                mod ns1 {
+                    fn rpc() {}
+                }
+            }
+            "#,
+                |deps| {
+                    assert!(deps.node(&EntityId::new(["rpc"])).is_some());
+                    assert!(deps.node(&EntityId::new(["ns0", "rpc"])).is_some());
+                    assert!(deps.node(&EntityId::new(["ns0", "ns1", "rpc"])).is_some());
+                    assert_eq!(deps.node_count(), 3);
+                },
+            );
         }
     }
 
     mod adds_edges_for {
+        use crate::model::api::dependencies::tests::run_test;
+
         #[test]
         fn dto_field_types() {
-            // deps.graph.contains_edge()
-            todo!("nyi")
+            run_test(
+                r#"
+            struct dto0 {
+                field: dto1,
+            }
+            struct dto1 {
+                field: dto0,
+            }
+            "#,
+                |deps| {
+                    assert_eq!(deps.edge_count(), 2);
+                },
+            );
         }
 
         #[test]
         fn rpc_param_types() {
-            todo!("nyi")
+            run_test(
+                r#"
+            struct dto0 {}
+            struct dto1 {}
+            fn rpc(param: dto0, param: dto1) {}
+            "#,
+                |deps| {
+                    assert_eq!(deps.edge_count(), 2);
+                },
+            );
         }
 
         #[test]
         fn rpc_return_types() {
-            todo!("nyi")
+            run_test(
+                r#"
+            struct dto0 {}
+            fn rpc() -> dto0 {}
+            "#,
+                |deps| {
+                    assert_eq!(deps.edge_count(), 1);
+                },
+            );
         }
     }
 
     #[test]
     fn clears_existing_on_build() {
-        todo!("nyi")
+        let mut exe = TestExecutor::new("struct dto {} fn rpc() {}");
+        let api = exe.api();
+        let mut dependencies = Dependencies::default();
+        dependencies.build(&api);
+        assert_eq!(dependencies.node_count(), 2);
+        dependencies.build(&Api::default());
+        assert_eq!(dependencies.node_count(), 0);
     }
 
     fn run_test<F: Fn(&Dependencies)>(data: &str, f: F) {
