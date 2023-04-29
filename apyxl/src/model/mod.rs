@@ -28,6 +28,15 @@ impl<'a> Model<'a> {
         model
     }
 
+    #[cfg(test)]
+    pub fn without_deps(api: Api<'a>, metadata: Metadata) -> Self {
+        Self {
+            api,
+            metadata,
+            dependencies: Default::default(),
+        }
+    }
+
     pub fn api(&self) -> &Api {
         &self.api
     }

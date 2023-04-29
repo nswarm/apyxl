@@ -23,6 +23,7 @@ impl TestExecutor {
     }
 
     pub fn model(&mut self) -> model::Model {
-        model::Model::new(self.api(), Metadata::default())
+        // Skip deps which rely on valid api.
+        model::Model::without_deps(self.api(), Metadata::default())
     }
 }
