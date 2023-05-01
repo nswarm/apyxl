@@ -1,10 +1,12 @@
 use crate::model::Chunk;
 pub use buffer::Buffer;
+pub use chunk_buffer::ChunkBuffer;
 pub use file_set::FileSet;
 pub use glob::Glob;
 pub use stdin::StdIn;
 
 mod buffer;
+mod chunk_buffer;
 mod file_set;
 mod glob;
 mod stdin;

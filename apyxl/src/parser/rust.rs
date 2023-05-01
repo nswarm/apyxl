@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
@@ -24,7 +24,7 @@ impl ApyxlParser for Rust {
         while let Some((chunk, data)) = input.next_chunk() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
             if let Some(file_path) = &chunk.relative_file_path {
-                for component in path_elders_iter(file_path) {
+                for component in path_iter(&namespace_path(file_path)) {
                     builder.enter_namespace(&component)
                 }
             }
@@ -54,11 +54,21 @@ impl ApyxlParser for Rust {
     }
 }
 
-/// Iterate over path except for self from front to back.
-fn path_elders_iter<'a>(path: &'a Path) -> impl Iterator<Item = Cow<'a, str>> + 'a {
-    path.iter()
-        .filter(move |p| p != &path.file_name().unwrap())
-        .map(|p| p.to_string_lossy())
+/// Iterate over path as strings.
+fn path_iter<'a>(path: &'a Path) -> impl Iterator<Item = Cow<'a, str>> + 'a {
+    path.iter().map(|p| p.to_string_lossy())
+}
+
+/// Convert file path to rust module path, obeying rules for {lib,mod}.rs.
+fn namespace_path(file_path: &Path) -> PathBuf {
+    if file_path.ends_with("mod.rs") || file_path.ends_with("lib.rs") {
+        file_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or(PathBuf::default())
+    } else {
+        file_path.with_extension("")
+    }
 }
 
 const ALLOWED_TYPE_NAME_CHARS: &str = "_&";
@@ -290,6 +300,54 @@ mod tests {
         assert!(model.api().rpc("rpc").is_some());
         assert!(model.api().namespace("namespace").is_some());
         Ok(())
+    }
+
+    mod file_path_to_mod {
+        use crate::model::{Chunk, EntityId, UNDEFINED_NAMESPACE};
+        use crate::{input, parser, Parser};
+        use anyhow::Result;
+
+        #[test]
+        fn file_path_including_name_without_ext() -> Result<()> {
+            let mut input = input::ChunkBuffer::new();
+            input.add_chunk(Chunk::with_relative_file_path("a/b/c.rs"), "struct dto {}");
+            let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
+
+            let namespace = model.api().find_namespace(&EntityId::new(["a", "b", "c"]));
+            assert!(namespace.is_some());
+            assert!(namespace.unwrap().dto("dto").is_some());
+            Ok(())
+        }
+
+        #[test]
+        fn ignore_mod_rs() -> Result<()> {
+            let mut input = input::ChunkBuffer::new();
+            input.add_chunk(
+                Chunk::with_relative_file_path("a/b/mod.rs"),
+                "struct dto {}",
+            );
+            let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
+
+            let namespace = model.api().find_namespace(&EntityId::new(["a", "b"]));
+            assert!(namespace.is_some());
+            assert!(namespace.unwrap().dto("dto").is_some());
+            Ok(())
+        }
+
+        #[test]
+        fn ignore_lib_rs() -> Result<()> {
+            let mut input = input::ChunkBuffer::new();
+            input.add_chunk(
+                Chunk::with_relative_file_path("a/b/lib.rs"),
+                "struct dto {}",
+            );
+            let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
+
+            let namespace = model.api().find_namespace(&EntityId::new(["a", "b"]));
+            assert!(namespace.is_some());
+            assert!(namespace.unwrap().dto("dto").is_some());
+            Ok(())
+        }
     }
 
     mod entity_id {

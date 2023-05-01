@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use crate::input::{Data, Input};
 use crate::model::Chunk;
 
-/// Stores all data in a single `chunk`.
+/// Stores all data in a single in-memory chunk.
 #[derive(Default)]
 pub struct Buffer {
     chunk: Chunk,
