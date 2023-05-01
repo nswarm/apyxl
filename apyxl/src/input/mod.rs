@@ -19,8 +19,7 @@ mod stdin;
 /// must remain in memory for the duration of parsing. This is a choice that requires more memory,
 /// but allows the parsing and generation process to be nearly copy-free.
 pub trait Input {
-    /// This will be called when the parser is ready to parse the next chunk.
-    fn next_chunk(&self) -> Option<(&Chunk, &Data)>;
+    fn chunks(&self) -> Vec<(&Chunk, &Data)>;
 }
 
 pub type Data = String;

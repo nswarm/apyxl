@@ -21,7 +21,7 @@ impl ApyxlParser for Rust {
     fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>> {
         let mut builder = model::Builder::default();
 
-        while let Some((chunk, data)) = input.next_chunk() {
+        for (chunk, data) in input.chunks() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
             if let Some(file_path) = &chunk.relative_file_path {
                 for component in path_iter(&namespace_path(file_path)) {
@@ -303,7 +303,7 @@ mod tests {
     }
 
     mod file_path_to_mod {
-        use crate::model::{Chunk, EntityId, UNDEFINED_NAMESPACE};
+        use crate::model::{Chunk, EntityId};
         use crate::{input, parser, Parser};
         use anyhow::Result;
 

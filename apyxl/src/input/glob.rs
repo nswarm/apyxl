@@ -21,8 +21,8 @@ impl Glob {
 }
 
 impl Input for Glob {
-    fn next_chunk(&self) -> Option<(&Chunk, &Data)> {
-        self.file_set.next_chunk()
+    fn chunks(&self) -> Vec<(&Chunk, &Data)> {
+        self.file_set.chunks()
     }
 }
 

@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use crate::input::{Data, Input};
 use crate::model::Chunk;
 
@@ -8,7 +6,6 @@ use crate::model::Chunk;
 pub struct Buffer {
     chunk: Chunk,
     data: Data,
-    read: RefCell<bool>,
 }
 
 impl Buffer {
@@ -16,17 +13,12 @@ impl Buffer {
         Self {
             chunk: Chunk::default(),
             data: data.to_string(),
-            read: RefCell::new(false),
         }
     }
 }
 
 impl Input for Buffer {
-    fn next_chunk(&self) -> Option<(&Chunk, &Data)> {
-        if *self.read.borrow() {
-            return None;
-        }
-        *self.read.borrow_mut() = true;
-        Some((&self.chunk, &self.data))
+    fn chunks(&self) -> Vec<(&Chunk, &Data)> {
+        vec![(&self.chunk, &self.data)]
     }
 }

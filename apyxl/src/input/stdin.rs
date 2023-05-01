@@ -23,7 +23,7 @@ impl StdIn {
 }
 
 impl Input for StdIn {
-    fn next_chunk(&self) -> Option<(&Chunk, &Data)> {
-        Some((&self.chunk, &self.data))
+    fn chunks(&self) -> Vec<(&Chunk, &Data)> {
+        vec![(&self.chunk, &self.data)]
     }
 }

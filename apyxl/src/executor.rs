@@ -236,7 +236,8 @@ mod tests {
             builder.merge(Api {
                 name: Cow::Borrowed(UNDEFINED_NAMESPACE),
                 children: input
-                    .next_chunk()
+                    .chunks()
+                    .get(0)
                     .ok_or_else(|| anyhow!("no input data!"))?
                     .1 // data
                     .split(&self.delimiter)

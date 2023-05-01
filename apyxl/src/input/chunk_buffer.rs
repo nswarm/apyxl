@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use itertools::Itertools;
 
 use crate::input::{Data, Input};
 use crate::model::Chunk;
@@ -7,15 +7,11 @@ use crate::model::Chunk;
 #[derive(Default)]
 pub struct ChunkBuffer {
     chunks: Vec<(Chunk, Data)>,
-    index: RefCell<usize>,
 }
 
 impl ChunkBuffer {
     pub fn new() -> Self {
-        Self {
-            chunks: Vec::new(),
-            index: RefCell::new(0),
-        }
+        Self::default()
     }
 
     pub fn add_chunk(&mut self, chunk: Chunk, data: impl ToString) {
@@ -24,12 +20,7 @@ impl ChunkBuffer {
 }
 
 impl Input for ChunkBuffer {
-    fn next_chunk(&self) -> Option<(&Chunk, &Data)> {
-        let index = *self.index.borrow();
-        *self.index.borrow_mut() = index + 1;
-        match self.chunks.get(index) {
-            None => None,
-            Some((chunk, data)) => Some((chunk, data)),
-        }
+    fn chunks(&self) -> Vec<(&Chunk, &Data)> {
+        self.chunks.iter().map(|(c, d)| (c, d)).collect_vec()
     }
 }
