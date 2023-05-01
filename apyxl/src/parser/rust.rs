@@ -313,7 +313,7 @@ mod tests {
             input.add_chunk(Chunk::with_relative_file_path("a/b/c.rs"), "struct dto {}");
             let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
 
-            let namespace = model.api().find_namespace(&EntityId::new(["a", "b", "c"]));
+            let namespace = model.api().find_namespace(&EntityId::from("a.b.c"));
             assert!(namespace.is_some());
             assert!(namespace.unwrap().dto("dto").is_some());
             Ok(())
@@ -328,7 +328,7 @@ mod tests {
             );
             let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
 
-            let namespace = model.api().find_namespace(&EntityId::new(["a", "b"]));
+            let namespace = model.api().find_namespace(&EntityId::from("a.b"));
             assert!(namespace.is_some());
             assert!(namespace.unwrap().dto("dto").is_some());
             Ok(())
@@ -343,7 +343,7 @@ mod tests {
             );
             let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
 
-            let namespace = model.api().find_namespace(&EntityId::new(["a", "b"]));
+            let namespace = model.api().find_namespace(&EntityId::from("a.b"));
             assert!(namespace.is_some());
             assert!(namespace.unwrap().dto("dto").is_some());
             Ok(())

@@ -86,13 +86,11 @@ mod tests {
         let root = view.api();
 
         assert_eq!(
-            root.find_dto(&EntityId::new(["ns0", "dto0"]))
-                .unwrap()
-                .name(),
+            root.find_dto(&EntityId::from("ns0.dto0")).unwrap().name(),
             TestRenamer::renamed("dto0")
         );
         assert_eq!(
-            root.find_dto(&EntityId::new(["ns0", "ns1", "dto1"]))
+            root.find_dto(&EntityId::from("ns0.ns1.dto1"))
                 .unwrap()
                 .name(),
             TestRenamer::renamed("dto1")
@@ -113,7 +111,7 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_dto_transform(TestFilter {});
         let root = view.api();
-        let dto = root.find_dto(&EntityId::new(["dto"])).unwrap();
+        let dto = root.find_dto(&EntityId::from("dto")).unwrap();
         let fields = dto.fields().map(|f| f.name().to_string()).collect_vec();
 
         assert_eq!(fields, vec!["visible0", "visible1"]);

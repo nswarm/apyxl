@@ -77,3 +77,11 @@ impl Display for EntityId {
         write!(f, "{}", self.path.iter().join("."))
     }
 }
+
+impl<S: AsRef<str>> From<S> for EntityId {
+    fn from(value: S) -> Self {
+        Self {
+            path: value.as_ref().split('.').map(str::to_string).collect_vec(),
+        }
+    }
+}

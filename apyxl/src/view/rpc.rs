@@ -94,13 +94,11 @@ mod tests {
         let root = view.api();
 
         assert_eq!(
-            root.find_rpc(&EntityId::new(["ns0", "rpc0"]))
-                .unwrap()
-                .name(),
+            root.find_rpc(&EntityId::from("ns0.rpc0")).unwrap().name(),
             TestRenamer::renamed("rpc0")
         );
         assert_eq!(
-            root.find_rpc(&EntityId::new(["ns0", "ns1", "rpc1"]))
+            root.find_rpc(&EntityId::from("ns0.ns1.rpc1"))
                 .unwrap()
                 .name(),
             TestRenamer::renamed("rpc1")
@@ -117,7 +115,7 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_rpc_transform(TestFilter {});
         let root = view.api();
-        let rpc = root.find_rpc(&EntityId::new(["rpc"])).unwrap();
+        let rpc = root.find_rpc(&EntityId::from("rpc")).unwrap();
         let params = rpc.params().map(|f| f.name().to_string()).collect_vec();
 
         assert_eq!(params, vec!["visible0", "visible1"]);

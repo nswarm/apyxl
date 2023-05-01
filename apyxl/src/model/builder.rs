@@ -286,7 +286,7 @@ mod tests {
                 );
                 assert_eq!(builder.metadata.chunks.len(), 1);
                 let chunk_metadata = builder.metadata.chunks.get(0).unwrap();
-                assert_eq!(chunk_metadata.root_namespace, EntityId::new(["blah"]));
+                assert_eq!(chunk_metadata.root_namespace, EntityId::from("blah"));
                 assert_eq!(chunk_metadata.chunk.relative_file_path, file_path);
             }
 
@@ -313,38 +313,36 @@ mod tests {
                 let api = builder.build().unwrap().api;
                 // Existing shouldn't have attribute.
                 assert!(!chunk_attr_contains_file_path(
-                    &api.find_namespace(&EntityId::new(["ns0"]))
+                    &api.find_namespace(&EntityId::from("ns0"))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(!chunk_attr_contains_file_path(
-                    &api.find_namespace(&EntityId::new(["ns0", "ns1"]))
+                    &api.find_namespace(&EntityId::from("ns0.ns1"))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(!chunk_attr_contains_file_path(
-                    &api.find_dto(&EntityId::new(["ns0", "dto"]))
-                        .unwrap()
-                        .attributes,
+                    &api.find_dto(&EntityId::from("ns0.dto")).unwrap().attributes,
                     &file_path
                 ));
                 // Merged should have correct attribute.
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_namespace(&EntityId::new(["ns0", "ns2"]))
+                    &api.find_namespace(&EntityId::from("ns0.ns2"))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_dto(&EntityId::new(["ns0", "ns2", "dto"]))
+                    &api.find_dto(&EntityId::from("ns0.ns2.dto"))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_rpc(&EntityId::new(["ns0", "ns2", "rpc"]))
+                    &api.find_rpc(&EntityId::from("ns0.ns2.rpc"))
                         .unwrap()
                         .attributes,
                     &file_path
@@ -570,7 +568,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateDto(EntityId::new(["ns", "dto"])),
+                    ValidationError::DuplicateDto(EntityId::from("ns.dto")),
                 );
             }
 
@@ -587,7 +585,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateRpc(EntityId::new(["ns", "rpc"])),
+                    ValidationError::DuplicateRpc(EntityId::from("ns.rpc")),
                 );
             }
 
@@ -628,12 +626,12 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_dto_mut(&EntityId::new(["ns", "dto2"]))
+                    .find_dto_mut(&EntityId::from("ns.dto2"))
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new(["ns"]);
+                let expected_entity_id = EntityId::from("ns");
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -656,14 +654,14 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_dto_mut(&EntityId::new(["ns", "dto"]))
+                    .find_dto_mut(&EntityId::from("ns.dto"))
                     .unwrap()
                     .field_mut("field1")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new(["ns", "dto"]);
+                let expected_entity_id = EntityId::from("ns.dto");
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -691,10 +689,10 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
-                        EntityId::new(["dto"]),
+                        EntityId::from("dto"),
                         "field1".to_string(),
                         expected_index,
-                        EntityId::new(["ns", "dto"]),
+                        EntityId::from("ns.dto"),
                     ),
                 );
             }
@@ -722,12 +720,12 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_rpc_mut(&EntityId::new(["ns", "rpc2"]))
+                    .find_rpc_mut(&EntityId::from("ns.rpc2"))
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new(["ns"]);
+                let expected_entity_id = EntityId::from("ns");
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -746,14 +744,14 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_rpc_mut(&EntityId::new(["ns", "rpc"]))
+                    .find_rpc_mut(&EntityId::from("ns.rpc"))
                     .unwrap()
                     .param_mut("param1")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new(["ns", "rpc"]);
+                let expected_entity_id = EntityId::from("ns.rpc");
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -778,10 +776,10 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
-                        EntityId::new(["rpc"]),
+                        EntityId::from("rpc"),
                         "param1".to_string(),
                         expected_index,
-                        EntityId::new(["ns", "dto"]),
+                        EntityId::from("ns.dto"),
                     ),
                 );
             }
@@ -799,8 +797,8 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidRpcReturnType(
-                        EntityId::new(["rpc"]),
-                        EntityId::new(["ns", "dto"]),
+                        EntityId::from("rpc"),
+                        EntityId::from("ns.dto"),
                     ),
                 );
             }
@@ -823,7 +821,7 @@ mod tests {
                 let mut exe = TestExecutor::new("mod zzzz {}".replace("zzzz", UNDEFINED_NAMESPACE));
                 assert_contains_error(
                     &build_from_input(&mut exe),
-                    ValidationError::InvalidNamespaceName(EntityId::new([UNDEFINED_NAMESPACE])),
+                    ValidationError::InvalidNamespaceName(EntityId::from(UNDEFINED_NAMESPACE)),
                 );
             }
 
@@ -857,7 +855,7 @@ mod tests {
             fn passed_through() -> Result<(), Vec<ValidationError>> {
                 let mut builder = Builder::default();
                 let chunk_metadata = chunk::Metadata {
-                    root_namespace: EntityId::new(["hi"]),
+                    root_namespace: EntityId::from("hi"),
                     chunk: chunk::Chunk::with_relative_file_path(PathBuf::from("hi")),
                 };
                 builder.metadata.chunks.push(chunk_metadata.clone());

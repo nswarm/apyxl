@@ -290,7 +290,7 @@ mod tests {
         );
         let api = exe.api();
 
-        let namespace_id = EntityId::new(["ns0", "ns1", "ns2"]);
+        let namespace_id = EntityId::from("ns0.ns1.ns2");
         let initial_namespace = api.find_namespace(&namespace_id).unwrap();
         assert_eq!(
             rpc_return_types(&api, initial_namespace, namespace_id).collect_vec(),
@@ -320,7 +320,7 @@ mod tests {
                     struct dto2 {}
                 }
                 "#,
-                &EntityId::new(["dto0"]),
+                &EntityId::from("dto0"),
             );
         }
 
@@ -338,7 +338,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new(["ns0", "ns1", "dto0"]),
+                &EntityId::from("ns0.ns1.dto0"),
             );
         }
 
@@ -355,7 +355,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new(["ns0", "ns1", "dto0"]),
+                &EntityId::from("ns0.ns1.dto0"),
             );
         }
 
@@ -374,7 +374,7 @@ mod tests {
                 }
                 struct dto2 {}
                 "#,
-                &EntityId::new(["ns0", "ns1", "dto0"]),
+                &EntityId::from("ns0.ns1.dto0"),
             );
         }
 
@@ -395,7 +395,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new(["ns0", "dto0"]),
+                &EntityId::from("ns0.dto0"),
             );
         }
 
@@ -420,7 +420,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new(["ns0", "ns1", "dto0"]),
+                &EntityId::from("ns0.ns1.dto0"),
             );
         }
 
@@ -445,7 +445,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new(["ns0", "ns1", "ns2", "dto0"]),
+                &EntityId::from("ns0.ns1.ns2.dto0"),
             );
         }
 

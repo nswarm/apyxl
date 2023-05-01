@@ -66,7 +66,7 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_entity_id_transform(TestRenamer {});
         let root = view.api();
-        let dto = root.find_dto(&EntityId::new(["dto"])).unwrap();
+        let dto = root.find_dto(&EntityId::from("dto")).unwrap();
         let fields = dto.fields().collect_vec();
         let field_type_id = fields.get(0).unwrap().ty();
 

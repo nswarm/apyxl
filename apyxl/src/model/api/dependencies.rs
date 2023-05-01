@@ -112,7 +112,7 @@ mod tests {
 
         #[test]
         fn success() {
-            let node_id = EntityId::new(["dto"]);
+            let node_id = EntityId::from("dto");
             run_test(r#"struct dto {}"#, |deps| {
                 assert!(deps.contains_node(&node_id))
             });
@@ -120,7 +120,7 @@ mod tests {
 
         #[test]
         fn failure() {
-            let node_id = EntityId::new(["rpc"]);
+            let node_id = EntityId::from("rpc");
             run_test(r#"struct dto {}"#, |deps| {
                 assert!(!deps.contains_node(&node_id))
             });
@@ -133,8 +133,8 @@ mod tests {
 
         #[test]
         fn sibling() {
-            let from = EntityId::new(["dto1"]);
-            let to = EntityId::new(["dto0"]);
+            let from = EntityId::from("dto1");
+            let to = EntityId::from("dto0");
             run_test(
                 r#"
             struct dto0 {}
@@ -148,8 +148,8 @@ mod tests {
 
         #[test]
         fn parent() {
-            let from = EntityId::new(["ns", "dto1"]);
-            let to = EntityId::new(["dto0"]);
+            let from = EntityId::from("ns.dto1");
+            let to = EntityId::from("dto0");
             run_test(
                 r#"
             struct dto0 {}
@@ -165,8 +165,8 @@ mod tests {
 
         #[test]
         fn nephew() {
-            let from = EntityId::new(["dto1"]);
-            let to = EntityId::new(["ns", "dto0"]);
+            let from = EntityId::from("dto1");
+            let to = EntityId::from("ns.dto0");
             run_test(
                 r#"
             mod ns {
@@ -182,8 +182,8 @@ mod tests {
 
         #[test]
         fn cousin() {
-            let from = EntityId::new(["ns1", "dto1"]);
-            let to = EntityId::new(["ns0", "dto0"]);
+            let from = EntityId::from("ns1.dto1");
+            let to = EntityId::from("ns0.dto0");
             run_test(
                 r#"
             mod ns0 {
@@ -201,8 +201,8 @@ mod tests {
 
         #[test]
         fn always_fully_qualified() {
-            let a = EntityId::new(["ns0", "ns1", "dto1"]);
-            let b = EntityId::new(["ns0", "dto0"]);
+            let a = EntityId::from("ns0.ns1.dto1");
+            let b = EntityId::from("ns0.dto0");
             run_test(
                 r#"
             mod ns0 {
@@ -225,8 +225,8 @@ mod tests {
 
         #[test]
         fn failure() {
-            let from = EntityId::new(["dto0"]);
-            let to = EntityId::new(["dto1"]);
+            let from = EntityId::from("dto0");
+            let to = EntityId::from("dto1");
             run_test(
                 r#"
             struct dto0 {}
@@ -253,9 +253,9 @@ mod tests {
             }
             "#,
                 |deps| {
-                    assert!(deps.node(&EntityId::new(["dto"])).is_some());
-                    assert!(deps.node(&EntityId::new(["ns0", "dto"])).is_some());
-                    assert!(deps.node(&EntityId::new(["ns0", "ns1", "dto"])).is_some());
+                    assert!(deps.node(&EntityId::from("dto")).is_some());
+                    assert!(deps.node(&EntityId::from("ns0.dto")).is_some());
+                    assert!(deps.node(&EntityId::from("ns0.ns1.dto")).is_some());
                     assert_eq!(deps.graph.node_count(), 3);
                 },
             );
@@ -274,9 +274,9 @@ mod tests {
             }
             "#,
                 |deps| {
-                    assert!(deps.node(&EntityId::new(["rpc"])).is_some());
-                    assert!(deps.node(&EntityId::new(["ns0", "rpc"])).is_some());
-                    assert!(deps.node(&EntityId::new(["ns0", "ns1", "rpc"])).is_some());
+                    assert!(deps.node(&EntityId::from("rpc")).is_some());
+                    assert!(deps.node(&EntityId::from("ns0.rpc")).is_some());
+                    assert!(deps.node(&EntityId::from("ns0.ns1.rpc")).is_some());
                     assert_eq!(deps.graph.node_count(), 3);
                 },
             );
