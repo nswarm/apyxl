@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::model::{Api, EntityId, Field, Namespace, UNDEFINED_NAMESPACE};
+use crate::model::{Api, EntityId, Field, Namespace, Type, UNDEFINED_NAMESPACE};
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError {
@@ -155,12 +155,17 @@ pub fn rpc_return_types<'a, 'b>(
         .rpcs()
         .filter_map(|rpc| rpc.return_type.as_ref().map(|ty| (rpc.name, ty)))
         .filter_map(move |(rpc_name, return_type)| {
-            if find_type_relative(api, namespace_id.clone(), &return_type) {
+            let entity_id = if let Type::Api(entity_id) = &return_type {
+                entity_id
+            } else {
+                return None;
+            };
+            if find_type_relative(api, namespace_id.clone(), &entity_id) {
                 None
             } else {
                 Some(ValidationError::InvalidRpcReturnType(
                     namespace_id.child(rpc_name).to_owned(),
-                    return_type.to_owned(),
+                    entity_id.to_owned(),
                 ))
             }
         })
@@ -189,14 +194,19 @@ pub fn field_types<'a, 'b: 'a>(
     parent_entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'a + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
-        if find_type_relative(api, parent_entity_id.clone(), &field.ty) {
+        let entity_id = if let Type::Api(entity_id) = &field.ty {
+            entity_id
+        } else {
+            return None;
+        };
+        if find_type_relative(api, parent_entity_id.clone(), &entity_id) {
             None
         } else {
             Some(ValidationError::InvalidFieldType(
                 parent_entity_id.clone(),
                 field.name.to_string(),
                 i,
-                field.ty.to_owned(),
+                entity_id.to_owned(),
             ))
         }
     })

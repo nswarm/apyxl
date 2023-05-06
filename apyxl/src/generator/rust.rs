@@ -1,9 +1,9 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use itertools::Itertools;
 
 use crate::generator::Generator;
 use crate::output::{Indented, Output};
-use crate::view::{Dto, EntityId, Field, Model, Namespace, Rpc};
+use crate::view::{Dto, EntityId, Field, InnerType, Model, Namespace, Rpc, Type};
 
 #[derive(Debug, Default)]
 pub struct Rust {}
@@ -87,7 +87,7 @@ fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {
 
     if let Some(return_type) = rpc.return_type() {
         o.write_str(" -> ")?;
-        write_entity_id(return_type, o)?;
+        write_type(return_type, o)?;
     }
 
     o.write_str(" {}")?;
@@ -121,7 +121,32 @@ fn write_field(field: Field, o: &mut dyn Output) -> Result<()> {
 fn write_param(field: Field, o: &mut dyn Output) -> Result<()> {
     o.write_str(&field.name())?;
     o.write_str(": ")?;
-    write_entity_id(field.ty(), o)
+    write_type(field.ty(), o)
+}
+
+fn write_type(ty: Type, o: &mut dyn Output) -> Result<()> {
+    match ty.inner() {
+        InnerType::Bool => o.write_str("bool"),
+        InnerType::U8 => o.write_str("u8"),
+        InnerType::U16 => o.write_str("u16"),
+        InnerType::U32 => o.write_str("u32"),
+        InnerType::U64 => o.write_str("u64"),
+        InnerType::U128 => o.write_str("u128"),
+        InnerType::I8 => o.write_str("i8"),
+        InnerType::I16 => o.write_str("i16"),
+        InnerType::I32 => o.write_str("i32"),
+        InnerType::I64 => o.write_str("i64"),
+        InnerType::I128 => o.write_str("i128"),
+        InnerType::F8 => o.write_str("f8"),
+        InnerType::F16 => o.write_str("f16"),
+        InnerType::F32 => o.write_str("f32"),
+        InnerType::F64 => o.write_str("f64"),
+        InnerType::F128 => o.write_str("f128"),
+        InnerType::String => o.write_str("String"),
+        InnerType::Bytes => o.write_str("Vec<u8>"),
+        InnerType::User(s) => return Err(anyhow!("generator does not support user type '{}'", s)),
+        InnerType::Api(id) => write_entity_id(id, o),
+    }
 }
 
 fn write_entity_id(entity_id: EntityId, o: &mut dyn Output) -> Result<()> {
@@ -191,12 +216,12 @@ pub mod ns0 {
                             fields: vec![
                                 model::Field {
                                     name: "field0",
-                                    ty: model::EntityId::from("Type0"),
+                                    ty: model::Type::new_api("Type0"),
                                     attributes: Default::default(),
                                 },
                                 model::Field {
                                     name: "field1",
-                                    ty: model::EntityId::from("Type1"),
+                                    ty: model::Type::new_api("Type1"),
                                     attributes: Default::default(),
                                 },
                             ],
@@ -226,12 +251,12 @@ pub mod ns0 {
                             params: vec![
                                 model::Field {
                                     name: "param0",
-                                    ty: model::EntityId::from("Type0"),
+                                    ty: model::Type::new_api("Type0"),
                                     attributes: Default::default(),
                                 },
                                 model::Field {
                                     name: "param1",
-                                    ty: model::EntityId::from("Type1"),
+                                    ty: model::Type::new_api("Type1"),
                                     attributes: Default::default(),
                                 },
                             ],
@@ -260,7 +285,7 @@ pub mod ns0 {
                         &model::Rpc {
                             name: "rpc_name",
                             params: vec![],
-                            return_type: Some(model::EntityId::from("ReturnType")),
+                            return_type: Some(model::Type::new_api("ReturnType")),
                             attributes: Default::default(),
                         },
                         &Transforms::default(),
@@ -280,7 +305,7 @@ pub mod ns0 {
                     view::Field::new(
                         &model::Field {
                             name: "asdf",
-                            ty: model::EntityId::from("Type"),
+                            ty: model::Type::new_api("Type"),
                             attributes: Default::default(),
                         },
                         &vec![],
@@ -294,12 +319,57 @@ pub mod ns0 {
         )
     }
 
+    mod ty {
+        use anyhow::Result;
+
+        use crate::generator::rust::tests::assert_output;
+        use crate::generator::rust::write_type;
+        use crate::model;
+        use crate::view::Type;
+
+        macro_rules! test {
+            ($name:ident, $expected:literal, $ty:expr) => {
+                #[test]
+                fn $name() -> Result<()> {
+                    run_test($ty, $expected)
+                }
+            };
+        }
+
+        test!(u8, "u8", model::Type::U8);
+        test!(u16, "u16", model::Type::U16);
+        test!(u32, "u32", model::Type::U32);
+        test!(u64, "u64", model::Type::U64);
+        test!(u128, "u128", model::Type::U128);
+        test!(i8, "i8", model::Type::I8);
+        test!(i16, "i16", model::Type::I16);
+        test!(i32, "i32", model::Type::I32);
+        test!(i64, "i64", model::Type::I64);
+        test!(i128, "i128", model::Type::I128);
+        test!(f8, "f8", model::Type::F8);
+        test!(f16, "f16", model::Type::F16);
+        test!(f32, "f32", model::Type::F32);
+        test!(f64, "f64", model::Type::F64);
+        test!(f128, "f128", model::Type::F128);
+        test!(string, "String", model::Type::String);
+        test!(bytes, "Vec<u8>", model::Type::Bytes);
+        test!(
+            entity_id,
+            "a::b::c",
+            model::Type::Api(model::EntityId::from("a.b.c"))
+        );
+
+        fn run_test(ty: model::Type, expected: &str) -> Result<()> {
+            assert_output(|o| write_type(Type::new(&ty, &vec![]), o), expected)
+        }
+    }
+
     #[test]
     fn entity_id() -> Result<()> {
-        let entity_id = model::EntityId::from("asdf");
+        let entity_id = model::EntityId::from("a.b.c");
         assert_output(
             |o| write_entity_id(view::EntityId::new(&entity_id, &vec![]), o),
-            "asdf",
+            "a::b::c",
         )
     }
 

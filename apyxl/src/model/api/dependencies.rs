@@ -1,4 +1,4 @@
-use crate::model::{Api, EntityId, Namespace};
+use crate::model::{Api, EntityId, Namespace, Type};
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
 
@@ -51,25 +51,20 @@ impl Dependencies {
     }
 
     fn add_edges_recursively(&mut self, namespace: &Namespace, namespace_id: &EntityId) {
-        // We unwrap nodes here because we assume the api is validated.
-
         for dto in namespace.dtos() {
             let from = *self.node(&namespace_id.child(dto.name)).unwrap();
             for field in &dto.fields {
-                let to = self.node_relative(namespace_id, &field.ty).unwrap();
-                self.graph.add_edge(from, *to, ());
+                self.add_edge(from, namespace_id, &field.ty);
             }
         }
 
         for rpc in namespace.rpcs() {
             let from = *self.node(&namespace_id.child(rpc.name)).unwrap();
             for param in &rpc.params {
-                let to = self.node_relative(&namespace_id, &param.ty).unwrap();
-                self.graph.add_edge(from, *to, ());
+                self.add_edge(from, namespace_id, &param.ty);
             }
             if let Some(return_type) = &rpc.return_type {
-                let to = self.node_relative(&namespace_id, &return_type).unwrap();
-                self.graph.add_edge(from, *to, ());
+                self.add_edge(from, namespace_id, &return_type);
             }
         }
 
@@ -98,6 +93,19 @@ impl Dependencies {
             it = base.parent();
         }
         None
+    }
+
+    fn add_edge(&mut self, from: NodeIndex, namespace_id: &EntityId, ty: &Type) {
+        let entity_id = if let Type::Api(entity_id) = ty {
+            entity_id
+        } else {
+            // No dependencies for non-api types.
+            return;
+        };
+
+        // We unwrap nodes here because we assume the api is validated, and all nodes are added first.
+        let to = self.node_relative(&namespace_id, entity_id).unwrap();
+        self.graph.add_edge(from, *to, ());
     }
 }
 

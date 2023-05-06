@@ -11,6 +11,7 @@ pub use field::*;
 pub use namespace::*;
 pub use rpc::*;
 pub use sub_view::*;
+pub use ty::*;
 
 use crate::model;
 use crate::model::chunk::ChunkFilter;
@@ -23,6 +24,7 @@ mod field;
 mod namespace;
 mod rpc;
 mod sub_view;
+mod ty;
 
 // In everything in this module and submodules:
 //   'v: view

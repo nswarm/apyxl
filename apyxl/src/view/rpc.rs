@@ -1,8 +1,10 @@
-use crate::model;
-use crate::view::{Attributes, EntityId, Field, Transforms};
-use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
+
+use dyn_clone::DynClone;
+
+use crate::model;
+use crate::view::{Attributes, Field, Transforms, Type};
 
 /// A single Remote Procedure Call (RPC) within an [Api].
 /// Wraps [model::Rpc].
@@ -53,11 +55,11 @@ impl<'v, 'a> Rpc<'v, 'a> {
             })
     }
 
-    pub fn return_type(&self) -> Option<EntityId> {
+    pub fn return_type(&self) -> Option<Type> {
         self.target
             .return_type
             .as_ref()
-            .map(|target| EntityId::new(target, &self.xforms.entity_id_xforms))
+            .map(|target| Type::new(target, &self.xforms.entity_id_xforms))
     }
 
     pub fn attributes(&self) -> Attributes {
@@ -71,11 +73,12 @@ impl<'v, 'a> Rpc<'v, 'a> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use crate::model::EntityId;
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::{TestFilter, TestRenamer};
     use crate::view::Transformer;
-    use itertools::Itertools;
 
     #[test]
     fn name() {

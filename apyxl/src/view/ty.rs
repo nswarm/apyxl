@@ -1,0 +1,53 @@
+use std::fmt::Debug;
+
+use crate::model;
+use crate::view::{EntityId, EntityIdTransform};
+
+pub type InnerType<'v, 'a> = model::BaseType<EntityId<'v>, &'a str>;
+
+#[derive(Debug, Copy, Clone)]
+pub struct Type<'v> {
+    target: &'v model::Type,
+    xforms: &'v Vec<Box<dyn EntityIdTransform>>,
+}
+
+impl<'v> Type<'v> {
+    pub fn new(target: &'v model::Type, xforms: &'v Vec<Box<dyn EntityIdTransform>>) -> Self {
+        Self { target, xforms }
+    }
+
+    pub fn inner(&self) -> InnerType {
+        match self.target {
+            model::Type::Bool => InnerType::Bool,
+            model::Type::U8 => InnerType::U8,
+            model::Type::U16 => InnerType::U16,
+            model::Type::U32 => InnerType::U32,
+            model::Type::U64 => InnerType::U64,
+            model::Type::U128 => InnerType::U128,
+            model::Type::I8 => InnerType::I8,
+            model::Type::I16 => InnerType::I16,
+            model::Type::I32 => InnerType::I32,
+            model::Type::I64 => InnerType::I64,
+            model::Type::I128 => InnerType::I128,
+            model::Type::F8 => InnerType::F8,
+            model::Type::F16 => InnerType::F16,
+            model::Type::F32 => InnerType::F32,
+            model::Type::F64 => InnerType::F64,
+            model::Type::F128 => InnerType::F128,
+            model::Type::String => InnerType::String,
+            model::Type::Bytes => InnerType::Bytes,
+            model::Type::User(name) => InnerType::User(name),
+            model::Type::Api(id) => InnerType::Api(EntityId::new(id, self.xforms)),
+        }
+    }
+}
+
+impl InnerType<'_, '_> {
+    pub fn api(&self) -> Option<&EntityId> {
+        if let InnerType::Api(id) = self {
+            Some(id)
+        } else {
+            None
+        }
+    }
+}

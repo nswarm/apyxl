@@ -17,16 +17,6 @@ pub struct EntityId {
 }
 
 impl EntityId {
-    pub fn new<T, S>(value: T) -> Self
-    where
-        S: ToString,
-        T: AsRef<[S]>,
-    {
-        Self {
-            path: value.as_ref().iter().map(|s| s.to_string()).collect_vec(),
-        }
-    }
-
     pub fn parent(&self) -> Option<Self> {
         let path = &self.path;
         if path.is_empty() {
@@ -78,10 +68,34 @@ impl Display for EntityId {
     }
 }
 
-impl<S: AsRef<str>> From<S> for EntityId {
-    fn from(value: S) -> Self {
+impl From<&str> for EntityId {
+    fn from(value: &str) -> Self {
         Self {
-            path: value.as_ref().split('.').map(str::to_string).collect_vec(),
+            path: value.split('.').map(str::to_string).collect_vec(),
+        }
+    }
+}
+
+impl<S: ToString> From<&[S]> for EntityId {
+    fn from(value: &[S]) -> Self {
+        Self {
+            path: value.iter().map(|s| s.to_string()).collect_vec(),
+        }
+    }
+}
+
+impl<S: ToString> From<&Vec<S>> for EntityId {
+    fn from(value: &Vec<S>) -> Self {
+        Self {
+            path: value.iter().map(|s| s.to_string()).collect_vec(),
+        }
+    }
+}
+
+impl<S: ToString> From<Vec<S>> for EntityId {
+    fn from(value: Vec<S>) -> Self {
+        Self {
+            path: value.into_iter().map(|s| s.to_string()).collect_vec(),
         }
     }
 }

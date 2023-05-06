@@ -18,7 +18,7 @@ pub trait EntityIdTransform: Debug + DynClone {
 
 dyn_clone::clone_trait_object!(EntityIdTransform);
 
-impl<'v, 'a> EntityId<'v> {
+impl<'v> EntityId<'v> {
     pub fn new(target: &'v model::EntityId, xforms: &'v Vec<Box<dyn EntityIdTransform>>) -> Self {
         Self { target, xforms }
     }
@@ -68,10 +68,12 @@ mod tests {
         let root = view.api();
         let dto = root.find_dto(&EntityId::from("dto")).unwrap();
         let fields = dto.fields().collect_vec();
-        let field_type_id = fields.get(0).unwrap().ty();
+        let ty = fields.get(0).unwrap().ty();
 
         assert_eq!(
-            field_type_id
+            ty.inner()
+                .api()
+                .unwrap()
                 .path()
                 .iter()
                 .map(|s| s.as_ref())

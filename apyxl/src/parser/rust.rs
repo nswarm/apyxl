@@ -7,7 +7,7 @@ use chumsky::text::whitespace;
 use log::debug;
 
 use crate::model::{
-    Api, Dto, EntityId, Field, Namespace, NamespaceChild, Rpc, UNDEFINED_NAMESPACE,
+    Api, Dto, EntityId, Field, Namespace, NamespaceChild, Rpc, Type, UNDEFINED_NAMESPACE,
 };
 use crate::Parser as ApyxlParser;
 use crate::{model, Input};
@@ -71,7 +71,7 @@ fn namespace_path(file_path: &Path) -> PathBuf {
     }
 }
 
-const ALLOWED_TYPE_NAME_CHARS: &str = "_&";
+const ALLOWED_TYPE_NAME_CHARS: &str = "_&<>";
 
 fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
     any()
@@ -97,6 +97,39 @@ fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
         .ignored()
 }
 
+// Macro that expands `ty` to the type itself _or_ a ref of the type, e.g. u8 or &u8.
+// The macro keeps everything as static str.
+macro_rules! ty_or_ref {
+    ($ty:literal) => {
+        just($ty).or(just(concat!('&', $ty)))
+    };
+}
+
+fn ty<'a>() -> impl Parser<'a, &'a str, Type, Error<'a>> {
+    choice((
+        ty_or_ref!("u8").map(|_| Type::U8),
+        ty_or_ref!("u16").map(|_| Type::U16),
+        ty_or_ref!("u32").map(|_| Type::U32),
+        ty_or_ref!("u64").map(|_| Type::U64),
+        ty_or_ref!("u128").map(|_| Type::U128),
+        ty_or_ref!("i8").map(|_| Type::I8),
+        ty_or_ref!("i16").map(|_| Type::I16),
+        ty_or_ref!("i32").map(|_| Type::I32),
+        ty_or_ref!("i64").map(|_| Type::I64),
+        ty_or_ref!("i128").map(|_| Type::I128),
+        ty_or_ref!("f8").map(|_| Type::F8),
+        ty_or_ref!("f16").map(|_| Type::F16),
+        ty_or_ref!("f32").map(|_| Type::F32),
+        ty_or_ref!("f64").map(|_| Type::F64),
+        ty_or_ref!("f128").map(|_| Type::F128),
+        ty_or_ref!("String").map(|_| Type::String),
+        ty_or_ref!("Vec<u8>").map(|_| Type::Bytes),
+        just("&str").map(|_| Type::String),
+        just("&[u8]").map(|_| Type::Bytes),
+        entity_id().map(Type::Api),
+    ))
+}
+
 fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
     type_name()
         .separated_by(just("::"))
@@ -113,7 +146,7 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
 fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
     text::ident()
         .then_ignore(just(':').padded())
-        .then(entity_id())
+        .then(ty())
         .padded()
         .map(|(name, ty)| Field {
             name,
@@ -209,9 +242,7 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
         .collect::<Vec<_>>()
         .padded_by(multi_comment())
         .delimited_by(just('(').padded(), just(')').padded());
-    let return_type = just("->")
-        .ignore_then(whitespace())
-        .ignore_then(entity_id());
+    let return_type = just("->").ignore_then(ty().padded());
     name.then(params)
         .then(return_type.or_not())
         .then_ignore(expr_block().padded())
@@ -276,7 +307,7 @@ mod tests {
         let result = field().parse("name: Type");
         let output = result.into_result()?;
         assert_eq!(output.name, "name");
-        assert_eq!(output.ty.name().unwrap(), "Type");
+        assert_eq!(output.ty.api().unwrap().name().unwrap(), "Type");
         Ok(())
     }
 
@@ -350,6 +381,70 @@ mod tests {
         }
     }
 
+    mod ty {
+        use crate::model::Type;
+        use chumsky::Parser;
+
+        use crate::model::EntityId;
+        use crate::parser::rust::tests::TestError;
+        use crate::parser::rust::ty;
+
+        macro_rules! test {
+            ($name: ident, $data:literal, $expected:expr) => {
+                #[test]
+                fn $name() -> Result<(), TestError> {
+                    run_test($data, $expected)
+                }
+            };
+        }
+
+        test!(u8, "u8", Type::U8);
+        test!(u16, "u16", Type::U16);
+        test!(u32, "u32", Type::U32);
+        test!(u64, "u64", Type::U64);
+        test!(u128, "u128", Type::U128);
+        test!(i8, "i8", Type::I8);
+        test!(i16, "i16", Type::I16);
+        test!(i32, "i32", Type::I32);
+        test!(i64, "i64", Type::I64);
+        test!(i128, "i128", Type::I128);
+        test!(f8, "f8", Type::F8);
+        test!(f16, "f16", Type::F16);
+        test!(f32, "f32", Type::F32);
+        test!(f64, "f64", Type::F64);
+        test!(f128, "f128", Type::F128);
+        test!(string, "String", Type::String);
+        test!(bytes, "Vec<u8>", Type::Bytes);
+
+        test!(u8_ref, "&u8", Type::U8);
+        test!(u16_ref, "&u16", Type::U16);
+        test!(u32_ref, "&u32", Type::U32);
+        test!(u64_ref, "&u64", Type::U64);
+        test!(u128_ref, "&u128", Type::U128);
+        test!(i8_ref, "&i8", Type::I8);
+        test!(i16_ref, "&i16", Type::I16);
+        test!(i32_ref, "&i32", Type::I32);
+        test!(i64_ref, "&i64", Type::I64);
+        test!(i128_ref, "&i128", Type::I128);
+        test!(f8_ref, "&f8", Type::F8);
+        test!(f16_ref, "&f16", Type::F16);
+        test!(f32_ref, "&f32", Type::F32);
+        test!(f64_ref, "&f64", Type::F64);
+        test!(f128_ref, "&f128", Type::F128);
+        test!(string_ref, "&String", Type::String);
+        test!(bytes_ref, "&Vec<u8>", Type::Bytes);
+
+        test!(str, "&str", Type::String);
+        test!(bytes_slice, "&[u8]", Type::Bytes);
+        test!(entity_id, "a::b::c", Type::Api(EntityId::from("a.b.c")));
+
+        fn run_test(data: &'static str, expected: Type) -> Result<(), TestError> {
+            let ty = ty().parse(data).into_result()?;
+            assert_eq!(ty, expected);
+            Ok(())
+        }
+    }
+
     mod entity_id {
         use chumsky::Parser;
 
@@ -372,8 +467,8 @@ mod tests {
 
         #[test]
         fn reference() -> Result<(), TestError> {
-            let id = entity_id().parse("&str").into_result()?;
-            assert_eq!(id.path, vec!["&str"]);
+            let id = entity_id().parse("&Type").into_result()?;
+            assert_eq!(id.path, vec!["&Type"]);
             Ok(())
         }
     }
@@ -632,7 +727,7 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 1);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
+            assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
             Ok(())
         }
 
@@ -647,11 +742,11 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
+            assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
+            assert_eq!(rpc.params[1].ty.api().unwrap().name(), Some("ParamType1"));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
+            assert_eq!(rpc.params[2].ty.api().unwrap().name(), Some("ParamType2"));
             Ok(())
         }
 
@@ -673,11 +768,11 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
+            assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
+            assert_eq!(rpc.params[1].ty.api().unwrap().name(), Some("ParamType1"));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
+            assert_eq!(rpc.params[2].ty.api().unwrap().name(), Some("ParamType2"));
             Ok(())
         }
 
@@ -695,11 +790,11 @@ mod tests {
                 .into_result()?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.name(), Some("ParamType0"));
+            assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.name(), Some("ParamType1"));
+            assert_eq!(rpc.params[1].ty.api().unwrap().name(), Some("ParamType1"));
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.name(), Some("ParamType2"));
+            assert_eq!(rpc.params[2].ty.api().unwrap().name(), Some("ParamType2"));
             Ok(())
         }
 
@@ -713,7 +808,7 @@ mod tests {
                 )
                 .into_result()?;
             assert_eq!(
-                rpc.return_type.as_ref().map(|x| x.name()),
+                rpc.return_type.as_ref().map(|x| x.api().unwrap().name()),
                 Some(Some("Asdfg"))
             );
             Ok(())
@@ -729,7 +824,7 @@ mod tests {
                 )
                 .into_result()?;
             assert_eq!(
-                rpc.return_type.as_ref().map(|x| x.name()),
+                rpc.return_type.as_ref().map(|x| x.api().unwrap().name()),
                 Some(Some("Asdfg"))
             );
             Ok(())

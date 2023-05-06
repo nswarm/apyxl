@@ -135,7 +135,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn current_namespace_id(&self) -> EntityId {
-        EntityId::new(&self.namespace_stack)
+        EntityId::from(&self.namespace_stack)
     }
 
     pub fn current_namespace(&self) -> &Namespace<'a> {
@@ -836,10 +836,9 @@ mod tests {
                 );
                 assert_contains_error(
                     &build_from_input(&mut exe),
-                    ValidationError::InvalidNamespaceName(EntityId::new([
-                        "ns",
-                        UNDEFINED_NAMESPACE,
-                    ])),
+                    ValidationError::InvalidNamespaceName(EntityId::from(
+                        ["ns", UNDEFINED_NAMESPACE].as_slice(),
+                    )),
                 );
             }
         }

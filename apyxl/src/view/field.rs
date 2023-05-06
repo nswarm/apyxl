@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 
 use crate::model;
-use crate::view::{AttributeTransform, Attributes, EntityId, EntityIdTransform};
+use crate::view::{AttributeTransform, Attributes, EntityIdTransform, Type};
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
 /// Wraps [model::Dto].
@@ -44,8 +44,8 @@ impl<'v, 'a> Field<'v, 'a> {
         name
     }
 
-    pub fn ty(&self) -> EntityId {
-        EntityId::new(&self.target.ty, self.entity_id_xforms)
+    pub fn ty(&self) -> Type {
+        Type::new(&self.target.ty, self.entity_id_xforms)
     }
 
     pub fn attributes(&self) -> Attributes {

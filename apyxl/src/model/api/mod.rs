@@ -4,12 +4,16 @@ use itertools::Itertools;
 
 pub use dependencies::Dependencies;
 pub use entity_id::EntityId;
+pub use ty::BaseType;
+pub use ty::Type;
+pub use ty::UserTypeName;
 pub use validate::ValidationError;
 
 use crate::model::chunk;
 
 mod dependencies;
 mod entity_id;
+mod ty;
 pub mod validate;
 
 /// A complete set of entities that make up an API.
@@ -42,10 +46,10 @@ pub struct Dto<'a> {
 }
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Field<'a> {
     pub name: &'a str,
-    pub ty: EntityId,
+    pub ty: Type,
     pub attributes: Attributes,
 }
 
@@ -54,7 +58,7 @@ pub struct Field<'a> {
 pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
-    pub return_type: Option<EntityId>,
+    pub return_type: Option<Type>,
     pub attributes: Attributes,
 }
 
@@ -461,8 +465,8 @@ mod tests {
         #[test]
         fn namespace() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::from(complex_namespace(1).name);
-            let entity_id2 = EntityId::from(complex_namespace(2).name);
+            let entity_id1 = EntityId::from([complex_namespace(1).name].as_slice());
+            let entity_id2 = EntityId::from([complex_namespace(2).name].as_slice());
             assert_eq!(api.find_namespace(&entity_id1), Some(&complex_namespace(1)));
             assert_eq!(
                 api.find_namespace_mut(&entity_id2),
@@ -473,7 +477,8 @@ mod tests {
         #[test]
         fn child() {
             let api = complex_api();
-            let entity_id = EntityId::new(&[complex_namespace(1).name, Cow::Borrowed(NAMES[3])]);
+            let entity_id =
+                EntityId::from([complex_namespace(1).name, Cow::Borrowed(NAMES[3])].as_slice());
             assert_eq!(api.find_dto(&entity_id), Some(&test_dto(3)));
             assert_eq!(api.find_rpc(&entity_id), Some(&test_rpc(3)));
             assert_eq!(api.find_namespace(&entity_id), Some(&test_namespace(3)));
@@ -482,11 +487,14 @@ mod tests {
         #[test]
         fn multi_depth_child() {
             let api = complex_api();
-            let entity_id = EntityId::new(&[
-                complex_namespace(1).name,
-                test_namespace(4).name,
-                Cow::Borrowed(NAMES[5]),
-            ]);
+            let entity_id = EntityId::from(
+                [
+                    complex_namespace(1).name,
+                    test_namespace(4).name,
+                    Cow::Borrowed(NAMES[5]),
+                ]
+                .as_slice(),
+            );
             assert_eq!(api.find_dto(&entity_id), Some(&test_dto(5)));
         }
     }
