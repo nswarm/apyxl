@@ -103,6 +103,8 @@ impl<'a> Builder<'a> {
     pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError>> {
         dedupe_namespace_children(&mut self.api);
 
+        debug!("pre-validation API:\n{:#?}", self.api);
+
         let errors = [
             validate::recurse_api(&self.api, validate::namespace_names),
             validate::recurse_api(&self.api, validate::dto_names),

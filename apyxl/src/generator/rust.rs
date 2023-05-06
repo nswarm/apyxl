@@ -336,6 +336,7 @@ pub mod ns0 {
             };
         }
 
+        test!(bool, "bool", model::Type::Bool);
         test!(u8, "u8", model::Type::U8);
         test!(u16, "u16", model::Type::U16);
         test!(u32, "u32", model::Type::U32);

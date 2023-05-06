@@ -107,6 +107,7 @@ macro_rules! ty_or_ref {
 
 fn ty<'a>() -> impl Parser<'a, &'a str, Type, Error<'a>> {
     choice((
+        just("bool").map(|_| Type::Bool),
         ty_or_ref!("u8").map(|_| Type::U8),
         ty_or_ref!("u16").map(|_| Type::U16),
         ty_or_ref!("u32").map(|_| Type::U32),
@@ -397,6 +398,8 @@ mod tests {
                 }
             };
         }
+
+        test!(bool, "bool", Type::Bool);
 
         test!(u8, "u8", Type::U8);
         test!(u16, "u16", Type::U16);

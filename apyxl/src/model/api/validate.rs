@@ -107,9 +107,10 @@ pub fn dto_field_types<'a, 'b>(
     namespace: &'b Namespace<'a>,
     namespace_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
-    namespace
-        .dtos()
-        .flat_map(move |dto| field_types(api, dto.fields.iter(), namespace_id.child(dto.name)))
+    namespace.dtos().flat_map(move |dto| {
+        let dto_id = namespace_id.child(dto.name);
+        field_types(api, dto.fields.iter(), namespace_id.clone(), dto_id)
+    })
 }
 
 pub fn rpc_names<'a, 'b>(
@@ -139,11 +140,12 @@ pub fn rpc_param_names<'a, 'b>(
 pub fn rpc_param_types<'a, 'b>(
     api: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
-    entity_id: EntityId,
+    namespace_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
-    namespace
-        .rpcs()
-        .flat_map(move |rpc| field_types(api, rpc.params.iter(), entity_id.child(rpc.name)))
+    namespace.rpcs().flat_map(move |rpc| {
+        let rpc_id = namespace_id.child(rpc.name);
+        field_types(api, rpc.params.iter(), namespace_id.clone(), rpc_id)
+    })
 }
 
 pub fn rpc_return_types<'a, 'b>(
@@ -191,6 +193,7 @@ pub fn field_names<'a, 'b>(
 pub fn field_types<'a, 'b: 'a>(
     api: &'b Api<'a>,
     fields: impl Iterator<Item = &'b Field<'a>> + 'b,
+    namespace_id: EntityId,
     parent_entity_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'a + 'b {
     fields.enumerate().filter_map(move |(i, field)| {
@@ -199,7 +202,7 @@ pub fn field_types<'a, 'b: 'a>(
         } else {
             return None;
         };
-        if find_type_relative(api, parent_entity_id.clone(), &entity_id) {
+        if find_type_relative(api, namespace_id.clone(), &entity_id) {
             None
         } else {
             Some(ValidationError::InvalidFieldType(
@@ -215,12 +218,15 @@ pub fn field_types<'a, 'b: 'a>(
 /// Find `find_ty` by walking up the namespace hierarchy in `api`, starting at `initial_namespace`.
 fn find_type_relative(api: &Api, initial_namespace: EntityId, find_ty: &EntityId) -> bool {
     let mut iter = initial_namespace;
+    println!("zzz FIND: {}", find_ty);
     loop {
         let namespace = api.find_namespace(&iter);
+        println!("zzz checking ns {}", iter);
         match namespace {
             None => return false,
             Some(namespace) => {
                 if namespace.find_dto(find_ty).is_some() {
+                    println!("zzz FOUND!");
                     return true;
                 }
             }
@@ -270,9 +276,6 @@ where
 mod tests {
     // note: many validators tested via actual code paths in builder.
 
-    // todo param type tests
-    // todo return type tests
-
     use crate::model::validate::rpc_return_types;
     use crate::model::EntityId;
     use crate::test_util::executor::TestExecutor;
@@ -287,6 +290,14 @@ mod tests {
                     mod ns2 {
                         fn rpc() -> other0::other1::dto1 {}
                         fn rpc() -> other0::dto2 {}
+                        fn rpc() -> dto3 {}
+                        fn rpc() -> ns3::dto4 {}
+
+                        struct dto3 {}
+
+                        mod ns3 {
+                            struct dto4 {}
+                        }
                     }
                 }
                 mod other0 {
@@ -471,6 +482,7 @@ mod tests {
                         .fields
                         .iter(),
                     source_dto.parent().expect("dto has no parent"),
+                    source_dto.clone(),
                 )
                 .collect_vec(),
                 vec![]
