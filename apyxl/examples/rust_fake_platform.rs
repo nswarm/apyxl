@@ -19,9 +19,6 @@ fn main() -> Result<()> {
     Executor::default()
         .input(&mut input)
         .parser(&parser::Rust::default())
-        .generator(
-            &mut generator::Rust::default(),
-            vec![&mut output::StdOut::default(), &mut output],
-        )
+        .generator(&mut generator::Rust::default(), vec![&mut output])
         .execute()
 }

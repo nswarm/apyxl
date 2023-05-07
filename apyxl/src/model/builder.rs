@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
+use crate::{generator, output, Generator};
 use anyhow::Result;
 use itertools::Itertools;
-use log::debug;
+use log::{debug, error, log_enabled, trace, Level};
 
 use crate::model::api::validate;
 use crate::model::{
@@ -103,7 +104,12 @@ impl<'a> Builder<'a> {
     pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError>> {
         dedupe_namespace_children(&mut self.api);
 
-        debug!("pre-validation API:\n{:#?}", self.api);
+        // todo lock these behind additional options
+        if log_enabled!(Level::Trace) {
+            trace!("pre-validation API: {:#?}", self.api);
+        } else if log_enabled!(Level::Debug) {
+            pretty_print_api(&self.api);
+        }
 
         let errors = [
             validate::recurse_api(&self.api, validate::namespace_names),
@@ -174,6 +180,20 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
             dedupe_namespace_children(&mut ns);
             namespace.add_namespace(ns)
         });
+}
+
+fn pretty_print_api(api: &Api) {
+    let model = Model::new(api.clone(), Metadata::default());
+    let mut output = output::Buffer::default();
+    match generator::Rust::default().generate(model.view(), &mut output) {
+        Ok(_) => {
+            debug!("pre-validation API:\n{}", output.to_string());
+        }
+        Err(err) => error!(
+            "error when generating pre-validation API for printing: {}",
+            err
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -820,7 +840,7 @@ mod tests {
 
             #[test]
             fn name_within_root_not_undefined() {
-                let mut exe = TestExecutor::new("mod zzzz {}".replace("zzzz", UNDEFINED_NAMESPACE));
+                let mut exe = TestExecutor::new("mod asdf {}".replace("asdf", UNDEFINED_NAMESPACE));
                 assert_contains_error(
                     &build_from_input(&mut exe),
                     ValidationError::InvalidNamespaceName(EntityId::from(UNDEFINED_NAMESPACE)),
@@ -832,9 +852,9 @@ mod tests {
                 let mut exe = TestExecutor::new(
                     r#"
                     mod ns {
-                        mod zzzz {}
+                        mod asdf {}
                     }"#
-                    .replace("zzzz", UNDEFINED_NAMESPACE),
+                    .replace("asdf", UNDEFINED_NAMESPACE),
                 );
                 assert_contains_error(
                     &build_from_input(&mut exe),

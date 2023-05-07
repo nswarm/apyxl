@@ -159,9 +159,9 @@ impl<'v, 'a> Namespace<'v, 'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::EntityId;
     use itertools::Itertools;
 
+    use crate::model::EntityId;
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::{TestFilter, TestRenamer};
     use crate::view::{NamespaceChild, Transformer};

@@ -218,15 +218,12 @@ pub fn field_types<'a, 'b: 'a>(
 /// Find `find_ty` by walking up the namespace hierarchy in `api`, starting at `initial_namespace`.
 fn find_type_relative(api: &Api, initial_namespace: EntityId, find_ty: &EntityId) -> bool {
     let mut iter = initial_namespace;
-    println!("zzz FIND: {}", find_ty);
     loop {
         let namespace = api.find_namespace(&iter);
-        println!("zzz checking ns {}", iter);
         match namespace {
             None => return false,
             Some(namespace) => {
                 if namespace.find_dto(find_ty).is_some() {
-                    println!("zzz FOUND!");
                     return true;
                 }
             }
