@@ -78,6 +78,10 @@ impl<'v, 'a> Namespace<'v, 'a> {
         name
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.children().count() == 0
+    }
+
     pub fn children(&'a self) -> impl Iterator<Item = NamespaceChild<'v, 'a>> + 'a {
         self.target
             .children

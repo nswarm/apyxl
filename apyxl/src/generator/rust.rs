@@ -31,10 +31,16 @@ impl Generator for Rust {
 fn write_namespace(namespace: Namespace, o: &mut Indented) -> Result<()> {
     o.write_str("pub mod ")?;
     o.write_str(&namespace.name())?;
-    o.write(' ')?;
-    write_block_start(o)?;
-    write_namespace_contents(namespace, o)?;
-    write_block_end(o)
+
+    if namespace.is_empty() {
+        o.write(';')?;
+    } else {
+        o.write(' ')?;
+        write_block_start(o)?;
+        write_namespace_contents(namespace, o)?;
+        write_block_end(o)?;
+    }
+    Ok(())
 }
 
 fn write_namespace_contents(namespace: Namespace, o: &mut Indented) -> Result<()> {

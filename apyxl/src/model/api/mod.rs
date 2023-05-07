@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use itertools::Itertools;
 
+pub use attributes::Attributes;
 pub use dependencies::Dependencies;
 pub use entity_id::EntityId;
 pub use ty::BaseType;
@@ -9,8 +10,7 @@ pub use ty::Type;
 pub use ty::UserTypeName;
 pub use validate::ValidationError;
 
-use crate::model::chunk;
-
+mod attributes;
 mod dependencies;
 mod entity_id;
 mod ty;
@@ -62,18 +62,13 @@ pub struct Rpc<'a> {
     pub attributes: Attributes,
 }
 
-/// Additional metadata attached to entities.
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
-pub struct Attributes {
-    pub chunk: Option<chunk::Attribute>,
-}
-
 impl<'a> Namespace<'a> {
     /// Perform a simple merge of [Namespace] `other` into this [Namespace] by adding all of
     /// `other`'s children to to this [Namespace]'s children. `other`'s name is ignored. This may
     /// result in duplicate children.
     pub fn merge(&mut self, mut other: Namespace<'a>) {
-        self.children.append(&mut other.children)
+        self.children.append(&mut other.children);
+        self.attributes.merge(other.attributes);
     }
 
     /// Add dto [Dto] `dto` as a child of this [Namespace].
