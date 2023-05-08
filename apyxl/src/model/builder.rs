@@ -1,14 +1,14 @@
 use std::borrow::Cow;
 
-use crate::{generator, output, Generator};
 use anyhow::Result;
 use itertools::Itertools;
-use log::{debug, error, log_enabled, trace, Level};
+use log::{debug, error};
 
 use crate::model::api::validate;
 use crate::model::{
     chunk, Api, Chunk, EntityId, Metadata, Model, Namespace, ValidationError, UNDEFINED_NAMESPACE,
 };
+use crate::{generator, output, Generator};
 
 /// Helper struct made for parsing [Api]s spread across multiple [Chunk]s. Tracks [Metadata]
 /// associated with entities in the [Api]s.
@@ -16,9 +16,30 @@ use crate::model::{
 /// After all desired [Api]s are merged, the [Builder] can be finalized via [Builder::build] which will
 /// perform validation across the entire [Api] and return the final [Model].
 pub struct Builder<'a> {
+    config: Config,
     api: Api<'a>,
     namespace_stack: Vec<String>,
     metadata: Metadata,
+}
+
+#[derive(Default)]
+pub struct Config {
+    /// Prints the API after merging namespaces, but before validation. Useful for debugging
+    /// validation.
+    pub debug_pre_validate_print: PreValidatePrint,
+}
+
+#[derive(Default)]
+pub enum PreValidatePrint {
+    #[default]
+    None,
+
+    /// Prints the API using [generator::Rust]. This is more readable than
+    /// [PreValidatePrint::Debug], but may be missing information like user-provided attributes.
+    Rust,
+
+    /// Print the API using [std::fmt::Debug]. This is very verbose, but complete.
+    Debug,
 }
 
 impl Default for Builder<'_> {
@@ -28,6 +49,7 @@ impl Default for Builder<'_> {
                 name: Cow::Borrowed(UNDEFINED_NAMESPACE),
                 ..Default::default()
             },
+            config: Default::default(),
             namespace_stack: Default::default(),
             metadata: Default::default(),
         }
@@ -35,6 +57,12 @@ impl Default for Builder<'_> {
 }
 
 impl<'a> Builder<'a> {
+    pub fn with_config(config: Config) -> Self {
+        let mut s = Self::default();
+        s.config = config;
+        s
+    }
+
     /// Merge `namespace` into the builder's [Api].
     ///
     /// If the `name` of the `namespace` is [UNDEFINED_NAMESPACE] it will be merged with the
@@ -104,12 +132,7 @@ impl<'a> Builder<'a> {
     pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError>> {
         dedupe_namespace_children(&mut self.api);
 
-        // todo lock these behind additional options
-        if log_enabled!(Level::Trace) {
-            trace!("pre-validation API: {:#?}", self.api);
-        } else if log_enabled!(Level::Debug) {
-            pretty_print_api(&self.api);
-        }
+        self.pre_validation_print();
 
         let errors = [
             validate::recurse_api(&self.api, validate::namespace_names),
@@ -161,6 +184,14 @@ impl<'a> Builder<'a> {
     pub fn into_api(self) -> Api<'a> {
         self.api
     }
+
+    fn pre_validation_print(&self) {
+        match self.config.debug_pre_validate_print {
+            PreValidatePrint::None => {}
+            PreValidatePrint::Rust => pretty_print_api(&self.api),
+            PreValidatePrint::Debug => println!("pre-validation API: {:#?}", self.api),
+        }
+    }
 }
 
 fn dedupe_namespace_children(namespace: &mut Namespace) {
@@ -187,7 +218,7 @@ fn pretty_print_api(api: &Api) {
     let mut output = output::Buffer::default();
     match generator::Rust::default().generate(model.view(), &mut output) {
         Ok(_) => {
-            debug!("pre-validation API:\n{}", output.to_string());
+            println!("pre-validation API:\n{}", output.to_string());
         }
         Err(err) => error!(
             "error when generating pre-validation API for printing: {}",

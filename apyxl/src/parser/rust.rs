@@ -18,9 +18,11 @@ type Error<'a> = extra::Err<Simple<'a, char>>;
 pub struct Rust {}
 
 impl ApyxlParser for Rust {
-    fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>> {
-        let mut builder = model::Builder::default();
-
+    fn parse<'a, I: Input + 'a>(
+        &self,
+        input: &'a mut I,
+        builder: &mut model::Builder<'a>,
+    ) -> Result<()> {
         for (chunk, data) in input.chunks() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
             if let Some(file_path) = &chunk.relative_file_path {
@@ -50,7 +52,7 @@ impl ApyxlParser for Rust {
             builder.clear_namespace();
         }
 
-        Ok(builder)
+        Ok(())
     }
 }
 
@@ -297,7 +299,7 @@ mod tests {
     use chumsky::error::Simple;
     use chumsky::Parser;
 
-    use crate::model::UNDEFINED_NAMESPACE;
+    use crate::model::{Builder, UNDEFINED_NAMESPACE};
     use crate::parser::rust::field;
     use crate::{input, parser, Parser as ApyxlParser};
 
@@ -326,7 +328,9 @@ mod tests {
         mod namespace {}
         "#,
         );
-        let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
+        let mut builder = Builder::default();
+        parser::Rust::default().parse(&mut input, &mut builder)?;
+        let model = builder.build().unwrap();
         assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
         assert!(model.api().dto("dto").is_some());
         assert!(model.api().rpc("rpc").is_some());
@@ -335,7 +339,7 @@ mod tests {
     }
 
     mod file_path_to_mod {
-        use crate::model::{Chunk, EntityId};
+        use crate::model::{Builder, Chunk, EntityId};
         use crate::{input, parser, Parser};
         use anyhow::Result;
 
@@ -343,7 +347,9 @@ mod tests {
         fn file_path_including_name_without_ext() -> Result<()> {
             let mut input = input::ChunkBuffer::new();
             input.add_chunk(Chunk::with_relative_file_path("a/b/c.rs"), "struct dto {}");
-            let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
+            let mut builder = Builder::default();
+            parser::Rust::default().parse(&mut input, &mut builder)?;
+            let model = builder.build().unwrap();
 
             let namespace = model.api().find_namespace(&EntityId::from("a.b.c"));
             assert!(namespace.is_some());
@@ -358,7 +364,9 @@ mod tests {
                 Chunk::with_relative_file_path("a/b/mod.rs"),
                 "struct dto {}",
             );
-            let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
+            let mut builder = Builder::default();
+            parser::Rust::default().parse(&mut input, &mut builder)?;
+            let model = builder.build().unwrap();
 
             let namespace = model.api().find_namespace(&EntityId::from("a.b"));
             assert!(namespace.is_some());
@@ -373,7 +381,9 @@ mod tests {
                 Chunk::with_relative_file_path("a/b/lib.rs"),
                 "struct dto {}",
             );
-            let model = parser::Rust::default().parse(&mut input)?.build().unwrap();
+            let mut builder = Builder::default();
+            parser::Rust::default().parse(&mut input, &mut builder)?;
+            let model = builder.build().unwrap();
 
             let namespace = model.api().find_namespace(&EntityId::from("a.b"));
             assert!(namespace.is_some());

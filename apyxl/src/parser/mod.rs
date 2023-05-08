@@ -8,5 +8,9 @@ use crate::model;
 mod rust;
 
 pub trait Parser {
-    fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>>;
+    fn parse<'a, I: Input + 'a>(
+        &self,
+        input: &'a mut I,
+        builder: &mut model::Builder<'a>,
+    ) -> Result<()>;
 }

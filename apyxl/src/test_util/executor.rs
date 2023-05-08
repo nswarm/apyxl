@@ -1,4 +1,4 @@
-use crate::model::Metadata;
+use crate::model::{Builder, Metadata};
 use crate::{input, model, parser, Parser};
 
 #[derive(Default)]
@@ -16,10 +16,11 @@ impl TestExecutor {
     }
 
     pub fn api(&mut self) -> model::Api {
+        let mut builder = Builder::default();
         self.parser
-            .parse(&mut self.input)
-            .expect("failed to parse input")
-            .into_api()
+            .parse(&mut self.input, &mut builder)
+            .expect("failed to parse input");
+        builder.into_api()
     }
 
     pub fn model(&mut self) -> model::Model {

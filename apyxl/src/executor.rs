@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
-use log::info;
+use log::{info, log_enabled};
 
 use crate::generator::Generator;
 use crate::input::Input;
+use crate::model;
 use crate::model::ValidationError;
 use crate::output::Output;
 use crate::parser::Parser;
@@ -61,7 +62,9 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
         }
 
         info!("Parsing...");
-        let model_builder = parser.parse(input)?;
+        // todo external config
+        let mut model_builder = model::Builder::with_config(builder_config());
+        parser.parse(input, &mut model_builder)?;
 
         info!("Validating model...");
         let model = match model_builder.build() {
@@ -84,6 +87,20 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
             }
         }
         Ok(())
+    }
+}
+
+fn builder_config() -> model::builder::Config {
+    let print = if log_enabled!(log::Level::Trace) {
+        model::builder::PreValidatePrint::Debug
+    } else if log_enabled!(log::Level::Debug) {
+        model::builder::PreValidatePrint::Rust
+    } else {
+        model::builder::PreValidatePrint::None
+    };
+
+    model::builder::Config {
+        debug_pre_validate_print: print,
     }
 }
 
@@ -231,8 +248,11 @@ mod tests {
         }
     }
     impl Parser for FakeParser {
-        fn parse<'a, I: Input + 'a>(&self, input: &'a mut I) -> Result<model::Builder<'a>> {
-            let mut builder = model::Builder::default();
+        fn parse<'a, I: Input + 'a>(
+            &self,
+            input: &'a mut I,
+            builder: &mut model::Builder<'a>,
+        ) -> Result<()> {
             builder.merge(Api {
                 name: Cow::Borrowed(UNDEFINED_NAMESPACE),
                 children: input
@@ -255,7 +275,7 @@ mod tests {
                     .collect::<Vec<NamespaceChild>>(),
                 attributes: Default::default(),
             });
-            Ok(builder)
+            Ok(())
         }
     }
 

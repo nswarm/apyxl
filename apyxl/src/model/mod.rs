@@ -5,7 +5,7 @@ pub use chunk::Chunk;
 pub use metadata::Metadata;
 
 pub mod api;
-mod builder;
+pub mod builder;
 pub mod chunk;
 pub mod metadata;
 
