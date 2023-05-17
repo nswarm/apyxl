@@ -2,13 +2,14 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
+use chumsky::error;
 use chumsky::prelude::*;
-use chumsky::text::whitespace;
 use log::debug;
 
 use crate::model::{
     Api, Dto, EntityId, Field, Namespace, NamespaceChild, Rpc, Type, UNDEFINED_NAMESPACE,
 };
+use crate::parser::Config;
 use crate::Parser as ApyxlParser;
 use crate::{model, Input};
 
@@ -20,6 +21,7 @@ pub struct Rust {}
 impl ApyxlParser for Rust {
     fn parse<'a, I: Input + 'a>(
         &self,
+        config: &'a Config,
         input: &'a mut I,
         builder: &mut model::Builder<'a>,
     ) -> Result<()> {
@@ -35,7 +37,7 @@ impl ApyxlParser for Rust {
                 .padded()
                 .repeated()
                 .collect::<Vec<_>>()
-                .ignore_then(namespace_children(namespace()).padded())
+                .ignore_then(namespace_children(&config, namespace(&config)).padded())
                 .then_ignore(end())
                 .parse(&data)
                 .into_result()
@@ -90,10 +92,10 @@ fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
 
 fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
     text::keyword("pub")
-        .then(whitespace().at_least(1))
+        .then(text::whitespace().at_least(1))
         .or_not()
         .then(text::keyword("use"))
-        .then(whitespace().at_least(1))
+        .then(text::whitespace().at_least(1))
         .then(text::ident().separated_by(just("::")).at_least(1))
         .then(just(';'))
         .ignored()
@@ -107,7 +109,33 @@ macro_rules! ty_or_ref {
     };
 }
 
-fn ty<'a>() -> impl Parser<'a, &'a str, Type, Error<'a>> {
+fn user_ty<'a>(config: &'a Config) -> impl Parser<'a, &'a str, String, Error> + 'a {
+    custom(move |input| {
+        for (i, ty) in config.user_types.iter().enumerate() {
+            let marker = input.save();
+            match input.parse(just(ty.parse.as_str())) {
+                Ok(_) => {
+                    let _ = input.next();
+                    return Ok(ty.name.to_string());
+                }
+                Err(err) => {
+                    input.rewind(marker);
+                    if i == config.user_types.len() - 1 {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+        // Just need _any error_.
+        Err(error::Error::<&'a str>::expected_found(
+            None,
+            None,
+            input.span_since(input.offset()),
+        ))
+    })
+}
+
+fn ty(config: &Config) -> impl Parser<&str, Type, Error> {
     choice((
         just("bool").map(|_| Type::Bool),
         ty_or_ref!("u8").map(|_| Type::U8),
@@ -129,6 +157,7 @@ fn ty<'a>() -> impl Parser<'a, &'a str, Type, Error<'a>> {
         ty_or_ref!("Vec<u8>").map(|_| Type::Bytes),
         just("&str").map(|_| Type::String),
         just("&[u8]").map(|_| Type::Bytes),
+        user_ty(config).map(|name| Type::User(name.to_string())),
         entity_id().map(Type::Api),
     ))
 }
@@ -146,10 +175,10 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
         })
 }
 
-fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
+fn field<'a>(config: &'a Config) -> impl Parser<'a, &'a str, Field, Error> + 'a {
     text::ident()
         .then_ignore(just(':').padded())
-        .then(ty())
+        .then(ty(config))
         .padded()
         .map(|(name, ty)| Field {
             name,
@@ -159,18 +188,18 @@ fn field<'a>() -> impl Parser<'a, &'a str, Field<'a>, Error<'a>> {
         .padded_by(multi_comment())
 }
 
-fn dto<'a>() -> impl Parser<'a, &'a str, Dto<'a>, Error<'a>> {
+fn dto(config: &Config) -> impl Parser<&str, Dto, Error> {
     let attr = just("#[")
         .then(any().and_is(just("]").not()).repeated().slice())
         .then(just(']'));
-    let fields = field()
+    let fields = field(config)
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
         .padded_by(multi_comment())
         .delimited_by(just('{').padded(), just('}').padded());
     let name = text::keyword("pub")
-        .then(whitespace().at_least(1))
+        .then(text::whitespace().at_least(1))
         .or_not()
         .ignore_then(text::keyword("struct").padded())
         .ignore_then(text::ident());
@@ -233,19 +262,19 @@ fn expr_block<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
     })
 }
 
-fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
+fn rpc(config: &Config) -> impl Parser<&str, Rpc, Error> {
     let fn_keyword = text::keyword("pub")
-        .then(whitespace().at_least(1))
+        .then(text::whitespace().at_least(1))
         .or_not()
         .then(text::keyword("fn"));
     let name = fn_keyword.padded().ignore_then(text::ident());
-    let params = field()
+    let params = field(config)
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
         .padded_by(multi_comment())
         .delimited_by(just('(').padded(), just(')').padded());
-    let return_type = just("->").ignore_then(ty().padded());
+    let return_type = just("->").ignore_then(ty(config).padded());
     name.then(params)
         .then(return_type.or_not())
         .then_ignore(expr_block().padded())
@@ -258,11 +287,12 @@ fn rpc<'a>() -> impl Parser<'a, &'a str, Rpc<'a>, Error<'a>> {
 }
 
 fn namespace_children<'a>(
+    config: &'a Config,
     namespace: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
-        dto().map(NamespaceChild::Dto),
-        rpc().map(NamespaceChild::Rpc),
+        dto(config).map(NamespaceChild::Dto),
+        rpc(config).map(NamespaceChild::Rpc),
         namespace.map(NamespaceChild::Namespace),
     ))
     .padded_by(multi_comment())
@@ -270,13 +300,13 @@ fn namespace_children<'a>(
     .collect::<Vec<_>>()
 }
 
-fn namespace<'a>() -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
+fn namespace(config: &Config) -> impl Parser<&str, Namespace, Error> {
     recursive(|nested| {
         let mod_keyword = text::keyword("pub")
-            .then(whitespace().at_least(1))
+            .then(text::whitespace().at_least(1))
             .or_not()
             .then(text::keyword("mod"));
-        let body = namespace_children(nested)
+        let body = namespace_children(config, nested)
             .boxed()
             .delimited_by(just('{').padded(), just('}').padded());
         mod_keyword
@@ -295,20 +325,35 @@ fn namespace<'a>() -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
     use chumsky::error::Simple;
     use chumsky::Parser;
 
     use crate::model::{Builder, UNDEFINED_NAMESPACE};
     use crate::parser::rust::field;
+    use crate::parser::{Config, UserType};
     use crate::{input, parser, Parser as ApyxlParser};
 
+    use lazy_static::lazy_static;
+
     type TestError = Vec<Simple<'static, char>>;
+    fn wrap_test_err(err: TestError) -> anyhow::Error {
+        anyhow!("errors encountered while parsing: {:?}", err)
+    }
+
+    lazy_static! {
+        static ref CONFIG: Config = Config {
+            user_types: vec![UserType {
+                parse: "user_type".to_string(),
+                name: "user".to_string()
+            }]
+        };
+    }
 
     #[test]
-    fn test_field() -> Result<(), TestError> {
-        let result = field().parse("name: Type");
-        let output = result.into_result()?;
+    fn test_field() -> Result<()> {
+        let result = field(&CONFIG).parse("name: Type");
+        let output = result.into_result().map_err(wrap_test_err)?;
         assert_eq!(output.name, "name");
         assert_eq!(output.ty.api().unwrap().name().unwrap(), "Type");
         Ok(())
@@ -329,7 +374,7 @@ mod tests {
         "#,
         );
         let mut builder = Builder::default();
-        parser::Rust::default().parse(&mut input, &mut builder)?;
+        parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
         let model = builder.build().unwrap();
         assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
         assert!(model.api().dto("dto").is_some());
@@ -339,16 +384,18 @@ mod tests {
     }
 
     mod file_path_to_mod {
-        use crate::model::{Builder, Chunk, EntityId};
-        use crate::{input, parser, Parser};
         use anyhow::Result;
+
+        use crate::model::{Builder, Chunk, EntityId};
+        use crate::parser::rust::tests::CONFIG;
+        use crate::{input, parser, Parser};
 
         #[test]
         fn file_path_including_name_without_ext() -> Result<()> {
             let mut input = input::ChunkBuffer::new();
             input.add_chunk(Chunk::with_relative_file_path("a/b/c.rs"), "struct dto {}");
             let mut builder = Builder::default();
-            parser::Rust::default().parse(&mut input, &mut builder)?;
+            parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
             let model = builder.build().unwrap();
 
             let namespace = model.api().find_namespace(&EntityId::from("a.b.c"));
@@ -365,7 +412,7 @@ mod tests {
                 "struct dto {}",
             );
             let mut builder = Builder::default();
-            parser::Rust::default().parse(&mut input, &mut builder)?;
+            parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
             let model = builder.build().unwrap();
 
             let namespace = model.api().find_namespace(&EntityId::from("a.b"));
@@ -382,7 +429,7 @@ mod tests {
                 "struct dto {}",
             );
             let mut builder = Builder::default();
-            parser::Rust::default().parse(&mut input, &mut builder)?;
+            parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
             let model = builder.build().unwrap();
 
             let namespace = model.api().find_namespace(&EntityId::from("a.b"));
@@ -393,17 +440,19 @@ mod tests {
     }
 
     mod ty {
-        use crate::model::Type;
         use chumsky::Parser;
 
         use crate::model::EntityId;
-        use crate::parser::rust::tests::TestError;
+        use crate::model::Type;
+        use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::ty;
+        use anyhow::Result;
 
         macro_rules! test {
             ($name: ident, $data:literal, $expected:expr) => {
                 #[test]
-                fn $name() -> Result<(), TestError> {
+                fn $name() -> Result<()> {
                     run_test($data, $expected)
                 }
             };
@@ -451,10 +500,43 @@ mod tests {
         test!(bytes_slice, "&[u8]", Type::Bytes);
         test!(entity_id, "a::b::c", Type::Api(EntityId::from("a.b.c")));
 
-        fn run_test(data: &'static str, expected: Type) -> Result<(), TestError> {
-            let ty = ty().parse(data).into_result()?;
+        // Defined in CONFIG.
+        test!(user, "user_type", Type::User("user".to_string()));
+
+        fn run_test(data: &'static str, expected: Type) -> Result<()> {
+            let ty = ty(&CONFIG)
+                .parse(data)
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(ty, expected);
             Ok(())
+        }
+    }
+
+    mod user_ty {
+        use chumsky::Parser;
+
+        use crate::parser::rust::user_ty;
+        use crate::parser::{Config, UserType};
+
+        #[test]
+        fn test() {
+            let config = Config {
+                user_types: vec![
+                    UserType {
+                        parse: "i32".to_string(),
+                        name: "int".to_string(),
+                    },
+                    UserType {
+                        parse: "f32".to_string(),
+                        name: "float".to_string(),
+                    },
+                ],
+            };
+            let ty = user_ty(&config).parse("i32").into_output().unwrap();
+            assert_eq!(ty, "int");
+            let ty = user_ty(&config).parse("f32").into_output().unwrap();
+            assert_eq!(ty, "float");
         }
     }
 
@@ -462,68 +544,82 @@ mod tests {
         use chumsky::Parser;
 
         use crate::parser::rust::entity_id;
-        use crate::parser::rust::tests::TestError;
+        use crate::parser::rust::tests::wrap_test_err;
+        use anyhow::Result;
 
         #[test]
-        fn starts_with_underscore() -> Result<(), TestError> {
-            let id = entity_id().parse("_type").into_result()?;
+        fn starts_with_underscore() -> Result<()> {
+            let id = entity_id()
+                .parse("_type")
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(id.path, vec!["_type"]);
             Ok(())
         }
 
         #[test]
-        fn with_path() -> Result<(), TestError> {
-            let id = entity_id().parse("a::b::c").into_result()?;
+        fn with_path() -> Result<()> {
+            let id = entity_id()
+                .parse("a::b::c")
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(id.path, vec!["a", "b", "c"]);
             Ok(())
         }
 
         #[test]
-        fn reference() -> Result<(), TestError> {
-            let id = entity_id().parse("&Type").into_result()?;
+        fn reference() -> Result<()> {
+            let id = entity_id()
+                .parse("&Type")
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(id.path, vec!["&Type"]);
             Ok(())
         }
     }
 
     mod namespace {
+        use crate::parser::rust::tests::CONFIG;
         use chumsky::Parser;
 
         use crate::model::NamespaceChild;
         use crate::parser::rust::namespace;
-        use crate::parser::rust::tests::TestError;
+        use crate::parser::rust::tests::wrap_test_err;
+        use anyhow::Result;
 
         #[test]
-        fn declaration() -> Result<(), TestError> {
-            let namespace = namespace()
+        fn declaration() -> Result<()> {
+            let namespace = namespace(&CONFIG)
                 .parse(
                     r#"
             mod empty;
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(namespace.name, "empty");
             assert!(namespace.children.is_empty());
             Ok(())
         }
 
         #[test]
-        fn empty() -> Result<(), TestError> {
-            let namespace = namespace()
+        fn empty() -> Result<()> {
+            let namespace = namespace(&CONFIG)
                 .parse(
                     r#"
             mod empty {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(namespace.name, "empty");
             assert!(namespace.children.is_empty());
             Ok(())
         }
 
         #[test]
-        fn with_dto() -> Result<(), TestError> {
-            let namespace = namespace()
+        fn with_dto() -> Result<()> {
+            let namespace = namespace(&CONFIG)
                 .parse(
                     r#"
             mod ns {
@@ -531,7 +627,8 @@ mod tests {
             }
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(namespace.name, "ns");
             assert_eq!(namespace.children.len(), 1);
             match &namespace.children[0] {
@@ -542,8 +639,8 @@ mod tests {
         }
 
         #[test]
-        fn nested() -> Result<(), TestError> {
-            let namespace = namespace()
+        fn nested() -> Result<()> {
+            let namespace = namespace(&CONFIG)
                 .parse(
                     r#"
             mod ns0 {
@@ -551,7 +648,8 @@ mod tests {
             }
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(namespace.name, "ns0");
             assert_eq!(namespace.children.len(), 1);
             match &namespace.children[0] {
@@ -562,8 +660,8 @@ mod tests {
         }
 
         #[test]
-        fn nested_dto() -> Result<(), TestError> {
-            let namespace = namespace()
+        fn nested_dto() -> Result<()> {
+            let namespace = namespace(&CONFIG)
                 .parse(
                     r#"
             mod ns0 {
@@ -573,7 +671,8 @@ mod tests {
             }
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(namespace.name, "ns0");
             assert_eq!(namespace.children.len(), 1);
             match &namespace.children[0] {
@@ -592,57 +691,62 @@ mod tests {
     }
 
     mod dto {
+        use crate::parser::rust::tests::CONFIG;
         use chumsky::Parser;
 
         use crate::parser::rust::dto;
-        use crate::parser::rust::tests::TestError;
+        use crate::parser::rust::tests::wrap_test_err;
+        use anyhow::Result;
 
         #[test]
-        fn empty() -> Result<(), TestError> {
-            let dto = dto()
+        fn empty() -> Result<()> {
+            let dto = dto(&CONFIG)
                 .parse(
                     r#"
             struct StructName {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(dto.name, "StructName");
             assert_eq!(dto.fields.len(), 0);
             Ok(())
         }
 
         #[test]
-        fn pub_struct() -> Result<(), TestError> {
-            let dto = dto()
+        fn pub_struct() -> Result<()> {
+            let dto = dto(&CONFIG)
                 .parse(
                     r#"
             pub struct StructName {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(dto.name, "StructName");
             assert_eq!(dto.fields.len(), 0);
             Ok(())
         }
 
         #[test]
-        fn ignore_derive() -> Result<(), TestError> {
-            let dto = dto()
+        fn ignore_derive() -> Result<()> {
+            let dto = dto(&CONFIG)
                 .parse(
                     r#"
             #[derive(Whatever)]
             struct StructName {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(dto.name, "StructName");
             assert_eq!(dto.fields.len(), 0);
             Ok(())
         }
 
         #[test]
-        fn multiple_fields() -> Result<(), TestError> {
-            let dto = dto()
+        fn multiple_fields() -> Result<()> {
+            let dto = dto(&CONFIG)
                 .parse(
                     r#"
             struct StructName {
@@ -651,7 +755,8 @@ mod tests {
             }
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(dto.name, "StructName");
             assert_eq!(dto.fields.len(), 2);
             assert_eq!(dto.fields[0].name, "field0");
@@ -660,8 +765,8 @@ mod tests {
         }
 
         #[test]
-        fn fields_with_comments() -> Result<(), TestError> {
-            let dto = dto()
+        fn fields_with_comments() -> Result<()> {
+            let dto = dto(&CONFIG)
                 .parse(
                     r#"
             struct StructName {
@@ -672,7 +777,8 @@ mod tests {
             }
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(dto.name, "StructName");
             assert_eq!(dto.fields.len(), 2);
             assert_eq!(dto.fields[0].name, "field0");
@@ -682,20 +788,23 @@ mod tests {
     }
 
     mod rpc {
+        use crate::parser::rust::tests::CONFIG;
         use chumsky::Parser;
 
         use crate::parser::rust::rpc;
-        use crate::parser::rust::tests::TestError;
+        use crate::parser::rust::tests::wrap_test_err;
+        use anyhow::Result;
 
         #[test]
-        fn empty_fn() -> Result<(), TestError> {
-            let rpc = rpc()
+        fn empty_fn() -> Result<()> {
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name() {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(rpc.name, "rpc_name");
             assert!(rpc.params.is_empty());
             assert!(rpc.return_type.is_none());
@@ -703,14 +812,15 @@ mod tests {
         }
 
         #[test]
-        fn pub_fn() -> Result<(), TestError> {
-            let rpc = rpc()
+        fn pub_fn() -> Result<()> {
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             pub fn rpc_name() {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(rpc.name, "rpc_name");
             assert!(rpc.params.is_empty());
             assert!(rpc.return_type.is_none());
@@ -719,7 +829,7 @@ mod tests {
 
         #[test]
         fn fn_keyword_smushed() {
-            let rpc = rpc()
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             pubfn rpc_name() {}
@@ -730,14 +840,15 @@ mod tests {
         }
 
         #[test]
-        fn single_param() -> Result<(), TestError> {
-            let rpc = rpc()
+        fn single_param() -> Result<()> {
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name(param0: ParamType0) {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 1);
             assert_eq!(rpc.params[0].name, "param0");
             assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
@@ -745,14 +856,15 @@ mod tests {
         }
 
         #[test]
-        fn multiple_params() -> Result<(), TestError> {
-            let rpc = rpc()
+        fn multiple_params() -> Result<()> {
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name(param0: ParamType0, param1: ParamType1, param2: ParamType2) {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
             assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
@@ -764,8 +876,8 @@ mod tests {
         }
 
         #[test]
-        fn multiple_params_with_comments() -> Result<(), TestError> {
-            let rpc = rpc()
+        fn multiple_params_with_comments() -> Result<()> {
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name(
@@ -778,7 +890,8 @@ mod tests {
             ) {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
             assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
@@ -790,8 +903,8 @@ mod tests {
         }
 
         #[test]
-        fn multiple_params_weird_spacing_trailing_comma() -> Result<(), TestError> {
-            let rpc = rpc()
+        fn multiple_params_weird_spacing_trailing_comma() -> Result<()> {
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name(param0: ParamType0      , param1
@@ -800,7 +913,8 @@ mod tests {
                 ) {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
             assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
@@ -812,14 +926,15 @@ mod tests {
         }
 
         #[test]
-        fn return_type() -> Result<(), TestError> {
-            let rpc = rpc()
+        fn return_type() -> Result<()> {
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name() -> Asdfg {}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(
                 rpc.return_type.as_ref().map(|x| x.api().unwrap().name()),
                 Some(Some("Asdfg"))
@@ -828,14 +943,15 @@ mod tests {
         }
 
         #[test]
-        fn return_type_weird_spacing() -> Result<(), TestError> {
-            let rpc = rpc()
+        fn return_type_weird_spacing() -> Result<()> {
+            let rpc = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name()           ->Asdfg{}
             "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(
                 rpc.return_type.as_ref().map(|x| x.api().unwrap().name()),
                 Some(Some("Asdfg"))
@@ -845,28 +961,36 @@ mod tests {
     }
 
     mod comments {
+        use crate::parser::rust::tests::CONFIG;
         use chumsky::Parser;
 
-        use crate::parser::rust::tests::TestError;
+        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::{comment, namespace};
+        use anyhow::Result;
 
         #[test]
-        fn line_comment() -> Result<(), TestError> {
-            let value = comment().parse("// line comment").into_result()?;
+        fn line_comment() -> Result<()> {
+            let value = comment()
+                .parse("// line comment")
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(value, "line comment");
             Ok(())
         }
 
         #[test]
-        fn block_comment() -> Result<(), TestError> {
-            let value = comment().parse("/* block comment */").into_result()?;
+        fn block_comment() -> Result<()> {
+            let value = comment()
+                .parse("/* block comment */")
+                .into_result()
+                .map_err(wrap_test_err)?;
             assert_eq!(value, "block comment");
             Ok(())
         }
 
         #[test]
-        fn line_comment_inside_namespace() -> Result<(), TestError> {
-            namespace()
+        fn line_comment_inside_namespace() -> Result<()> {
+            namespace(&CONFIG)
                 .parse(
                     r#"
                     mod ns { // comment
@@ -877,13 +1001,14 @@ mod tests {
                     }
                     "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             Ok(())
         }
 
         #[test]
-        fn block_comment_inside_namespace() -> Result<(), TestError> {
-            namespace()
+        fn block_comment_inside_namespace() -> Result<()> {
+            namespace(&CONFIG)
                 .parse(
                     r#"
                     mod ns { /* comment */
@@ -894,7 +1019,8 @@ mod tests {
                     }
                     "#,
                 )
-                .into_result()?;
+                .into_result()
+                .map_err(wrap_test_err)?;
             Ok(())
         }
     }

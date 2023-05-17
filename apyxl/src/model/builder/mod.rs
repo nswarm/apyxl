@@ -4,11 +4,15 @@ use anyhow::Result;
 use itertools::Itertools;
 use log::{debug, error};
 
+pub use config::*;
+
 use crate::model::api::validate;
 use crate::model::{
     chunk, Api, Chunk, EntityId, Metadata, Model, Namespace, ValidationError, UNDEFINED_NAMESPACE,
 };
 use crate::{generator, output, Generator};
+
+mod config;
 
 /// Helper struct made for parsing [Api]s spread across multiple [Chunk]s. Tracks [Metadata]
 /// associated with entities in the [Api]s.
@@ -20,26 +24,6 @@ pub struct Builder<'a> {
     api: Api<'a>,
     namespace_stack: Vec<String>,
     metadata: Metadata,
-}
-
-#[derive(Default)]
-pub struct Config {
-    /// Prints the API after merging namespaces, but before validation. Useful for debugging
-    /// validation.
-    pub debug_pre_validate_print: PreValidatePrint,
-}
-
-#[derive(Default)]
-pub enum PreValidatePrint {
-    #[default]
-    None,
-
-    /// Prints the API using [generator::Rust]. This is more readable than
-    /// [PreValidatePrint::Debug], but may be missing information like user-provided attributes.
-    Rust,
-
-    /// Print the API using [std::fmt::Debug]. This is very verbose, but complete.
-    Debug,
 }
 
 impl Default for Builder<'_> {
@@ -61,6 +45,14 @@ impl<'a> Builder<'a> {
         let mut s = Self::default();
         s.config = config;
         s
+    }
+
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
     }
 
     /// Merge `namespace` into the builder's [Api].

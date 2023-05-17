@@ -4,10 +4,10 @@ use log::{info, log_enabled};
 
 use crate::generator::Generator;
 use crate::input::Input;
-use crate::model;
 use crate::model::ValidationError;
 use crate::output::Output;
 use crate::parser::Parser;
+use crate::{model, parser};
 
 #[derive(Default)]
 pub struct Executor<'a, I: Input, P: Parser> {
@@ -63,8 +63,9 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
 
         info!("Parsing...");
         // todo external config
+        let parser_config = parser::Config::default();
         let mut model_builder = model::Builder::with_config(builder_config());
-        parser.parse(input, &mut model_builder)?;
+        parser.parse(&parser_config, input, &mut model_builder)?;
 
         info!("Validating model...");
         let model = match model_builder.build() {
@@ -118,7 +119,7 @@ mod tests {
     use crate::model::{Api, Dto, NamespaceChild, UNDEFINED_NAMESPACE};
     use crate::output::Output;
     use crate::parser::Parser;
-    use crate::{model, view};
+    use crate::{model, parser, view};
 
     mod execute {
         use anyhow::Result;
@@ -250,6 +251,7 @@ mod tests {
     impl Parser for FakeParser {
         fn parse<'a, I: Input + 'a>(
             &self,
+            _: &'a parser::Config,
             input: &'a mut I,
             builder: &mut model::Builder<'a>,
         ) -> Result<()> {

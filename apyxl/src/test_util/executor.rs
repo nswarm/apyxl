@@ -1,5 +1,6 @@
 use crate::model::{Builder, Metadata};
 use crate::{input, model, parser, Parser};
+use lazy_static::lazy_static;
 
 #[derive(Default)]
 pub struct TestExecutor {
@@ -7,8 +8,12 @@ pub struct TestExecutor {
     parser: parser::Rust,
 }
 
+lazy_static! {
+    static ref CONFIG: parser::Config = parser::Config::default();
+}
+
 impl TestExecutor {
-    pub fn new<D: ToString>(data: D) -> Self {
+    pub fn new<S: ToString>(data: S) -> Self {
         Self {
             input: input::Buffer::new(data),
             parser: parser::Rust::default(),
@@ -18,7 +23,7 @@ impl TestExecutor {
     pub fn api(&mut self) -> model::Api {
         let mut builder = Builder::default();
         self.parser
-            .parse(&mut self.input, &mut builder)
+            .parse(&CONFIG, &mut self.input, &mut builder)
             .expect("failed to parse input");
         builder.into_api()
     }
