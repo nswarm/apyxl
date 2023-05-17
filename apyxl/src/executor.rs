@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
-use log::{info, log_enabled};
+use log::{debug, info, log_enabled};
 
 use crate::generator::Generator;
 use crate::input::Input;
@@ -13,6 +13,7 @@ use crate::{model, parser};
 pub struct Executor<'a, I: Input, P: Parser> {
     input: Option<&'a mut I>,
     parser: Option<&'a P>,
+    parser_config: Option<parser::Config>,
     generator_infos: Vec<GeneratorInfo<'a>>,
 }
 
@@ -29,6 +30,11 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
 
     pub fn parser(mut self, parser: &'a P) -> Self {
         self.parser = Some(parser);
+        self
+    }
+
+    pub fn parser_config(mut self, config: parser::Config) -> Self {
+        self.parser_config = Some(config);
         self
     }
 
@@ -61,9 +67,10 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
             }
         }
 
+        let parser_config = self.parser_config.unwrap_or(Default::default());
+        debug!("Parser Config: {:#?}", parser_config);
+
         info!("Parsing...");
-        // todo external config
-        let parser_config = parser::Config::default();
         let mut model_builder = model::Builder::with_config(builder_config());
         parser.parse(&parser_config, input, &mut model_builder)?;
 

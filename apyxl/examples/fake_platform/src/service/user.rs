@@ -2,6 +2,9 @@
 pub struct User {
     id: Id,
     display: Display,
+
+    // feature: user type in parser config
+    special_id: SpecialId,
 }
 
 #[derive(Default)]

@@ -19,6 +19,17 @@ fn main() -> Result<()> {
     Executor::default()
         .input(&mut input)
         .parser(&parser::Rust::default())
+        .parser_config(parser_config())
         .generator(&mut generator::Rust::default(), vec![&mut output])
         .execute()
+}
+
+fn parser_config() -> parser::Config {
+    parser::Config {
+        user_types: vec![parser::UserType {
+            parse: "SpecialId".to_string(),
+            name: "UserType<SpecialId>".to_string(),
+        }],
+        ..Default::default()
+    }
 }

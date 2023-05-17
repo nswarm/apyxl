@@ -150,7 +150,8 @@ fn write_type(ty: Type, o: &mut dyn Output) -> Result<()> {
         InnerType::F128 => o.write_str("f128"),
         InnerType::String => o.write_str("String"),
         InnerType::Bytes => o.write_str("Vec<u8>"),
-        InnerType::User(s) => return Err(anyhow!("generator does not support user type '{}'", s)),
+        // For the sake of example, just write the user type name.
+        InnerType::User(s) => o.write_str(s),
         InnerType::Api(id) => write_entity_id(id, o),
     }
 }
