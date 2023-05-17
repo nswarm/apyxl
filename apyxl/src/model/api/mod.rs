@@ -4,6 +4,9 @@ use itertools::Itertools;
 
 pub use attributes::Attributes;
 pub use dependencies::Dependencies;
+pub use en::Enum;
+pub use en::EnumValue;
+pub use en::EnumValueNumber;
 pub use entity_id::EntityId;
 pub use ty::BaseType;
 pub use ty::Type;
@@ -12,6 +15,7 @@ pub use validate::ValidationError;
 
 mod attributes;
 mod dependencies;
+mod en;
 mod entity_id;
 mod ty;
 pub mod validate;
@@ -34,6 +38,7 @@ pub struct Namespace<'a> {
 pub enum NamespaceChild<'a> {
     Dto(Dto<'a>),
     Rpc(Rpc<'a>),
+    Enum(Enum<'a>),
     Namespace(Namespace<'a>),
 }
 
@@ -80,9 +85,16 @@ impl<'a> Namespace<'a> {
 
     /// Add the [Rpc] `rpc` as a child of this [Namespace].
     /// No validation is performed to ensure the [Rpc] does not already exist, which may result
-    //     /// in duplicates.
+    /// in duplicates.
     pub fn add_rpc(&mut self, rpc: Rpc<'a>) {
         self.children.push(NamespaceChild::Rpc(rpc));
+    }
+
+    /// Add the [Enum] `enum` as a child of this [Namespace].
+    /// No validation is performed to ensure the [Enum] does not already exist, which may result
+    /// in duplicates.
+    pub fn add_enum(&mut self, en: Enum<'a>) {
+        self.children.push(NamespaceChild::Enum(en));
     }
 
     /// Add the [Namespace] `namespace` as a child of this [Namespace].
@@ -124,6 +136,22 @@ impl<'a> Namespace<'a> {
         })
     }
 
+    /// Get a [Enum] within this [Namespace] by name.
+    pub fn en(&self, name: &str) -> Option<&Enum<'a>> {
+        self.children.iter().find_map(|s| match s {
+            NamespaceChild::Enum(en) if en.name == name => Some(en),
+            _ => None,
+        })
+    }
+
+    /// Get a [Enum] within this [Namespace] by name.
+    pub fn en_mut(&mut self, name: &str) -> Option<&mut Enum<'a>> {
+        self.children.iter_mut().find_map(|s| match s {
+            NamespaceChild::Enum(en) if en.name == name => Some(en),
+            _ => None,
+        })
+    }
+
     /// Get a [Namespace] within this [Namespace] by name.
     pub fn namespace(&self, name: &str) -> Option<&Namespace<'a>> {
         self.children.iter().find_map(|s| match s {
@@ -155,6 +183,17 @@ impl<'a> Namespace<'a> {
     pub fn rpcs(&self) -> impl Iterator<Item = &Rpc<'a>> {
         self.children.iter().filter_map(|child| {
             if let NamespaceChild::Rpc(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Iterate over all [Enum]s within this [Namespace].
+    pub fn enums(&self) -> impl Iterator<Item = &Enum<'a>> {
+        self.children.iter().filter_map(|child| {
+            if let NamespaceChild::Enum(value) = child {
                 Some(value)
             } else {
                 None
@@ -244,6 +283,26 @@ impl<'a> Namespace<'a> {
         }
     }
 
+    /// Find a [Enum] by [EntityId] relative to this [Namespace].
+    pub fn find_enum(&self, entity_id: &EntityId) -> Option<&Enum<'a>> {
+        let namespace = self.find_namespace(&entity_id.namespace());
+        let name = entity_id.name();
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.en(&name),
+            _ => None,
+        }
+    }
+
+    /// Find a [Enum] by [EntityId] relative to this [Namespace].
+    pub fn find_enum_mut(&mut self, entity_id: &EntityId) -> Option<&mut Enum<'a>> {
+        let namespace = self.find_namespace_mut(&entity_id.namespace());
+        let name = entity_id.name();
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.en_mut(&name),
+            _ => None,
+        }
+    }
+
     /// Find a [Namespace] by [EntityId] relative to this [Namespace].
     /// If the type ref is empty, this [Namespace] will be returned.
     pub fn find_namespace(&self, entity_id: &EntityId) -> Option<&Namespace<'a>> {
@@ -289,6 +348,7 @@ impl<'a> NamespaceChild<'a> {
         match self {
             NamespaceChild::Dto(dto) => &dto.attributes,
             NamespaceChild::Rpc(rpc) => &rpc.attributes,
+            NamespaceChild::Enum(en) => &en.attributes,
             NamespaceChild::Namespace(namespace) => &namespace.attributes,
         }
     }
@@ -297,6 +357,7 @@ impl<'a> NamespaceChild<'a> {
         match self {
             NamespaceChild::Dto(dto) => &mut dto.attributes,
             NamespaceChild::Rpc(rpc) => &mut rpc.attributes,
+            NamespaceChild::Enum(en) => &mut en.attributes,
             NamespaceChild::Namespace(namespace) => &mut namespace.attributes,
         }
     }

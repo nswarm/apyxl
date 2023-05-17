@@ -49,8 +49,8 @@ impl<'v, 'a> Rpc<'v, 'a> {
                 Field::new(
                     param,
                     &self.xforms.rpc_param,
-                    &self.xforms.entity_id_xforms,
-                    &self.xforms.attr_xforms,
+                    &self.xforms.entity_id,
+                    &self.xforms.attr,
                 )
             })
     }
@@ -59,11 +59,11 @@ impl<'v, 'a> Rpc<'v, 'a> {
         self.target
             .return_type
             .as_ref()
-            .map(|target| Type::new(target, &self.xforms.entity_id_xforms))
+            .map(|target| Type::new(target, &self.xforms.entity_id))
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.xforms.attr_xforms)
+        Attributes::new(&self.target.attributes, &self.xforms.attr)
     }
 
     fn filter_param(&self, param: &model::Field) -> bool {

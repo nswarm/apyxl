@@ -6,6 +6,7 @@ use log::debug;
 
 pub use attributes::*;
 pub use dto::*;
+pub use en::*;
 pub use entity_id::*;
 pub use field::*;
 pub use namespace::*;
@@ -19,6 +20,7 @@ use crate::model::Chunk;
 
 mod attributes;
 mod dto;
+mod en;
 mod entity_id;
 mod field;
 mod namespace;
@@ -43,8 +45,10 @@ pub struct Transforms {
     dto_field: Vec<Box<dyn FieldTransform>>,
     rpc: Vec<Box<dyn RpcTransform>>,
     rpc_param: Vec<Box<dyn FieldTransform>>,
-    entity_id_xforms: Vec<Box<dyn EntityIdTransform>>,
-    attr_xforms: Vec<Box<dyn AttributeTransform>>,
+    en: Vec<Box<dyn EnumTransform>>,
+    en_value: Vec<Box<dyn EnumValueTransform>>,
+    entity_id: Vec<Box<dyn EntityIdTransform>>,
+    attr: Vec<Box<dyn AttributeTransform>>,
 }
 
 impl<'v: 'a, 'a> Model<'v, 'a> {
@@ -118,13 +122,23 @@ pub(crate) trait Transformer: Sized {
         self
     }
 
+    fn with_enum_transform(mut self, xform: impl EnumTransform + 'static) -> Self {
+        self.xforms().en.push(Box::new(xform));
+        self
+    }
+
+    fn with_enum_value_transform(mut self, xform: impl EnumValueTransform + 'static) -> Self {
+        self.xforms().en_value.push(Box::new(xform));
+        self
+    }
+
     fn with_field_transform(mut self, xform: impl FieldTransform + 'static) -> Self {
         self.xforms().dto_field.push(Box::new(xform));
         self
     }
 
     fn with_entity_id_transform(mut self, xform: impl EntityIdTransform + 'static) -> Self {
-        self.xforms().entity_id_xforms.push(Box::new(xform));
+        self.xforms().entity_id.push(Box::new(xform));
         self
     }
 }
@@ -146,10 +160,10 @@ impl Transforms {
         self.rpc_param.iter()
     }
     pub fn entity_id_xforms(&self) -> impl Iterator<Item = &Box<dyn EntityIdTransform>> {
-        self.entity_id_xforms.iter()
+        self.entity_id.iter()
     }
     pub fn attr_xforms(&self) -> impl Iterator<Item = &Box<dyn AttributeTransform>> {
-        self.attr_xforms.iter()
+        self.attr.iter()
     }
 }
 
@@ -159,14 +173,14 @@ mod tests {
 
     use crate::model;
     use crate::view::{
-        DtoTransform, EntityIdTransform, FieldTransform, NamespaceTransform, RpcTransform,
+        DtoTransform, EntityIdTransform, EnumTransform, EnumValueTransform, FieldTransform,
+        NamespaceTransform, RpcTransform,
     };
 
     #[derive(Default, Debug, Clone)]
     pub struct TestRenamer {}
     impl TestRenamer {
         pub const SUFFIX: &'static str = "renamed";
-
         pub fn renamed(name: &str) -> String {
             format!("{}_{}", name, TestRenamer::SUFFIX)
         }
@@ -183,6 +197,16 @@ mod tests {
         }
     }
     impl RpcTransform for TestRenamer {
+        fn name(&self, value: &mut Cow<str>) {
+            *value = Cow::Owned(TestRenamer::renamed(value))
+        }
+    }
+    impl EnumTransform for TestRenamer {
+        fn name(&self, value: &mut Cow<str>) {
+            *value = Cow::Owned(TestRenamer::renamed(value))
+        }
+    }
+    impl EnumValueTransform for TestRenamer {
         fn name(&self, value: &mut Cow<str>) {
             *value = Cow::Owned(TestRenamer::renamed(value))
         }
@@ -211,6 +235,9 @@ mod tests {
         fn filter_rpc(&self, rpc: &model::Rpc) -> bool {
             !rpc.name.contains("hidden")
         }
+        fn filter_enum(&self, en: &model::Enum) -> bool {
+            !en.name.contains("hidden")
+        }
     }
 
     impl DtoTransform for TestFilter {
@@ -222,6 +249,12 @@ mod tests {
     impl RpcTransform for TestFilter {
         fn filter_param(&self, param: &model::Field) -> bool {
             !param.name.contains("hidden")
+        }
+    }
+
+    impl EnumTransform for TestFilter {
+        fn filter_value(&self, value: &model::EnumValue) -> bool {
+            !value.name.contains("hidden")
         }
     }
 }

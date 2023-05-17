@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use dyn_clone::DynClone;
 
 use crate::model;
-use crate::view::{Attributes, Dto, Rpc, Transforms};
+use crate::view::{Attributes, Dto, Enum, Rpc, Transforms};
 
 /// A named, nestable wrapper for a set of API entities.
 /// Wraps [model::Namespace].
@@ -19,6 +19,7 @@ pub struct Namespace<'v, 'a> {
 pub enum NamespaceChild<'v, 'a> {
     Dto(Dto<'v, 'a>),
     Rpc(Rpc<'v, 'a>),
+    Enum(Enum<'v, 'a>),
     Namespace(Namespace<'v, 'a>),
 }
 
@@ -42,6 +43,12 @@ pub trait NamespaceTransform: Debug + DynClone {
     fn filter_rpc(&self, _: &model::Rpc) -> bool {
         true
     }
+
+    /// `true`: included.
+    /// `false`: excluded.
+    fn filter_enum(&self, _: &model::Enum) -> bool {
+        true
+    }
 }
 
 dyn_clone::clone_trait_object!(NamespaceTransform);
@@ -53,6 +60,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             model::NamespaceChild::Namespace(target) => {
                 NamespaceChild::Namespace(Namespace::new(target, &xforms))
             }
+            model::NamespaceChild::Enum(target) => NamespaceChild::Enum(Enum::new(target, &xforms)),
             model::NamespaceChild::Rpc(target) => NamespaceChild::Rpc(Rpc::new(target, &xforms)),
         }
     }
@@ -89,13 +97,14 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .filter(|child| match child {
                 model::NamespaceChild::Dto(value) => self.filter_dto(value),
                 model::NamespaceChild::Rpc(value) => self.filter_rpc(value),
+                model::NamespaceChild::Enum(value) => self.filter_enum(value),
                 model::NamespaceChild::Namespace(value) => self.filter_namespace(value),
             })
             .map(|child| NamespaceChild::new(child, self.xforms))
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.xforms.attr_xforms)
+        Attributes::new(&self.target.attributes, &self.xforms.attr)
     }
 
     pub fn find_namespace(&'a self, id: &model::EntityId) -> Option<Namespace<'v, 'a>> {
@@ -122,6 +131,13 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .find_rpc(id)
             .filter(|rpc| self.xforms.namespace.iter().all(|x| x.filter_rpc(rpc)))
             .map(|rpc| Rpc::new(rpc, self.xforms))
+    }
+
+    pub fn find_enum(&'a self, id: &model::EntityId) -> Option<Enum<'v, 'a>> {
+        self.target
+            .find_enum(id)
+            .filter(|en| self.xforms.namespace.iter().all(|x| x.filter_enum(en)))
+            .map(|en| Enum::new(en, self.xforms))
     }
 
     pub fn namespaces(&'a self) -> impl Iterator<Item = Namespace<'v, 'a>> + 'a {
@@ -158,6 +174,10 @@ impl<'v, 'a> Namespace<'v, 'a> {
 
     fn filter_rpc(&self, rpc: &model::Rpc) -> bool {
         self.xforms.namespace.iter().all(|x| x.filter_rpc(rpc))
+    }
+
+    fn filter_enum(&self, en: &model::Enum) -> bool {
+        self.xforms.namespace.iter().all(|x| x.filter_enum(en))
     }
 }
 
@@ -278,6 +298,8 @@ mod tests {
                     struct hidden {}
                     fn visible() {}
                     fn hidden() {}
+                    enum visible {}
+                    enum hidden {}
                 "#,
         );
         let model = exe.model();
@@ -289,6 +311,7 @@ mod tests {
             .map(|v| match v {
                 NamespaceChild::Dto(value) => value.name().to_string(),
                 NamespaceChild::Rpc(value) => value.name().to_string(),
+                NamespaceChild::Enum(value) => value.name().to_string(),
                 NamespaceChild::Namespace(value) => value.name().to_string(),
             })
             .collect_vec();

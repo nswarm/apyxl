@@ -19,22 +19,31 @@ pub enum ValidationError {
     #[error("Invalid RPC name within namespace '{0}', index #{1}. RPC names cannot be empty.")]
     InvalidRpcName(EntityId, usize),
 
+    #[error("Invalid enum name within namespace '{0}', index #{1}. Enum names cannot be empty.")]
+    InvalidEnumName(EntityId, usize),
+
     #[error("Invalid field name at '{0}', index {1}. Field names cannot be empty.")]
     InvalidFieldName(EntityId, usize),
 
+    #[error("Invalid enum value name at '{0}', index {1}. Enum value names cannot be empty.")]
+    InvalidEnumValueName(EntityId, usize),
+
     #[error(
-        "Invalid field type '{0}::{1}', index {2}. Type '{3}' must be a valid DTO in the API."
+        "Invalid field type '{0}::{1}', index {2}. Type '{3}' must be a valid DTO or enum in the API."
     )]
     InvalidFieldType(EntityId, String, usize, EntityId),
 
-    #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO in the API.")]
+    #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO or enum in the API.")]
     InvalidRpcReturnType(EntityId, EntityId),
 
-    #[error("Duplicate DTO definition: '{0}'")]
-    DuplicateDto(EntityId),
+    #[error("Duplicate DTO or enum definition: '{0}'")]
+    DuplicateDtoOrEnum(EntityId),
 
     #[error("Duplicate RPC definition: '{0}'")]
     DuplicateRpc(EntityId),
+
+    #[error("Duplicate enum value name within enum '{1}': '{0}'")]
+    DuplicateEnumValue(EntityId, String),
 }
 
 pub fn namespace_names<'a, 'b: 'a>(
@@ -53,15 +62,19 @@ pub fn namespace_names<'a, 'b: 'a>(
     })
 }
 
-pub fn no_duplicate_dtos<'a, 'b>(
+pub fn no_duplicate_dto_enums<'a, 'b>(
     _: &'b Api<'a>,
     namespace: &'b Namespace<'a>,
     namespace_id: EntityId,
 ) -> impl Iterator<Item = ValidationError> + 'b {
-    namespace
-        .dtos()
-        .duplicates_by(|dto| dto.name)
-        .map(move |dto| ValidationError::DuplicateDto(namespace_id.child(dto.name).to_owned()))
+    let dto_names = namespace.dtos().map(|dto| dto.name);
+
+    let enum_names = namespace.enums().map(|en| en.name);
+
+    dto_names
+        .chain(enum_names)
+        .duplicates()
+        .map(move |name| ValidationError::DuplicateDtoOrEnum(namespace_id.child(name).to_owned()))
 }
 
 pub fn no_duplicate_rpcs<'a, 'b>(
@@ -171,6 +184,62 @@ pub fn rpc_return_types<'a, 'b>(
                 ))
             }
         })
+}
+
+pub fn enum_names<'a, 'b>(
+    _: &'b Api<'a>,
+    namespace: &'b Namespace<'a>,
+    namespace_id: EntityId,
+) -> impl Iterator<Item = ValidationError> + 'b {
+    namespace.enums().enumerate().filter_map(move |(i, en)| {
+        if en.name.is_empty() {
+            Some(ValidationError::InvalidEnumName(namespace_id.to_owned(), i))
+        } else {
+            None
+        }
+    })
+}
+
+pub fn enum_value_names<'a, 'b>(
+    _: &'b Api<'a>,
+    namespace: &'b Namespace<'a>,
+    namespace_id: EntityId,
+) -> impl Iterator<Item = ValidationError> + 'b {
+    namespace.enums().flat_map(move |en| {
+        en.values
+            .iter()
+            .enumerate()
+            .filter_map(|(i, value)| {
+                if value.name.is_empty() {
+                    Some(ValidationError::InvalidEnumValueName(
+                        namespace_id.child(en.name),
+                        i,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect_vec()
+    })
+}
+
+pub fn no_duplicate_enum_value_names<'a, 'b>(
+    _: &'b Api<'a>,
+    namespace: &'b Namespace<'a>,
+    namespace_id: EntityId,
+) -> impl Iterator<Item = ValidationError> + 'b {
+    namespace.enums().flat_map(move |en| {
+        en.values
+            .iter()
+            .duplicates_by(|value| value.name)
+            .map(|value| {
+                ValidationError::DuplicateEnumValue(
+                    namespace_id.child(en.name),
+                    value.name.to_owned(),
+                )
+            })
+            .collect_vec()
+    })
 }
 
 pub fn field_names<'a, 'b>(

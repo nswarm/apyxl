@@ -135,8 +135,11 @@ impl<'a> Builder<'a> {
             validate::recurse_api(&self.api, validate::rpc_param_names),
             validate::recurse_api(&self.api, validate::rpc_param_types),
             validate::recurse_api(&self.api, validate::rpc_return_types),
-            validate::recurse_api(&self.api, validate::no_duplicate_dtos),
+            validate::recurse_api(&self.api, validate::enum_names),
+            validate::recurse_api(&self.api, validate::enum_value_names),
+            validate::recurse_api(&self.api, validate::no_duplicate_dto_enums),
             validate::recurse_api(&self.api, validate::no_duplicate_rpcs),
+            validate::recurse_api(&self.api, validate::no_duplicate_enum_value_names),
         ]
         .into_iter()
         .flatten()
@@ -613,7 +616,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateDto(EntityId::from("ns.dto")),
+                    ValidationError::DuplicateDtoOrEnum(EntityId::from("ns.dto")),
                 );
             }
 
@@ -631,6 +634,40 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::DuplicateRpc(EntityId::from("ns.rpc")),
+                );
+            }
+
+            #[test]
+            fn enums() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        enum en {}
+                        enum en {}
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateDtoOrEnum(EntityId::from("ns.en")),
+                );
+            }
+
+            #[test]
+            fn enum_dto() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct asdf {}
+                        enum asdf {}
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateDtoOrEnum(EntityId::from("ns.asdf")),
                 );
             }
 
@@ -845,6 +882,95 @@ mod tests {
                         EntityId::from("rpc"),
                         EntityId::from("ns.dto"),
                     ),
+                );
+            }
+        }
+
+        mod validate_enum {
+            use crate::model::builder::tests::{
+                assert_contains_error, build_from_input, test_builder,
+            };
+            use crate::model::builder::ValidationError;
+            use crate::model::EntityId;
+            use crate::test_util::executor::TestExecutor;
+
+            #[test]
+            fn name_empty() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        enum en0 {}
+                        enum en1 {}
+                        enum en2 {}
+                    }
+                "#,
+                );
+                let mut builder = test_builder(&mut exe);
+                builder
+                    .api
+                    .find_dto_mut(&EntityId::from("ns.en2"))
+                    .unwrap()
+                    .name = "";
+
+                let result = builder.build();
+                let expected_entity_id = EntityId::from("ns");
+                let expected_index = 2;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidDtoName(expected_entity_id.to_owned(), expected_index),
+                );
+            }
+
+            #[test]
+            fn value_name_empty() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        enum en {
+                            value0 = 0,
+                            value1 = 1,
+                            value2 = 2,
+                        }
+                    }"#,
+                );
+                let mut builder = test_builder(&mut exe);
+                builder
+                    .api
+                    .find_enum_mut(&EntityId::from("ns.dto"))
+                    .unwrap()
+                    .value_mut("value1")
+                    .unwrap()
+                    .name = "";
+
+                let result = builder.build();
+                let expected_entity_id = EntityId::from("ns.dto");
+                let expected_index = 1;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidFieldName(
+                        expected_entity_id.to_owned(),
+                        expected_index,
+                    ),
+                );
+            }
+
+            #[test]
+            fn duplicate_value_names() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        enum en {
+                            val = 0,
+                            val = 1,
+                            val = 2,
+                        }
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateEnumValue(EntityId::from("ns.en"), "val".to_string()),
                 );
             }
         }
