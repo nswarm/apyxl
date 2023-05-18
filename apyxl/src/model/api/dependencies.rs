@@ -45,6 +45,10 @@ impl Dependencies {
             self.add_node(&namespace_id.child(rpc.name));
         }
 
+        for en in namespace.enums() {
+            self.add_node(&namespace_id.child(en.name));
+        }
+
         for child in namespace.namespaces() {
             self.add_nodes_recursively(child, &namespace_id.child(&child.name));
         }
@@ -285,6 +289,27 @@ mod tests {
                     assert!(deps.node(&EntityId::from("rpc")).is_some());
                     assert!(deps.node(&EntityId::from("ns0.rpc")).is_some());
                     assert!(deps.node(&EntityId::from("ns0.ns1.rpc")).is_some());
+                    assert_eq!(deps.graph.node_count(), 3);
+                },
+            );
+        }
+
+        #[test]
+        fn en() {
+            run_test(
+                r#"
+            enum en {}
+            mod ns0 {
+                enum en {}
+                mod ns1 {
+                    enum en {}
+                }
+            }
+            "#,
+                |deps| {
+                    assert!(deps.node(&EntityId::from("en")).is_some());
+                    assert!(deps.node(&EntityId::from("ns0.en")).is_some());
+                    assert!(deps.node(&EntityId::from("ns0.ns1.en")).is_some());
                     assert_eq!(deps.graph.node_count(), 3);
                 },
             );

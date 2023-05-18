@@ -295,6 +295,9 @@ fn find_type_relative(api: &Api, initial_namespace: EntityId, find_ty: &EntityId
                 if namespace.find_dto(find_ty).is_some() {
                     return true;
                 }
+                if namespace.find_enum(find_ty).is_some() {
+                    return true;
+                }
             }
         }
         iter = match iter.parent() {
@@ -358,8 +361,10 @@ mod tests {
                         fn rpc() -> other0::dto2 {}
                         fn rpc() -> dto3 {}
                         fn rpc() -> ns3::dto4 {}
+                        fn rpc() -> en {}
 
                         struct dto3 {}
+                        enum en {}
 
                         mod ns3 {
                             struct dto4 {}
@@ -430,13 +435,30 @@ mod tests {
         }
 
         #[test]
+        fn enum_type() {
+            run_test(
+                r#"
+                mod ns0 {
+                    mod ns1 {
+                        struct dto0 {
+                            field0: en,
+                        }
+                        enum en {}
+                    }
+                }
+                "#,
+                &EntityId::from("ns0.ns1.dto0"),
+            );
+        }
+
+        #[test]
         fn relative_path_local() {
             run_test(
                 r#"
                 mod ns0 {
                     mod ns1 {
                         struct dto0 {
-                            field: dto1,
+                            field0: dto1,
                         }
                         struct dto1 {}
                     }

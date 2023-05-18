@@ -7,10 +7,17 @@ pub struct User {
     special_id: SpecialId,
 }
 
+pub enum Presence {
+    Offline,
+    Online,
+    Invalid = 999,
+}
+
 #[derive(Default)]
-struct Display {
+pub struct Display {
     display_name: String,
     discriminator: String,
+    presence: Presence,
 }
 
 // pub type Id = u128; todo aliases?
