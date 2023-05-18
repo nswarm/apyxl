@@ -7,7 +7,8 @@ use chumsky::prelude::*;
 use log::debug;
 
 use crate::model::{
-    Api, Dto, EntityId, Field, Namespace, NamespaceChild, Rpc, Type, UNDEFINED_NAMESPACE,
+    Api, Dto, EntityId, Enum, EnumValue, EnumValueNumber, Field, Namespace, NamespaceChild, Rpc,
+    Type, UNDEFINED_NAMESPACE,
 };
 use crate::parser::Config;
 use crate::Parser as ApyxlParser;
@@ -286,6 +287,57 @@ fn rpc(config: &Config) -> impl Parser<&str, Rpc, Error> {
         })
 }
 
+const INVALID_ENUM_NUMBER: EnumValueNumber = EnumValueNumber::MAX;
+fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
+    let number = just('=')
+        .padded()
+        .ignore_then(text::int(10).try_map(|s, span| {
+            str::parse::<EnumValueNumber>(s)
+                .map_err(|_| error::Error::<&'a str>::expected_found(None, None, span))
+        }));
+    text::ident()
+        .then(number.or_not())
+        .padded()
+        .map(|(name, number)| EnumValue {
+            name,
+            number: number.unwrap_or(INVALID_ENUM_NUMBER),
+            attributes: Default::default(),
+        })
+        .padded_by(multi_comment())
+}
+
+fn en<'a>() -> impl Parser<'a, &'a str, Enum<'a>, Error<'a>> {
+    let name = text::keyword("pub")
+        .then(text::whitespace().at_least(1))
+        .or_not()
+        .ignore_then(text::keyword("enum").padded())
+        .ignore_then(text::ident());
+    let values = en_value()
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .padded_by(multi_comment())
+        .delimited_by(just('{').padded(), just('}').padded());
+    name.then(values).map(|(name, values)| Enum {
+        name,
+        values: apply_enum_value_number_defaults(values),
+        attributes: Default::default(),
+    })
+}
+
+fn apply_enum_value_number_defaults(mut values: Vec<EnumValue>) -> Vec<EnumValue> {
+    let mut i = 0;
+    for value in &mut values {
+        if value.number == INVALID_ENUM_NUMBER {
+            value.number = i;
+            i += 1;
+        } else {
+            i = value.number + 1;
+        }
+    }
+    values
+}
+
 fn namespace_children<'a>(
     config: &'a Config,
     namespace: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
@@ -293,6 +345,7 @@ fn namespace_children<'a>(
     choice((
         dto(config).map(NamespaceChild::Dto),
         rpc(config).map(NamespaceChild::Rpc),
+        en().map(NamespaceChild::Enum),
         namespace.map(NamespaceChild::Namespace),
     ))
     .padded_by(multi_comment())
@@ -328,13 +381,12 @@ mod tests {
     use anyhow::{anyhow, Result};
     use chumsky::error::Simple;
     use chumsky::Parser;
+    use lazy_static::lazy_static;
 
     use crate::model::{Builder, UNDEFINED_NAMESPACE};
     use crate::parser::rust::field;
     use crate::parser::{Config, UserType};
     use crate::{input, parser, Parser as ApyxlParser};
-
-    use lazy_static::lazy_static;
 
     type TestError = Vec<Simple<'static, char>>;
     fn wrap_test_err(err: TestError) -> anyhow::Error {
@@ -440,6 +492,7 @@ mod tests {
     }
 
     mod ty {
+        use anyhow::Result;
         use chumsky::Parser;
 
         use crate::model::EntityId;
@@ -447,7 +500,6 @@ mod tests {
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::ty;
-        use anyhow::Result;
 
         macro_rules! test {
             ($name: ident, $data:literal, $expected:expr) => {
@@ -541,11 +593,11 @@ mod tests {
     }
 
     mod entity_id {
+        use anyhow::Result;
         use chumsky::Parser;
 
         use crate::parser::rust::entity_id;
         use crate::parser::rust::tests::wrap_test_err;
-        use anyhow::Result;
 
         #[test]
         fn starts_with_underscore() -> Result<()> {
@@ -579,13 +631,13 @@ mod tests {
     }
 
     mod namespace {
-        use crate::parser::rust::tests::CONFIG;
+        use anyhow::Result;
         use chumsky::Parser;
 
         use crate::model::NamespaceChild;
         use crate::parser::rust::namespace;
         use crate::parser::rust::tests::wrap_test_err;
-        use anyhow::Result;
+        use crate::parser::rust::tests::CONFIG;
 
         #[test]
         fn declaration() -> Result<()> {
@@ -691,12 +743,12 @@ mod tests {
     }
 
     mod dto {
-        use crate::parser::rust::tests::CONFIG;
+        use anyhow::Result;
         use chumsky::Parser;
 
         use crate::parser::rust::dto;
         use crate::parser::rust::tests::wrap_test_err;
-        use anyhow::Result;
+        use crate::parser::rust::tests::CONFIG;
 
         #[test]
         fn empty() -> Result<()> {
@@ -788,12 +840,12 @@ mod tests {
     }
 
     mod rpc {
-        use crate::parser::rust::tests::CONFIG;
+        use anyhow::Result;
         use chumsky::Parser;
 
         use crate::parser::rust::rpc;
         use crate::parser::rust::tests::wrap_test_err;
-        use anyhow::Result;
+        use crate::parser::rust::tests::CONFIG;
 
         #[test]
         fn empty_fn() -> Result<()> {
@@ -960,13 +1012,123 @@ mod tests {
         }
     }
 
+    mod en_value {
+        use anyhow::Result;
+        use chumsky::Parser;
+
+        use crate::parser::rust::en_value;
+        use crate::parser::rust::tests::wrap_test_err;
+
+        #[test]
+        fn test() -> Result<()> {
+            let value = en_value()
+                .parse("Value = 1")
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(value.name, "Value");
+            assert_eq!(value.number, 1);
+            Ok(())
+        }
+    }
+
+    mod en {
+        use anyhow::Result;
+        use chumsky::Parser;
+
+        use crate::model::{EnumValue, EnumValueNumber};
+        use crate::parser::rust::en;
+        use crate::parser::rust::tests::wrap_test_err;
+
+        #[test]
+        fn without_numbers() -> Result<()> {
+            let en = en()
+                .parse(
+                    r#"
+                    enum en {
+                        Value0,
+                        Value1,
+                        Value2,
+                    }
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(en.name, "en");
+            assert_value(en.values.get(0), "Value0", 0);
+            assert_value(en.values.get(1), "Value1", 1);
+            assert_value(en.values.get(2), "Value2", 2);
+            Ok(())
+        }
+
+        #[test]
+        fn with_numbers() -> Result<()> {
+            let en = en()
+                .parse(
+                    r#"
+                    enum en {
+                        Value0 = 10,
+                        Value1 = 25,
+                        Value2 = 999,
+                        SameNum = 999,
+                    }
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(en.name, "en");
+            assert_value(en.values.get(0), "Value0", 10);
+            assert_value(en.values.get(1), "Value1", 25);
+            assert_value(en.values.get(2), "Value2", 999);
+            assert_value(en.values.get(3), "SameNum", 999);
+            Ok(())
+        }
+
+        #[test]
+        fn with_mixed_numbers() -> Result<()> {
+            let en = en()
+                .parse(
+                    r#"
+                    enum en {
+                        Value0,
+                        Value1 = 25,
+                        Value2,
+                        SameNum = 999,
+                    }
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(en.name, "en");
+            assert_value(en.values.get(0), "Value0", 0);
+            assert_value(en.values.get(1), "Value1", 25);
+            assert_value(en.values.get(2), "Value2", 26);
+            assert_value(en.values.get(3), "SameNum", 999);
+            Ok(())
+        }
+
+        fn assert_value(
+            actual: Option<&EnumValue>,
+            expected_name: &str,
+            expected_number: EnumValueNumber,
+        ) {
+            assert_eq!(
+                actual,
+                Some(&EnumValue {
+                    name: expected_name,
+                    number: expected_number,
+                    ..Default::default()
+                })
+            );
+        }
+    }
+
     mod comments {
-        use crate::parser::rust::tests::CONFIG;
+        use anyhow::Result;
         use chumsky::Parser;
 
         use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::{comment, namespace};
-        use anyhow::Result;
 
         #[test]
         fn line_comment() -> Result<()> {

@@ -908,7 +908,7 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_dto_mut(&EntityId::from("ns.en2"))
+                    .find_enum_mut(&EntityId::from("ns.en2"))
                     .unwrap()
                     .name = "";
 
@@ -917,7 +917,7 @@ mod tests {
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidDtoName(expected_entity_id.to_owned(), expected_index),
+                    ValidationError::InvalidEnumName(expected_entity_id.to_owned(), expected_index),
                 );
             }
 
@@ -936,18 +936,18 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_enum_mut(&EntityId::from("ns.dto"))
+                    .find_enum_mut(&EntityId::from("ns.en"))
                     .unwrap()
                     .value_mut("value1")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from("ns.dto");
+                let expected_entity_id = EntityId::from("ns.en");
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidFieldName(
+                    ValidationError::InvalidEnumValueName(
                         expected_entity_id.to_owned(),
                         expected_index,
                     ),

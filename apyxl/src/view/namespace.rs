@@ -161,6 +161,13 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .map(move |rpc| Rpc::new(rpc, self.xforms))
     }
 
+    pub fn enums(&'a self) -> impl Iterator<Item = Enum<'v, 'a>> {
+        self.target
+            .enums()
+            .filter(|en| self.filter_enum(en))
+            .map(move |en| Enum::new(en, self.xforms))
+    }
+
     fn filter_namespace(&self, namespace: &model::Namespace) -> bool {
         self.xforms
             .namespace
@@ -315,7 +322,7 @@ mod tests {
                 NamespaceChild::Namespace(value) => value.name().to_string(),
             })
             .collect_vec();
-        assert_eq!(children, vec!["visible", "visible", "visible"]);
+        assert_eq!(children, vec!["visible", "visible", "visible", "visible"]);
     }
 
     #[test]

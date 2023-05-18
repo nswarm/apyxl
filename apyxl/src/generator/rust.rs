@@ -3,7 +3,7 @@ use itertools::Itertools;
 
 use crate::generator::Generator;
 use crate::output::{Indented, Output};
-use crate::view::{Dto, EntityId, Field, InnerType, Model, Namespace, Rpc, Type};
+use crate::view::{Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, Type};
 
 #[derive(Debug, Default)]
 pub struct Rust {}
@@ -46,6 +46,11 @@ fn write_namespace(namespace: Namespace, o: &mut Indented) -> Result<()> {
 fn write_namespace_contents(namespace: Namespace, o: &mut Indented) -> Result<()> {
     for rpc in namespace.rpcs() {
         write_rpc(rpc, o)?;
+        o.newline()?;
+    }
+
+    for en in namespace.enums() {
+        write_enum(en, o)?;
         o.newline()?;
     }
 
@@ -98,6 +103,27 @@ fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {
 
     o.write_str(" {}")?;
     o.newline()
+}
+
+fn write_enum(en: Enum, o: &mut Indented) -> Result<()> {
+    o.write_str("enum ")?;
+    o.write_str(&en.name())?;
+    o.write(' ')?;
+    write_block_start(o)?;
+
+    for value in en.values() {
+        write_enum_value(value, o)?;
+        o.newline()?;
+    }
+
+    write_block_end(o)
+}
+
+fn write_enum_value(value: EnumValue, o: &mut dyn Output) -> Result<()> {
+    o.write_str(&value.name())?;
+    o.write_str(" = ")?;
+    o.write_str(&value.number().to_string())?;
+    o.write(',')
 }
 
 fn write_dto_start(dto: Dto, o: &mut Indented) -> Result<()> {
@@ -180,7 +206,9 @@ fn write_joined(components: &[&str], separator: &str, o: &mut dyn Output) -> Res
 mod tests {
     use anyhow::Result;
 
-    use crate::generator::rust::{write_dto, write_entity_id, write_field, write_rpc, INDENT};
+    use crate::generator::rust::{
+        write_dto, write_entity_id, write_enum, write_field, write_rpc, INDENT,
+    };
     use crate::generator::Rust;
     use crate::output::Indented;
     use crate::test_util::executor::TestExecutor;
@@ -323,6 +351,41 @@ pub mod ns0 {
                 )
             },
             "asdf: Type,",
+        )
+    }
+
+    #[test]
+    fn en() -> Result<()> {
+        assert_output(
+            |o| {
+                write_enum(
+                    view::Enum::new(
+                        &model::Enum {
+                            name: "en",
+                            values: vec![
+                                model::EnumValue {
+                                    name: "value0",
+                                    number: 10,
+                                    attributes: Default::default(),
+                                },
+                                model::EnumValue {
+                                    name: "value1",
+                                    number: 20,
+                                    attributes: Default::default(),
+                                },
+                            ],
+                            attributes: Default::default(),
+                        },
+                        &Transforms::default(),
+                    ),
+                    &mut Indented::new(o, INDENT),
+                )
+            },
+            r#"enum en {
+    value0 = 10,
+    value1 = 20,
+}
+"#,
         )
     }
 

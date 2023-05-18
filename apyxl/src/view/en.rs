@@ -108,9 +108,9 @@ mod tests {
         let mut exe = TestExecutor::new(
             r#"
                     mod ns0 {
-                        fn en0() {}
+                        enum en0 {}
                         mod ns1 {
-                            fn en1() {}
+                            enum en1 {}
                         }
                     }
                 "#,
