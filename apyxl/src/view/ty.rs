@@ -17,7 +17,11 @@ impl<'v> Type<'v> {
     }
 
     pub fn inner(&self) -> InnerType {
-        match self.target {
+        self.model_to_view_ty(self.target)
+    }
+
+    fn model_to_view_ty<'a>(&'a self, ty: &'a model::Type) -> InnerType {
+        match ty {
             model::Type::Bool => InnerType::Bool,
             model::Type::U8 => InnerType::U8,
             model::Type::U16 => InnerType::U16,
@@ -38,6 +42,12 @@ impl<'v> Type<'v> {
             model::Type::Bytes => InnerType::Bytes,
             model::Type::User(name) => InnerType::User(name),
             model::Type::Api(id) => InnerType::Api(EntityId::new(id, self.xforms)),
+            model::Type::Array(ty) => InnerType::Array(Box::new(self.model_to_view_ty(ty))),
+            model::Type::Map { key, value } => InnerType::Map {
+                key: Box::new(self.model_to_view_ty(key)),
+                value: Box::new(self.model_to_view_ty(value)),
+            },
+            model::Type::Optional(ty) => InnerType::Optional(Box::new(self.model_to_view_ty(ty))),
         }
     }
 }

@@ -157,7 +157,11 @@ fn write_param(field: Field, o: &mut dyn Output) -> Result<()> {
 }
 
 fn write_type(ty: Type, o: &mut dyn Output) -> Result<()> {
-    match ty.inner() {
+    write_inner_type(ty.inner(), o)
+}
+
+fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
+    match ty {
         InnerType::Bool => o.write_str("bool"),
         InnerType::U8 => o.write_str("u8"),
         InnerType::U16 => o.write_str("u16"),
@@ -179,6 +183,9 @@ fn write_type(ty: Type, o: &mut dyn Output) -> Result<()> {
         // For the sake of example, just write the user type name.
         InnerType::User(s) => o.write_str(s),
         InnerType::Api(id) => write_entity_id(id, o),
+        InnerType::Array(ty) => write_vec(*ty, o),
+        InnerType::Map { key, value } => write_map(*key, *value, o),
+        InnerType::Optional(ty) => write_option(*ty, o),
     }
 }
 
@@ -188,6 +195,26 @@ fn write_entity_id(entity_id: EntityId, o: &mut dyn Output) -> Result<()> {
         "::",
         o,
     )
+}
+
+fn write_vec(ty: InnerType, o: &mut dyn Output) -> Result<()> {
+    o.write_str("Vec<")?;
+    write_inner_type(ty, o)?;
+    o.write('>')
+}
+
+fn write_map(key: InnerType, value: InnerType, o: &mut dyn Output) -> Result<()> {
+    o.write_str("HashMap<")?;
+    write_inner_type(key, o)?;
+    o.write_str(", ")?;
+    write_inner_type(value, o)?;
+    o.write('>')
+}
+
+fn write_option(ty: InnerType, o: &mut dyn Output) -> Result<()> {
+    o.write_str("Option<")?;
+    write_inner_type(ty, o)?;
+    o.write('>')
 }
 
 /// Writes the `components` joined with `separator` without unnecessary allocations.
@@ -428,6 +455,21 @@ pub mod ns0 {
             entity_id,
             "a::b::c",
             model::Type::Api(model::EntityId::from("a.b.c"))
+        );
+        test!(
+            vec,
+            "Vec<String>",
+            model::Type::new_array(model::Type::String)
+        );
+        test!(
+            option,
+            "Option<String>",
+            model::Type::new_optional(model::Type::String)
+        );
+        test!(
+            map,
+            "HashMap<String, i32>",
+            model::Type::new_map(model::Type::String, model::Type::I32)
         );
 
         fn run_test(ty: model::Type, expected: &str) -> Result<()> {

@@ -57,6 +57,19 @@ where
     /// Reference to another type within the API. This must reference an existing type within
     /// the API when built.
     Api(ApiType),
+
+    /// An array of the contained type.
+    Array(Box<Self>),
+
+    /// A key-value map.
+    Map {
+        key: Box<Self>,
+        value: Box<Self>,
+    },
+
+    /// An optional type, i.e. a type that also includes whether it is set or not.
+    /// Sometimes called a nullable type.
+    Optional(Box<Self>),
 }
 pub type UserTypeName = String;
 pub type Type = BaseType<EntityId, UserTypeName>;
@@ -72,5 +85,20 @@ impl Type {
         } else {
             None
         }
+    }
+
+    pub fn new_array(ty: Self) -> Self {
+        Type::Array(Box::new(ty))
+    }
+
+    pub fn new_map(key_ty: Self, value_ty: Self) -> Self {
+        Type::Map {
+            key: Box::new(key_ty),
+            value: Box::new(value_ty),
+        }
+    }
+
+    pub fn new_optional(ty: Self) -> Self {
+        Type::Optional(Box::new(ty))
     }
 }

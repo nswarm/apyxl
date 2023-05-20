@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use chumsky::error;
 use chumsky::prelude::*;
+use chumsky::text::whitespace;
 use log::debug;
 
 use crate::model::{
@@ -137,30 +138,71 @@ fn user_ty<'a>(config: &'a Config) -> impl Parser<'a, &'a str, String, Error> + 
 }
 
 fn ty(config: &Config) -> impl Parser<&str, Type, Error> {
-    choice((
-        just("bool").map(|_| Type::Bool),
-        ty_or_ref!("u8").map(|_| Type::U8),
-        ty_or_ref!("u16").map(|_| Type::U16),
-        ty_or_ref!("u32").map(|_| Type::U32),
-        ty_or_ref!("u64").map(|_| Type::U64),
-        ty_or_ref!("u128").map(|_| Type::U128),
-        ty_or_ref!("i8").map(|_| Type::I8),
-        ty_or_ref!("i16").map(|_| Type::I16),
-        ty_or_ref!("i32").map(|_| Type::I32),
-        ty_or_ref!("i64").map(|_| Type::I64),
-        ty_or_ref!("i128").map(|_| Type::I128),
-        ty_or_ref!("f8").map(|_| Type::F8),
-        ty_or_ref!("f16").map(|_| Type::F16),
-        ty_or_ref!("f32").map(|_| Type::F32),
-        ty_or_ref!("f64").map(|_| Type::F64),
-        ty_or_ref!("f128").map(|_| Type::F128),
-        ty_or_ref!("String").map(|_| Type::String),
-        ty_or_ref!("Vec<u8>").map(|_| Type::Bytes),
-        just("&str").map(|_| Type::String),
-        just("&[u8]").map(|_| Type::Bytes),
-        user_ty(config).map(|name| Type::User(name.to_string())),
-        entity_id().map(Type::Api),
-    ))
+    recursive(|nested| {
+        choice((
+            just("bool").map(|_| Type::Bool),
+            ty_or_ref!("u8").map(|_| Type::U8),
+            ty_or_ref!("u16").map(|_| Type::U16),
+            ty_or_ref!("u32").map(|_| Type::U32),
+            ty_or_ref!("u64").map(|_| Type::U64),
+            ty_or_ref!("u128").map(|_| Type::U128),
+            ty_or_ref!("i8").map(|_| Type::I8),
+            ty_or_ref!("i16").map(|_| Type::I16),
+            ty_or_ref!("i32").map(|_| Type::I32),
+            ty_or_ref!("i64").map(|_| Type::I64),
+            ty_or_ref!("i128").map(|_| Type::I128),
+            ty_or_ref!("f8").map(|_| Type::F8),
+            ty_or_ref!("f16").map(|_| Type::F16),
+            ty_or_ref!("f32").map(|_| Type::F32),
+            ty_or_ref!("f64").map(|_| Type::F64),
+            ty_or_ref!("f128").map(|_| Type::F128),
+            ty_or_ref!("String").map(|_| Type::String),
+            ty_or_ref!("Vec<u8>").map(|_| Type::Bytes),
+            just("&str").map(|_| Type::String),
+            just("&[u8]").map(|_| Type::Bytes),
+            user_ty(config).map(|name| Type::User(name.to_string())),
+            vec(nested.clone()),
+            map(nested.clone()),
+            option(nested),
+            entity_id().map(Type::Api),
+        ))
+        .boxed()
+    })
+}
+
+fn vec<'a>(
+    ty: impl Parser<'a, &'a str, Type, Error<'a>>,
+) -> impl Parser<'a, &'a str, Type, Error<'a>> {
+    just("Vec<")
+        .then_ignore(whitespace())
+        .ignore_then(ty)
+        .then_ignore(whitespace())
+        .then_ignore(just('>'))
+        .map(|inner| Type::new_array(inner))
+}
+
+fn map<'a>(
+    ty: impl Parser<'a, &'a str, Type, Error<'a>> + Clone,
+) -> impl Parser<'a, &'a str, Type, Error<'a>> {
+    just("HashMap<")
+        .then_ignore(whitespace())
+        .ignore_then(ty.clone())
+        .then_ignore(just(',').padded())
+        .then(ty)
+        .then_ignore(just('>'))
+        .then_ignore(whitespace())
+        .map(|(key, value)| Type::new_map(key, value))
+}
+
+fn option<'a>(
+    ty: impl Parser<'a, &'a str, Type, Error<'a>>,
+) -> impl Parser<'a, &'a str, Type, Error<'a>> {
+    just("Option<")
+        .then_ignore(whitespace())
+        .ignore_then(ty)
+        .then_ignore(whitespace())
+        .then_ignore(just('>'))
+        .map(|inner| Type::new_optional(inner))
 }
 
 fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
@@ -551,6 +593,65 @@ mod tests {
         test!(str, "&str", Type::String);
         test!(bytes_slice, "&[u8]", Type::Bytes);
         test!(entity_id, "a::b::c", Type::Api(EntityId::from("a.b.c")));
+
+        // Vec/Array.
+        test!(vec, "Vec<i32>", Type::new_array(Type::I32));
+        test!(
+            vec_api,
+            "Vec<a::b::c>",
+            Type::new_array(Type::Api(EntityId::from("a.b.c")))
+        );
+        test!(
+            vec_nested,
+            "Vec<Vec<Vec<String>>>",
+            Type::new_array(Type::new_array(Type::new_array(Type::String)))
+        );
+
+        // Map.
+        test!(
+            map,
+            "HashMap<String, i32>",
+            Type::new_map(Type::String, Type::I32)
+        );
+        test!(
+            map_api,
+            "HashMap<dto, a::b::c>",
+            Type::new_map(
+                Type::Api(EntityId::from("dto")),
+                Type::Api(EntityId::from("a.b.c")),
+            )
+        );
+        test!(
+            map_nested,
+            "HashMap<String, HashMap<HashMap<i32, f32>, String>>",
+            Type::new_map(
+                Type::String,
+                Type::new_map(Type::new_map(Type::I32, Type::F32), Type::String)
+            )
+        );
+
+        // Option.
+        test!(option, "Option<i32>", Type::Optional(Box::new(Type::I32)));
+        test!(
+            option_api,
+            "Option<a::b::c>",
+            Type::new_optional(Type::Api(EntityId::from("a.b.c")))
+        );
+        test!(
+            option_nested,
+            "Option<Option<Option<String>>>",
+            Type::new_optional(Type::new_optional(Type::new_optional(Type::String)))
+        );
+
+        // Combined complex types.
+        test!(
+            complex_nested,
+            "HashMap<Option<String>, Vec<String>>",
+            Type::new_map(
+                Type::new_optional(Type::String),
+                Type::new_array(Type::String),
+            )
+        );
 
         // Defined in CONFIG.
         test!(user, "user_type", Type::User("user".to_string()));

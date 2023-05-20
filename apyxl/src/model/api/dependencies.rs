@@ -100,15 +100,46 @@ impl Dependencies {
     }
 
     fn add_edge(&mut self, from: NodeIndex, namespace_id: &EntityId, ty: &Type) {
-        let entity_id = if let Type::Api(entity_id) = ty {
-            entity_id
-        } else {
-            // No dependencies for non-api types.
-            return;
-        };
+        match ty {
+            Type::Bool
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::U128
+            | Type::I8
+            | Type::I16
+            | Type::I32
+            | Type::I64
+            | Type::I128
+            | Type::F8
+            | Type::F16
+            | Type::F32
+            | Type::F64
+            | Type::F128
+            | Type::String
+            | Type::Bytes
+            | Type::User(_) => return,
 
+            Type::Api(entity_id) => self.add_edge_relative(from, namespace_id, entity_id),
+
+            Type::Array(ty) | Type::Optional(ty) => self.add_edge(from, namespace_id, ty),
+
+            Type::Map { key, value } => {
+                self.add_edge(from, namespace_id, key);
+                self.add_edge(from, namespace_id, value);
+            }
+        }
+    }
+
+    fn add_edge_relative(
+        &mut self,
+        from: NodeIndex,
+        namespace_id: &EntityId,
+        relative_id: &EntityId,
+    ) {
         // We unwrap nodes here because we assume the api is validated, and all nodes are added first.
-        let to = self.node_relative(&namespace_id, entity_id).unwrap();
+        let to = self.node_relative(namespace_id, relative_id).unwrap();
         self.graph.add_edge(from, *to, ());
     }
 }
@@ -361,6 +392,83 @@ mod tests {
                     assert_eq!(deps.graph.edge_count(), 1);
                 },
             );
+        }
+    }
+
+    mod complex_types {
+        use crate::model::api::dependencies::tests::run_test;
+        use crate::model::EntityId;
+
+        #[test]
+        fn array() {
+            run_complex_type_test(
+                r#"
+                mod ns {
+                    struct src {
+                        field: Vec<dto>,
+                        field: Vec<en>,
+                    }
+                    struct dto {}
+                    enum en {}
+                }
+                "#,
+            );
+        }
+
+        #[test]
+        fn optional() {
+            run_complex_type_test(
+                r#"
+                mod ns {
+                    struct src {
+                        field: Option<dto>,
+                        field: Option<en>,
+                    }
+                    struct dto {}
+                    enum en {}
+                }
+                "#,
+            );
+        }
+
+        #[test]
+        fn map() {
+            run_complex_type_test(
+                r#"
+                mod ns {
+                    struct src {
+                        field: HashMap<en, dto>,
+                    }
+                    struct dto {}
+                    enum en {}
+                }
+                "#,
+            );
+        }
+
+        #[test]
+        fn transitive() {
+            run_complex_type_test(
+                r#"
+                mod ns {
+                    struct src {
+                        field: Option<Vec<HashMap<en, dto>>>,
+                    }
+                    struct dto {}
+                    enum en {}
+                }
+            "#,
+            );
+        }
+
+        fn run_complex_type_test(data: &str) {
+            let src = EntityId::from("ns.src");
+            let dto = EntityId::from("ns.dto");
+            let en = EntityId::from("ns.en");
+            run_test(data, |deps| {
+                assert!(deps.contains_edge(&src, &dto));
+                assert!(deps.contains_edge(&src, &en));
+            });
         }
     }
 
