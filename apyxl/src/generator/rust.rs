@@ -1,14 +1,20 @@
+use std::path::{Path, PathBuf};
+
 use anyhow::Result;
 use itertools::Itertools;
 
 use crate::generator::Generator;
+use crate::model::{Chunk, Dependencies};
 use crate::output::{Indented, Output};
-use crate::view::{Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, Type};
+use crate::view::{
+    Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, SubView, Type,
+};
+use crate::{model, rust_util};
 
 #[derive(Debug, Default)]
 pub struct Rust {}
 
-const INDENT: &str = "    ";
+const INDENT: &str = "    "; // 4 spaces.
 
 impl Generator for Rust {
     fn generate(&mut self, model: Model, output: &mut dyn Output) -> Result<()> {
@@ -21,11 +27,52 @@ impl Generator for Rust {
         for result in model.api_chunked_iter() {
             let (chunk, sub_view) = result?;
             o.write_chunk(chunk)?;
+            write_dependencies(&model, chunk, &sub_view, &mut o)?;
             write_namespace_contents(sub_view.namespace(), &mut o)?;
         }
 
         Ok(())
     }
+}
+
+fn write_dependencies(
+    model: &Model,
+    chunk: &Chunk,
+    sub_view: &SubView,
+    o: &mut dyn Output,
+) -> Result<()> {
+    let mut deps = collect_chunk_dependencies(
+        &model.api(),
+        &sub_view.root_id(),
+        sub_view.namespace(),
+        model.dependencies(),
+    );
+    // Don't import self.
+    deps.retain(|path| path != chunk.relative_file_path.as_ref().unwrap());
+    write_imports(&deps, o)
+}
+
+fn write_imports<P: AsRef<Path>>(chunk_relative_paths: &[P], o: &mut dyn Output) -> Result<()> {
+    //
+    // This is a little sloppy for rust imports. It uses crate::example::*; instead of listing out
+    // each entity.
+    //
+    let ids = chunk_relative_paths
+        .iter()
+        .map(|p| rust_util::path_to_entity_id(p.as_ref()))
+        .filter(|id| !id.path.is_empty())
+        .sorted()
+        .dedup();
+    for id in ids {
+        o.write_str("use crate::")?;
+        for component in id.path {
+            o.write_str(&component)?;
+            o.write_str("::")?;
+        }
+        o.write_str("*;")?;
+        o.newline()?;
+    }
+    Ok(())
 }
 
 fn write_namespace(namespace: Namespace, o: &mut Indented) -> Result<()> {
@@ -229,6 +276,46 @@ fn write_joined(components: &[&str], separator: &str, o: &mut dyn Output) -> Res
     Ok(())
 }
 
+/// Collects relative paths for every chunk referenced by any child (recursively) within `dependent_ns`.
+fn collect_chunk_dependencies<'v, 'a>(
+    root: &'v Namespace<'v, 'a>,
+    dependent_id: &model::EntityId,
+    dependent_ns: Namespace<'v, 'a>,
+    dependencies: &'v Dependencies,
+) -> Vec<PathBuf> {
+    collect_dependencies_recursively(dependent_id, dependent_ns, dependencies)
+        .iter()
+        .flat_map(|id| match root.find_child(&id) {
+            None => vec![],
+            Some(child) => match child.attributes().chunk() {
+                None => vec![],
+                Some(attr) => attr.relative_file_paths.clone(),
+            },
+        })
+        .dedup()
+        .collect_vec()
+}
+
+/// Collects all [model::EntityId]s that `dependent` depends on by recursing the [Namespace]
+/// hierarchy and collect all dependents of each [NamespaceChild].
+fn collect_dependencies_recursively<'a>(
+    dependent_id: &model::EntityId,
+    dependent_ns: Namespace,
+    dependencies: &'a Dependencies,
+) -> Vec<&'a model::EntityId> {
+    let child_dependencies = dependent_ns
+        .children()
+        .map(|child| dependent_id.child(child.name()))
+        .flat_map(|id| dependencies.get_for(&id));
+    dependent_ns
+        .namespaces()
+        .flat_map(|ns| {
+            collect_dependencies_recursively(&dependent_id.child(ns.name()), ns, dependencies)
+        })
+        .chain(child_dependencies)
+        .collect_vec()
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -414,6 +501,56 @@ pub mod ns0 {
 }
 "#,
         )
+    }
+
+    mod imports {
+        use crate::generator::rust::tests::assert_output;
+        use crate::generator::rust::write_imports;
+        use anyhow::Result;
+
+        #[test]
+        fn with_extension() -> Result<()> {
+            assert_output(|o| write_imports(&["a/b/c.rs"], o), "use crate::a::b::c;\n")
+        }
+
+        #[test]
+        fn without_extension() -> Result<()> {
+            assert_output(|o| write_imports(&["a/b/c"], o), "use crate::a::b::c;\n")
+        }
+
+        #[test]
+        fn mod_rs() -> Result<()> {
+            assert_output(|o| write_imports(&["a/b/mod.rs"], o), "use crate::a::b;\n")
+        }
+
+        #[test]
+        fn lib_rs() -> Result<()> {
+            assert_output(|o| write_imports(&["a/b/lib.rs"], o), "use crate::a::b;\n")
+        }
+
+        #[test]
+        fn no_duplicates() -> Result<()> {
+            assert_output(
+                |o| write_imports(&["a/b/c.rs", "a/b/c", "a/b/c/mod.rs"], o),
+                "use crate::a::b::c;\n",
+            )
+        }
+
+        #[test]
+        fn multiple() -> Result<()> {
+            assert_output(
+                |o| write_imports(&["a", "a/b", "a/b/c"], o),
+                r#"use crate::a;
+use crate::a::b;
+use crate::a::b::c;
+"#,
+            )
+        }
+
+        #[test]
+        fn empty() -> Result<()> {
+            assert_output(|o| write_imports(&["lib.rs"], o), "")
+        }
     }
 
     mod ty {

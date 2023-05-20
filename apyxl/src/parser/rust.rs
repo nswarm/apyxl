@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use chumsky::error;
@@ -7,13 +6,13 @@ use chumsky::prelude::*;
 use chumsky::text::whitespace;
 use log::debug;
 
+use crate::{Parser as ApyxlParser, rust_util};
+use crate::{Input, model};
 use crate::model::{
     Api, Dto, EntityId, Enum, EnumValue, EnumValueNumber, Field, Namespace, NamespaceChild, Rpc,
     Type, UNDEFINED_NAMESPACE,
 };
 use crate::parser::Config;
-use crate::Parser as ApyxlParser;
-use crate::{model, Input};
 
 type Error<'a> = extra::Err<Simple<'a, char>>;
 
@@ -30,7 +29,7 @@ impl ApyxlParser for Rust {
         for (chunk, data) in input.chunks() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
             if let Some(file_path) = &chunk.relative_file_path {
-                for component in path_iter(&namespace_path(file_path)) {
+                for component in rust_util::path_to_entity_id(file_path).path {
                     builder.enter_namespace(&component)
                 }
             }
@@ -57,23 +56,6 @@ impl ApyxlParser for Rust {
         }
 
         Ok(())
-    }
-}
-
-/// Iterate over path as strings.
-fn path_iter<'a>(path: &'a Path) -> impl Iterator<Item = Cow<'a, str>> + 'a {
-    path.iter().map(|p| p.to_string_lossy())
-}
-
-/// Convert file path to rust module path, obeying rules for {lib,mod}.rs.
-fn namespace_path(file_path: &Path) -> PathBuf {
-    if file_path.ends_with("mod.rs") || file_path.ends_with("lib.rs") {
-        file_path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or(PathBuf::default())
-    } else {
-        file_path.with_extension("")
     }
 }
 
@@ -425,10 +407,10 @@ mod tests {
     use chumsky::Parser;
     use lazy_static::lazy_static;
 
-    use crate::model::{Builder, UNDEFINED_NAMESPACE};
-    use crate::parser::rust::field;
-    use crate::parser::{Config, UserType};
     use crate::{input, parser, Parser as ApyxlParser};
+    use crate::model::{Builder, UNDEFINED_NAMESPACE};
+    use crate::parser::{Config, UserType};
+    use crate::parser::rust::field;
 
     type TestError = Vec<Simple<'static, char>>;
     fn wrap_test_err(err: TestError) -> anyhow::Error {
@@ -480,9 +462,9 @@ mod tests {
     mod file_path_to_mod {
         use anyhow::Result;
 
+        use crate::{input, parser, Parser};
         use crate::model::{Builder, Chunk, EntityId};
         use crate::parser::rust::tests::CONFIG;
-        use crate::{input, parser, Parser};
 
         #[test]
         fn file_path_including_name_without_ext() -> Result<()> {
@@ -539,8 +521,8 @@ mod tests {
 
         use crate::model::EntityId;
         use crate::model::Type;
-        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::ty;
 
         macro_rules! test {
@@ -669,8 +651,8 @@ mod tests {
     mod user_ty {
         use chumsky::Parser;
 
-        use crate::parser::rust::user_ty;
         use crate::parser::{Config, UserType};
+        use crate::parser::rust::user_ty;
 
         #[test]
         fn test() {
@@ -737,8 +719,8 @@ mod tests {
 
         use crate::model::NamespaceChild;
         use crate::parser::rust::namespace;
-        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::tests::wrap_test_err;
 
         #[test]
         fn declaration() -> Result<()> {
@@ -848,8 +830,8 @@ mod tests {
         use chumsky::Parser;
 
         use crate::parser::rust::dto;
-        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::tests::wrap_test_err;
 
         #[test]
         fn empty() -> Result<()> {
@@ -945,8 +927,8 @@ mod tests {
         use chumsky::Parser;
 
         use crate::parser::rust::rpc;
-        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::tests::wrap_test_err;
 
         #[test]
         fn empty_fn() -> Result<()> {
@@ -1227,9 +1209,9 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::parser::rust::tests::wrap_test_err;
-        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::{comment, namespace};
+        use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::tests::wrap_test_err;
 
         #[test]
         fn line_comment() -> Result<()> {
@@ -1289,7 +1271,7 @@ mod tests {
     }
 
     mod expr_block {
-        use chumsky::{text, Parser};
+        use chumsky::{Parser, text};
 
         use crate::parser::rust::{expr_block, ExprBlock};
 

@@ -64,6 +64,24 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             model::NamespaceChild::Rpc(target) => NamespaceChild::Rpc(Rpc::new(target, &xforms)),
         }
     }
+
+    pub fn name(&self) -> Cow<str> {
+        match self {
+            NamespaceChild::Dto(dto) => dto.name(),
+            NamespaceChild::Rpc(rpc) => rpc.name(),
+            NamespaceChild::Enum(en) => en.name(),
+            NamespaceChild::Namespace(namespace) => namespace.name(),
+        }
+    }
+
+    pub fn attributes(&self) -> Attributes {
+        match self {
+            NamespaceChild::Dto(dto) => dto.attributes(),
+            NamespaceChild::Rpc(rpc) => rpc.attributes(),
+            NamespaceChild::Enum(en) => en.attributes(),
+            NamespaceChild::Namespace(namespace) => namespace.attributes(),
+        }
+    }
 }
 
 impl<'v, 'a> Namespace<'v, 'a> {
@@ -94,17 +112,19 @@ impl<'v, 'a> Namespace<'v, 'a> {
         self.target
             .children
             .iter()
-            .filter(|child| match child {
-                model::NamespaceChild::Dto(value) => self.filter_dto(value),
-                model::NamespaceChild::Rpc(value) => self.filter_rpc(value),
-                model::NamespaceChild::Enum(value) => self.filter_enum(value),
-                model::NamespaceChild::Namespace(value) => self.filter_namespace(value),
-            })
+            .filter(|child| self.filter_child(child))
             .map(|child| NamespaceChild::new(child, self.xforms))
     }
 
     pub fn attributes(&self) -> Attributes {
         Attributes::new(&self.target.attributes, &self.xforms.attr)
+    }
+
+    pub fn find_child(&'a self, id: &model::EntityId) -> Option<NamespaceChild<'v, 'a>> {
+        self.target
+            .find_child(id)
+            .filter(|child| self.filter_child(child))
+            .map(|child| NamespaceChild::new(child, self.xforms))
     }
 
     pub fn find_namespace(&'a self, id: &model::EntityId) -> Option<Namespace<'v, 'a>> {
@@ -122,21 +142,21 @@ impl<'v, 'a> Namespace<'v, 'a> {
     pub fn find_dto(&'a self, id: &model::EntityId) -> Option<Dto<'v, 'a>> {
         self.target
             .find_dto(id)
-            .filter(|dto| self.xforms.namespace.iter().all(|x| x.filter_dto(dto)))
+            .filter(|dto| self.filter_dto(dto))
             .map(|dto| Dto::new(dto, self.xforms))
     }
 
     pub fn find_rpc(&'a self, id: &model::EntityId) -> Option<Rpc<'v, 'a>> {
         self.target
             .find_rpc(id)
-            .filter(|rpc| self.xforms.namespace.iter().all(|x| x.filter_rpc(rpc)))
+            .filter(|rpc| self.filter_rpc(rpc))
             .map(|rpc| Rpc::new(rpc, self.xforms))
     }
 
     pub fn find_enum(&'a self, id: &model::EntityId) -> Option<Enum<'v, 'a>> {
         self.target
             .find_enum(id)
-            .filter(|en| self.xforms.namespace.iter().all(|x| x.filter_enum(en)))
+            .filter(|en| self.filter_enum(en))
             .map(|en| Enum::new(en, self.xforms))
     }
 
@@ -144,28 +164,37 @@ impl<'v, 'a> Namespace<'v, 'a> {
         self.target
             .namespaces()
             .filter(|ns| self.filter_namespace(ns))
-            .map(move |ns| Namespace::new(ns, self.xforms))
+            .map(|ns| Namespace::new(ns, self.xforms))
     }
 
     pub fn dtos(&'a self) -> impl Iterator<Item = Dto<'v, 'a>> {
         self.target
             .dtos()
             .filter(|dto| self.filter_dto(dto))
-            .map(move |dto| Dto::new(dto, self.xforms))
+            .map(|dto| Dto::new(dto, self.xforms))
     }
 
     pub fn rpcs(&'a self) -> impl Iterator<Item = Rpc<'v, 'a>> {
         self.target
             .rpcs()
             .filter(|rpc| self.filter_rpc(rpc))
-            .map(move |rpc| Rpc::new(rpc, self.xforms))
+            .map(|rpc| Rpc::new(rpc, self.xforms))
     }
 
     pub fn enums(&'a self) -> impl Iterator<Item = Enum<'v, 'a>> {
         self.target
             .enums()
             .filter(|en| self.filter_enum(en))
-            .map(move |en| Enum::new(en, self.xforms))
+            .map(|en| Enum::new(en, self.xforms))
+    }
+
+    fn filter_child(&self, child: &model::NamespaceChild) -> bool {
+        match child {
+            model::NamespaceChild::Dto(value) => self.filter_dto(value),
+            model::NamespaceChild::Rpc(value) => self.filter_rpc(value),
+            model::NamespaceChild::Enum(value) => self.filter_enum(value),
+            model::NamespaceChild::Namespace(value) => self.filter_namespace(value),
+        }
     }
 
     fn filter_namespace(&self, namespace: &model::Namespace) -> bool {
@@ -221,6 +250,30 @@ mod tests {
                 .name(),
             TestRenamer::renamed("ns1")
         );
+    }
+
+    #[test]
+    fn find_child() {
+        let mut exe = TestExecutor::new(
+            r#"
+                    mod ns0 {
+                        struct visible {}
+                        struct hidden {}
+                    }
+                "#,
+        );
+        let model = exe.model();
+        let view = model.view().with_namespace_transform(TestFilter {});
+        let root = view.api();
+
+        let visible_id = EntityId::from("ns0.visible");
+        let expected = model.api().find_child(&visible_id).unwrap();
+        let found = root.find_child(&visible_id).unwrap();
+        assert_eq!(found.name(), expected.name());
+
+        let hidden_id = EntityId::from("ns0.hidden");
+        let found = root.find_child(&hidden_id);
+        assert!(found.is_none());
     }
 
     #[test]
@@ -292,6 +345,30 @@ mod tests {
 
         let hidden_id = EntityId::from("ns0.hidden");
         let found = root.find_rpc(&hidden_id);
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn find_enum() {
+        let mut exe = TestExecutor::new(
+            r#"
+                    mod ns0 {
+                        enum visible {}
+                        enum hidden {}
+                    }
+                "#,
+        );
+        let model = exe.model();
+        let view = model.view().with_namespace_transform(TestFilter {});
+        let root = view.api();
+
+        let visible_id = EntityId::from("ns0.visible");
+        let expected = model.api().find_enum(&visible_id).unwrap();
+        let found = root.find_enum(&visible_id).unwrap();
+        assert_eq!(found.name(), expected.name);
+
+        let hidden_id = EntityId::from("ns0.hidden");
+        let found = root.find_enum(&hidden_id);
         assert!(found.is_none());
     }
 

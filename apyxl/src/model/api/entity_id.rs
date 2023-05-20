@@ -1,4 +1,5 @@
-use itertools::Itertools;
+use itertools::{zip_eq, Itertools};
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
@@ -97,5 +98,29 @@ impl<S: ToString> From<Vec<S>> for EntityId {
         Self {
             path: value.into_iter().map(|s| s.to_string()).collect_vec(),
         }
+    }
+}
+
+impl Ord for EntityId {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.path.len() < other.path.len() {
+            Ordering::Less
+        } else if self.path.len() > other.path.len() {
+            Ordering::Greater
+        } else {
+            for (lhs, rhs) in zip_eq(self.path.iter(), other.path.iter()) {
+                if lhs == rhs {
+                    continue;
+                }
+                return lhs.cmp(rhs);
+            }
+            Ordering::Equal
+        }
+    }
+}
+
+impl PartialOrd for EntityId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }

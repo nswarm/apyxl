@@ -12,6 +12,7 @@ pub mod input;
 pub mod model;
 pub mod output;
 pub mod parser;
+mod rust_util;
 pub mod view;
 
 #[cfg(test)]

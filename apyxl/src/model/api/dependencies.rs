@@ -1,4 +1,5 @@
 use crate::model::{Api, EntityId, Namespace, Type};
+use itertools::Itertools;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
 
@@ -34,6 +35,18 @@ impl Dependencies {
             (Some(from), Some(to)) => self.graph.contains_edge(*from, *to),
             _ => false,
         }
+    }
+
+    /// Returns all dependencies for `dependent`.
+    pub fn get_for(&self, dependent_id: &EntityId) -> Vec<&EntityId> {
+        let dependent_index = match self.node_map.get(dependent_id) {
+            None => return vec![],
+            Some(index) => index,
+        };
+        self.graph
+            .neighbors(*dependent_index)
+            .filter_map(|node| self.graph.node_weight(node))
+            .collect_vec()
     }
 
     fn add_nodes_recursively(&mut self, namespace: &Namespace, namespace_id: &EntityId) {
@@ -275,6 +288,40 @@ mod tests {
             struct dto0 {}
             "#,
                 |deps| assert!(!deps.contains_edge(&from, &to)),
+            );
+        }
+    }
+
+    mod get_for {
+        use crate::model::api::dependencies::tests::run_test;
+        use crate::model::EntityId;
+
+        #[test]
+        fn test() {
+            run_test(
+                r#"
+            mod ns0 {
+                struct dto0 {
+                    field: en,
+                    field: ns1::dto1,
+                }
+
+                enum en {}
+
+                mod ns1 {
+                    struct dto1 {
+                        field: dto0,
+                    }
+                }
+            }
+            "#,
+                |deps| {
+                    let deps = deps.get_for(&EntityId::from("ns0.dto0"));
+                    assert_eq!(
+                        deps,
+                        vec![&EntityId::from("ns0.ns1.dto1"), &EntityId::from("ns0.en")]
+                    );
+                },
             );
         }
     }

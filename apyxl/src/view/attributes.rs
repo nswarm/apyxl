@@ -1,6 +1,7 @@
 use crate::model;
 use dyn_clone::DynClone;
 use std::fmt::Debug;
+use crate::model::chunk;
 
 #[derive(Debug, Copy, Clone)]
 pub struct Attributes<'v> {
@@ -14,6 +15,11 @@ impl<'v> Attributes<'v> {
         xforms: &'v Vec<Box<dyn AttributeTransform>>,
     ) -> Self {
         Self { target, xforms }
+    }
+
+    // todo transform
+    pub fn chunk(&self) -> Option<&chunk::Attribute> {
+        self.target.chunk.as_ref()
     }
 }
 

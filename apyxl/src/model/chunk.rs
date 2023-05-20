@@ -63,6 +63,10 @@ impl NamespaceTransform for ChunkFilter {
     fn filter_rpc(&self, value: &model::Rpc) -> bool {
         filter_attributes(&value.attributes, &self.relative_file_path)
     }
+
+    fn filter_enum(&self, value: &model::Enum) -> bool {
+        filter_attributes(&value.attributes, &self.relative_file_path)
+    }
 }
 
 fn filter_attributes(attr: &Attributes, relative_file_path: &PathBuf) -> bool {

@@ -34,7 +34,7 @@ mod ty;
 
 #[derive(Debug)]
 pub struct Model<'v, 'a> {
-    model: &'v model::Model<'a>,
+    target: &'v model::Model<'a>,
     xforms: Transforms,
 }
 
@@ -52,23 +52,23 @@ pub struct Transforms {
 }
 
 impl<'v: 'a, 'a> Model<'v, 'a> {
-    pub fn new(model: &'v model::Model<'a>) -> Self {
+    pub fn new(target: &'v model::Model<'a>) -> Self {
         Self {
-            model,
+            target,
             xforms: Transforms::default(),
         }
     }
 
     /// Get the full combined API root with all transforms applied.
     pub fn api(&'v self) -> Namespace<'v, 'a> {
-        Namespace::new(&self.model.api(), &self.xforms)
+        Namespace::new(&self.target.api(), &self.xforms)
     }
 
     /// Iterate over [Chunk]s, where each subsection of the API can be viewed through a [SubView]
     /// with all transforms, as well as a [ChunkFilter] for the appropriate chunk applied.
     pub fn api_chunked_iter(&self) -> impl Iterator<Item = Result<(&Chunk, SubView<'a>)>> {
         self.metadata().chunks.iter().map(|metadata| {
-            let namespace = match self.model.api().find_namespace(&metadata.root_namespace) {
+            let namespace = match self.target.api().find_namespace(&metadata.root_namespace) {
                 None => {
                     return Err(anyhow!(
                         "could not find root namespace with id '{}' for chunk with path '{:?}'",
@@ -86,15 +86,23 @@ impl<'v: 'a, 'a> Model<'v, 'a> {
                 path.display(),
                 metadata.root_namespace
             );
-            let sub_view = SubView::new(namespace, self.xforms.clone())
-                .with_namespace_transform(ChunkFilter::new(path));
+            let sub_view = SubView::new(
+                metadata.root_namespace.clone(),
+                namespace,
+                self.xforms.clone(),
+            )
+            .with_namespace_transform(ChunkFilter::new(path));
             Ok((&metadata.chunk, sub_view))
         })
     }
 
     // todo view::Metadata + metadata xforms
     pub fn metadata(&self) -> &model::Metadata {
-        &self.model.metadata()
+        &self.target.metadata()
+    }
+
+    pub fn dependencies(&self) -> &model::Dependencies {
+        &self.target.dependencies()
     }
 }
 

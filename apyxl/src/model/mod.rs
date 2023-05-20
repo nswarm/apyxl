@@ -45,6 +45,10 @@ impl<'a> Model<'a> {
         &self.metadata
     }
 
+    pub fn dependencies(&self) -> &Dependencies {
+        &self.dependencies
+    }
+
     pub fn view(&self) -> view::Model {
         view::Model::new(self)
     }

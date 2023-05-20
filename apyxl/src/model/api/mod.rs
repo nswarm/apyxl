@@ -104,6 +104,11 @@ impl<'a> Namespace<'a> {
         self.children.push(NamespaceChild::Namespace(namespace));
     }
 
+    /// Get a [NamespaceChild] within this [Namespace] by name.
+    pub fn child(&self, name: &str) -> Option<&NamespaceChild<'a>> {
+        self.children.iter().find(|s| s.name() == name)
+    }
+
     /// Get a [Dto] within this [Namespace] by name.
     pub fn dto(&self, name: &str) -> Option<&Dto<'a>> {
         self.children.iter().find_map(|s| match s {
@@ -237,6 +242,19 @@ impl<'a> Namespace<'a> {
             .collect_vec()
     }
 
+    /// Find a [NamespaceChild] by [EntityId] relative to this [Namespace].
+    pub fn find_child(&self, entity_id: &EntityId) -> Option<&NamespaceChild<'a>> {
+        if !entity_id.has_namespace() {
+            return entity_id.name().and_then(|name| self.child(&name));
+        }
+        let namespace = self.find_namespace(&entity_id.namespace());
+        let name = entity_id.name();
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.child(&name),
+            _ => None,
+        }
+    }
+
     /// Find a [Dto] by [EntityId] relative to this [Namespace].
     pub fn find_dto(&self, entity_id: &EntityId) -> Option<&Dto<'a>> {
         if !entity_id.has_namespace() {
@@ -344,6 +362,15 @@ impl<'a> Namespace<'a> {
 }
 
 impl<'a> NamespaceChild<'a> {
+    pub fn name(&self) -> &str {
+        match self {
+            NamespaceChild::Dto(dto) => &dto.name,
+            NamespaceChild::Rpc(rpc) => &rpc.name,
+            NamespaceChild::Enum(en) => &en.name,
+            NamespaceChild::Namespace(namespace) => &namespace.name,
+        }
+    }
+
     pub fn attributes(&self) -> &Attributes {
         match self {
             NamespaceChild::Dto(dto) => &dto.attributes,

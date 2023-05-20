@@ -1,12 +1,8 @@
 // feature: file dependencies
 use crate::service;
 
-// todo enum state
-
 // feature: dto
 struct PlatformInfo {
-    // todo enum state
-
     // feature: primitives
     is_healthy: bool,
     num_users: u64,
