@@ -116,11 +116,6 @@ impl<'a> Builder<'a> {
     }
 
     /// Finalize and validate the model.
-    /// - Dedupes namespaces recursively.
-    /// - Errors for [Dto]s or [Rpc]s with empty names.
-    /// - Errors for [Dto]s with identical paths (aka duplicate definitions).
-    /// - Errors for [Rpc]s with identical paths (aka duplicate definitions).
-    /// - Errors for [EntityId]s with missing types.
     pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError>> {
         dedupe_namespace_children(&mut self.api);
 

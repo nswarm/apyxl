@@ -67,6 +67,35 @@ pub struct Rpc<'a> {
     pub attributes: Attributes,
 }
 
+impl Api<'_> {
+    /// Find `find_ty` by walking up the namespace hierarchy, starting at `initial_namespace`.
+    /// Returns the fully qualified type id if it exists.
+    pub fn find_type_relative(
+        &self,
+        initial_namespace: EntityId,
+        find_ty: &EntityId,
+    ) -> Option<EntityId> {
+        let mut iter = initial_namespace;
+        loop {
+            let namespace = self.find_namespace(&iter);
+            match namespace {
+                None => return None,
+                Some(namespace) => {
+                    if namespace.find_dto(find_ty).is_some()
+                        || namespace.find_enum(find_ty).is_some()
+                    {
+                        return Some(iter.concat(find_ty));
+                    }
+                }
+            }
+            iter = match iter.parent() {
+                None => return None,
+                Some(id) => id,
+            }
+        }
+    }
+}
+
 impl<'a> Namespace<'a> {
     /// Perform a simple merge of [Namespace] `other` into this [Namespace] by adding all of
     /// `other`'s children to to this [Namespace]'s children. `other`'s name is ignored. This may
@@ -184,6 +213,17 @@ impl<'a> Namespace<'a> {
         })
     }
 
+    /// Iterate over all [Dto]s within this [Namespace].
+    pub fn dtos_mut(&mut self) -> impl Iterator<Item = &mut Dto<'a>> {
+        self.children.iter_mut().filter_map(|child| {
+            if let NamespaceChild::Dto(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
     /// Iterate over all [Rpc]s within this [Namespace].
     pub fn rpcs(&self) -> impl Iterator<Item = &Rpc<'a>> {
         self.children.iter().filter_map(|child| {
@@ -195,9 +235,31 @@ impl<'a> Namespace<'a> {
         })
     }
 
+    /// Iterate over all [Rpc]s within this [Namespace].
+    pub fn rpcs_mut(&mut self) -> impl Iterator<Item = &mut Rpc<'a>> {
+        self.children.iter_mut().filter_map(|child| {
+            if let NamespaceChild::Rpc(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
     /// Iterate over all [Enum]s within this [Namespace].
     pub fn enums(&self) -> impl Iterator<Item = &Enum<'a>> {
         self.children.iter().filter_map(|child| {
+            if let NamespaceChild::Enum(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Iterate over all [Enum]s within this [Namespace].
+    pub fn enums_mut(&mut self) -> impl Iterator<Item = &mut Enum<'a>> {
+        self.children.iter_mut().filter_map(|child| {
             if let NamespaceChild::Enum(value) = child {
                 Some(value)
             } else {

@@ -54,8 +54,8 @@ fn write_dependencies(
 
 fn write_imports<P: AsRef<Path>>(chunk_relative_paths: &[P], o: &mut dyn Output) -> Result<()> {
     //
-    // This is a little sloppy for rust imports. It uses crate::example::*; instead of listing out
-    // each entity.
+    // This generator uses fully-qualified types, which in rust means imports aren't necessary,
+    // but it writes what it _would_ import in a comment.
     //
     let ids = chunk_relative_paths
         .iter()
@@ -64,7 +64,7 @@ fn write_imports<P: AsRef<Path>>(chunk_relative_paths: &[P], o: &mut dyn Output)
         .sorted()
         .dedup();
     for id in ids {
-        o.write_str("use crate::")?;
+        o.write_str("// use crate::")?;
         for component in id.path {
             o.write_str(&component)?;
             o.write_str("::")?;
@@ -510,29 +510,41 @@ pub mod ns0 {
 
         #[test]
         fn with_extension() -> Result<()> {
-            assert_output(|o| write_imports(&["a/b/c.rs"], o), "use crate::a::b::c;\n")
+            assert_output(
+                |o| write_imports(&["a/b/c.rs"], o),
+                "// use crate::a::b::c::*;\n",
+            )
         }
 
         #[test]
         fn without_extension() -> Result<()> {
-            assert_output(|o| write_imports(&["a/b/c"], o), "use crate::a::b::c;\n")
+            assert_output(
+                |o| write_imports(&["a/b/c"], o),
+                "// use crate::a::b::c::*;\n",
+            )
         }
 
         #[test]
         fn mod_rs() -> Result<()> {
-            assert_output(|o| write_imports(&["a/b/mod.rs"], o), "use crate::a::b;\n")
+            assert_output(
+                |o| write_imports(&["a/b/mod.rs"], o),
+                "// use crate::a::b::*;\n",
+            )
         }
 
         #[test]
         fn lib_rs() -> Result<()> {
-            assert_output(|o| write_imports(&["a/b/lib.rs"], o), "use crate::a::b;\n")
+            assert_output(
+                |o| write_imports(&["a/b/lib.rs"], o),
+                "// use crate::a::b::*;\n",
+            )
         }
 
         #[test]
         fn no_duplicates() -> Result<()> {
             assert_output(
                 |o| write_imports(&["a/b/c.rs", "a/b/c", "a/b/c/mod.rs"], o),
-                "use crate::a::b::c;\n",
+                "// use crate::a::b::c::*;\n",
             )
         }
 
@@ -540,9 +552,9 @@ pub mod ns0 {
         fn multiple() -> Result<()> {
             assert_output(
                 |o| write_imports(&["a", "a/b", "a/b/c"], o),
-                r#"use crate::a;
-use crate::a::b;
-use crate::a::b::c;
+                r#"// use crate::a::*;
+// use crate::a::b::*;
+// use crate::a::b::c::*;
 "#,
             )
         }
