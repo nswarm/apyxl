@@ -6,13 +6,13 @@ use chumsky::prelude::*;
 use chumsky::text::whitespace;
 use log::debug;
 
-use crate::{Parser as ApyxlParser, rust_util};
-use crate::{Input, model};
 use crate::model::{
     Api, Dto, EntityId, Enum, EnumValue, EnumValueNumber, Field, Namespace, NamespaceChild, Rpc,
     Type, UNDEFINED_NAMESPACE,
 };
 use crate::parser::Config;
+use crate::{model, Input};
+use crate::{rust_util, Parser as ApyxlParser};
 
 type Error<'a> = extra::Err<Simple<'a, char>>;
 
@@ -193,7 +193,7 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
         .at_least(1)
         .collect::<Vec<_>>()
         .map(|components| EntityId {
-            path: components
+            components: components
                 .into_iter()
                 .map(str::to_string)
                 .collect::<Vec<String>>(),
@@ -407,10 +407,10 @@ mod tests {
     use chumsky::Parser;
     use lazy_static::lazy_static;
 
-    use crate::{input, parser, Parser as ApyxlParser};
     use crate::model::{Builder, UNDEFINED_NAMESPACE};
-    use crate::parser::{Config, UserType};
     use crate::parser::rust::field;
+    use crate::parser::{Config, UserType};
+    use crate::{input, parser, Parser as ApyxlParser};
 
     type TestError = Vec<Simple<'static, char>>;
     fn wrap_test_err(err: TestError) -> anyhow::Error {
@@ -462,9 +462,9 @@ mod tests {
     mod file_path_to_mod {
         use anyhow::Result;
 
-        use crate::{input, parser, Parser};
         use crate::model::{Builder, Chunk, EntityId};
         use crate::parser::rust::tests::CONFIG;
+        use crate::{input, parser, Parser};
 
         #[test]
         fn file_path_including_name_without_ext() -> Result<()> {
@@ -521,8 +521,8 @@ mod tests {
 
         use crate::model::EntityId;
         use crate::model::Type;
-        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::ty;
 
         macro_rules! test {
@@ -651,8 +651,8 @@ mod tests {
     mod user_ty {
         use chumsky::Parser;
 
-        use crate::parser::{Config, UserType};
         use crate::parser::rust::user_ty;
+        use crate::parser::{Config, UserType};
 
         #[test]
         fn test() {
@@ -719,8 +719,8 @@ mod tests {
 
         use crate::model::NamespaceChild;
         use crate::parser::rust::namespace;
-        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::rust::tests::CONFIG;
 
         #[test]
         fn declaration() -> Result<()> {
@@ -830,8 +830,8 @@ mod tests {
         use chumsky::Parser;
 
         use crate::parser::rust::dto;
-        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::rust::tests::CONFIG;
 
         #[test]
         fn empty() -> Result<()> {
@@ -927,8 +927,8 @@ mod tests {
         use chumsky::Parser;
 
         use crate::parser::rust::rpc;
-        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::rust::tests::CONFIG;
 
         #[test]
         fn empty_fn() -> Result<()> {
@@ -1209,9 +1209,9 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::parser::rust::{comment, namespace};
-        use crate::parser::rust::tests::CONFIG;
         use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::{comment, namespace};
 
         #[test]
         fn line_comment() -> Result<()> {
@@ -1271,7 +1271,7 @@ mod tests {
     }
 
     mod expr_block {
-        use chumsky::{Parser, text};
+        use chumsky::{text, Parser};
 
         use crate::parser::rust::{expr_block, ExprBlock};
 
