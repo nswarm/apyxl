@@ -53,7 +53,7 @@ pub fn namespace_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError
         .filter_map(|child| {
             if child.name == UNDEFINED_NAMESPACE {
                 Some(ValidationError::InvalidNamespaceName(
-                    namespace_id.child(&child.name).to_owned(),
+                    namespace_id.child_unqualified(&child.name).to_owned(),
                 ))
             } else {
                 None
@@ -71,7 +71,9 @@ pub fn no_duplicate_dto_enums(api: &Api, namespace_id: EntityId) -> Vec<Validati
     dto_names
         .chain(enum_names)
         .duplicates()
-        .map(|name| ValidationError::DuplicateDtoOrEnum(namespace_id.child(name).to_owned()))
+        .map(|name| {
+            ValidationError::DuplicateDtoOrEnum(namespace_id.child_unqualified(name).to_owned())
+        })
         .collect_vec()
 }
 
@@ -80,7 +82,9 @@ pub fn no_duplicate_rpcs(api: &Api, namespace_id: EntityId) -> Vec<ValidationErr
         .expect("namespace must exist in api")
         .rpcs()
         .duplicates_by(|rpc| rpc.name)
-        .map(|rpc| ValidationError::DuplicateRpc(namespace_id.child(rpc.name).to_owned()))
+        .map(|rpc| {
+            ValidationError::DuplicateRpc(namespace_id.child_unqualified(rpc.name).to_owned())
+        })
         .collect_vec()
 }
 
@@ -106,7 +110,7 @@ pub fn dto_field_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .dtos()
-        .flat_map(|dto| field_names(&dto.fields, namespace_id.child(dto.name)))
+        .flat_map(|dto| field_names(&dto.fields, namespace_id.child_unqualified(dto.name)))
         .collect_vec()
 }
 
@@ -129,7 +133,7 @@ pub fn rpc_param_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .rpcs()
-        .flat_map(|rpc| field_names(&rpc.params, namespace_id.child(rpc.name)))
+        .flat_map(|rpc| field_names(&rpc.params, namespace_id.child_unqualified(rpc.name)))
         .collect_vec()
 }
 
@@ -156,7 +160,7 @@ pub fn enum_value_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationErro
             en.values.iter().enumerate().filter_map(|(i, value)| {
                 if value.name.is_empty() {
                     Some(ValidationError::InvalidEnumValueName(
-                        namespace_id.child(en.name),
+                        namespace_id.child_unqualified(en.name),
                         i,
                     ))
                 } else {
@@ -177,7 +181,7 @@ pub fn no_duplicate_enum_value_names(api: &Api, namespace_id: EntityId) -> Vec<V
                 .duplicates_by(|value| value.name)
                 .map(|value| {
                     ValidationError::DuplicateEnumValue(
-                        namespace_id.child(en.name),
+                        namespace_id.child_unqualified(en.name),
                         value.name.to_owned(),
                     )
                 })
@@ -207,7 +211,7 @@ pub fn dto_field_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationError
         .expect("namespace must exist in api")
         .dtos()
         .flat_map(|dto| {
-            let dto_id = namespace_id.child(dto.name);
+            let dto_id = namespace_id.child_unqualified(dto.name);
             field_types(api, &dto.fields, namespace_id.clone(), dto_id)
         })
         .collect_vec()
@@ -218,7 +222,7 @@ pub fn rpc_param_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationError
         .expect("namespace must exist in api")
         .rpcs()
         .flat_map(|rpc| {
-            let rpc_id = namespace_id.child(rpc.name);
+            let rpc_id = namespace_id.child_unqualified(rpc.name);
             field_types(api, &rpc.params, namespace_id.clone(), rpc_id)
         })
         .collect_vec()
@@ -233,7 +237,7 @@ pub fn rpc_return_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationErro
             match fully_qualify_type(api, &namespace_id, return_type) {
                 Ok(_) => None,
                 Err(err_entity_id) => Some(ValidationError::InvalidRpcReturnType(
-                    namespace_id.child(rpc_name).to_owned(),
+                    namespace_id.child_unqualified(rpc_name).to_owned(),
                     err_entity_id.to_owned(),
                 )),
             }
@@ -331,9 +335,9 @@ where
         .find_namespace(&namespace_id)
         .expect("namespace must exist in api");
 
-    let child_results = namespace
-        .namespaces()
-        .flat_map(|child| recurse_namespaces(api, namespace_id.child(&child.name), action));
+    let child_results = namespace.namespaces().flat_map(|child| {
+        recurse_namespaces(api, namespace_id.child_unqualified(&child.name), action)
+    });
 
     child_results
         .chain(action(api, namespace_id.clone()))
@@ -380,7 +384,7 @@ mod tests {
         );
         let api = exe.api();
 
-        let namespace_id = EntityId::from("ns0.ns1.ns2");
+        let namespace_id = EntityId::new_unqualified("ns0.ns1.ns2");
         assert_eq!(rpc_return_types(&api, namespace_id), vec![]);
     }
 
@@ -405,7 +409,7 @@ mod tests {
                     struct dto2 {}
                 }
                 "#,
-                &EntityId::from("dto0"),
+                &EntityId::new_unqualified("dto0"),
             );
         }
 
@@ -423,7 +427,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::from("ns0.ns1.dto0"),
+                &EntityId::new_unqualified("ns0.ns1.dto0"),
             );
         }
 
@@ -440,7 +444,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::from("ns0.ns1.dto0"),
+                &EntityId::new_unqualified("ns0.ns1.dto0"),
             );
         }
 
@@ -457,7 +461,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::from("ns0.ns1.dto0"),
+                &EntityId::new_unqualified("ns0.ns1.dto0"),
             );
         }
 
@@ -476,7 +480,7 @@ mod tests {
                 }
                 struct dto2 {}
                 "#,
-                &EntityId::from("ns0.ns1.dto0"),
+                &EntityId::new_unqualified("ns0.ns1.dto0"),
             );
         }
 
@@ -497,7 +501,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::from("ns0.dto0"),
+                &EntityId::new_unqualified("ns0.dto0"),
             );
         }
 
@@ -522,7 +526,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::from("ns0.ns1.dto0"),
+                &EntityId::new_unqualified("ns0.ns1.dto0"),
             );
         }
 
@@ -547,7 +551,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::from("ns0.ns1.ns2.dto0"),
+                &EntityId::new_unqualified("ns0.ns1.ns2.dto0"),
             );
         }
 

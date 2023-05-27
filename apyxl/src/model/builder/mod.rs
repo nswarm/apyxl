@@ -156,7 +156,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn current_namespace_id(&self) -> EntityId {
-        EntityId::from(&self.namespace_stack)
+        EntityId::new_unqualified_vec(self.namespace_stack.iter())
     }
 
     pub fn current_namespace(&self) -> &Namespace<'a> {
@@ -329,7 +329,10 @@ mod tests {
                 );
                 assert_eq!(builder.metadata.chunks.len(), 1);
                 let chunk_metadata = builder.metadata.chunks.get(0).unwrap();
-                assert_eq!(chunk_metadata.root_namespace, EntityId::from("blah"));
+                assert_eq!(
+                    chunk_metadata.root_namespace,
+                    EntityId::new_unqualified("blah")
+                );
                 assert_eq!(chunk_metadata.chunk.relative_file_path, file_path);
             }
 
@@ -356,36 +359,38 @@ mod tests {
                 let api = builder.build().unwrap().api;
                 // Existing shouldn't have attribute.
                 assert!(!chunk_attr_contains_file_path(
-                    &api.find_namespace(&EntityId::from("ns0"))
+                    &api.find_namespace(&EntityId::new_unqualified("ns0"))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(!chunk_attr_contains_file_path(
-                    &api.find_namespace(&EntityId::from("ns0.ns1"))
+                    &api.find_namespace(&EntityId::new_unqualified("ns0.ns1"))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(!chunk_attr_contains_file_path(
-                    &api.find_dto(&EntityId::from("ns0.dto")).unwrap().attributes,
+                    &api.find_dto(&EntityId::new_unqualified("ns0.dto"))
+                        .unwrap()
+                        .attributes,
                     &file_path
                 ));
                 // Merged should have correct attribute.
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_namespace(&EntityId::from("ns0.ns2"))
+                    &api.find_namespace(&EntityId::new_unqualified("ns0.ns2"))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_dto(&EntityId::from("ns0.ns2.dto"))
+                    &api.find_dto(&EntityId::new_unqualified("ns0.ns2.dto"))
                         .unwrap()
                         .attributes,
                     &file_path
                 ));
                 assert!(chunk_attr_contains_file_path(
-                    &api.find_rpc(&EntityId::from("ns0.ns2.rpc"))
+                    &api.find_rpc(&EntityId::new_unqualified("ns0.ns2.rpc"))
                         .unwrap()
                         .attributes,
                     &file_path
@@ -611,7 +616,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateDtoOrEnum(EntityId::from("ns.dto")),
+                    ValidationError::DuplicateDtoOrEnum(EntityId::new_unqualified("ns.dto")),
                 );
             }
 
@@ -628,7 +633,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateRpc(EntityId::from("ns.rpc")),
+                    ValidationError::DuplicateRpc(EntityId::new_unqualified("ns.rpc")),
                 );
             }
 
@@ -645,7 +650,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateDtoOrEnum(EntityId::from("ns.en")),
+                    ValidationError::DuplicateDtoOrEnum(EntityId::new_unqualified("ns.en")),
                 );
             }
 
@@ -662,7 +667,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateDtoOrEnum(EntityId::from("ns.asdf")),
+                    ValidationError::DuplicateDtoOrEnum(EntityId::new_unqualified("ns.asdf")),
                 );
             }
 
@@ -703,12 +708,12 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_dto_mut(&EntityId::from("ns.dto2"))
+                    .find_dto_mut(&EntityId::new_unqualified("ns.dto2"))
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from("ns");
+                let expected_entity_id = EntityId::new_unqualified("ns");
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -731,14 +736,14 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_dto_mut(&EntityId::from("ns.dto"))
+                    .find_dto_mut(&EntityId::new_unqualified("ns.dto"))
                     .unwrap()
                     .field_mut("field1")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from("ns.dto");
+                let expected_entity_id = EntityId::new_unqualified("ns.dto");
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -766,10 +771,10 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
-                        EntityId::from("dto"),
+                        EntityId::new_unqualified("dto"),
                         "field1".to_string(),
                         expected_index,
-                        EntityId::from("ns.dto"),
+                        EntityId::new_unqualified("ns.dto"),
                     ),
                 );
             }
@@ -797,12 +802,12 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_rpc_mut(&EntityId::from("ns.rpc2"))
+                    .find_rpc_mut(&EntityId::new_unqualified("ns.rpc2"))
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from("ns");
+                let expected_entity_id = EntityId::new_unqualified("ns");
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -821,14 +826,14 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_rpc_mut(&EntityId::from("ns.rpc"))
+                    .find_rpc_mut(&EntityId::new_unqualified("ns.rpc"))
                     .unwrap()
                     .param_mut("param1")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from("ns.rpc");
+                let expected_entity_id = EntityId::new_unqualified("ns.rpc");
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -853,10 +858,10 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
-                        EntityId::from("rpc"),
+                        EntityId::new_unqualified("rpc"),
                         "param1".to_string(),
                         expected_index,
-                        EntityId::from("ns.dto"),
+                        EntityId::new_unqualified("ns.dto"),
                     ),
                 );
             }
@@ -874,8 +879,8 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidRpcReturnType(
-                        EntityId::from("rpc"),
-                        EntityId::from("ns.dto"),
+                        EntityId::new_unqualified("rpc"),
+                        EntityId::new_unqualified("ns.dto"),
                     ),
                 );
             }
@@ -903,12 +908,12 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_enum_mut(&EntityId::from("ns.en2"))
+                    .find_enum_mut(&EntityId::new_unqualified("ns.en2"))
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from("ns");
+                let expected_entity_id = EntityId::new_unqualified("ns");
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -931,14 +936,14 @@ mod tests {
                 let mut builder = test_builder(&mut exe);
                 builder
                     .api
-                    .find_enum_mut(&EntityId::from("ns.en"))
+                    .find_enum_mut(&EntityId::new_unqualified("ns.en"))
                     .unwrap()
                     .value_mut("value1")
                     .unwrap()
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::from("ns.en");
+                let expected_entity_id = EntityId::new_unqualified("ns.en");
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -965,7 +970,10 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateEnumValue(EntityId::from("ns.en"), "val".to_string()),
+                    ValidationError::DuplicateEnumValue(
+                        EntityId::new_unqualified("ns.en"),
+                        "val".to_string(),
+                    ),
                 );
             }
         }
@@ -987,7 +995,9 @@ mod tests {
                 let mut exe = TestExecutor::new("mod asdf {}".replace("asdf", UNDEFINED_NAMESPACE));
                 assert_contains_error(
                     &build_from_input(&mut exe),
-                    ValidationError::InvalidNamespaceName(EntityId::from(UNDEFINED_NAMESPACE)),
+                    ValidationError::InvalidNamespaceName(EntityId::new_unqualified(
+                        UNDEFINED_NAMESPACE,
+                    )),
                 );
             }
 
@@ -1002,8 +1012,8 @@ mod tests {
                 );
                 assert_contains_error(
                     &build_from_input(&mut exe),
-                    ValidationError::InvalidNamespaceName(EntityId::from(
-                        ["ns", UNDEFINED_NAMESPACE].as_slice(),
+                    ValidationError::InvalidNamespaceName(EntityId::new_unqualified_vec(
+                        ["ns", UNDEFINED_NAMESPACE].iter(),
                     )),
                 );
             }
@@ -1020,7 +1030,7 @@ mod tests {
             fn passed_through() -> Result<(), Vec<ValidationError>> {
                 let mut builder = Builder::default();
                 let chunk_metadata = chunk::Metadata {
-                    root_namespace: EntityId::from("hi"),
+                    root_namespace: EntityId::new_unqualified("hi"),
                     chunk: chunk::Chunk::with_relative_file_path(PathBuf::from("hi")),
                 };
                 builder.metadata.chunks.push(chunk_metadata.clone());

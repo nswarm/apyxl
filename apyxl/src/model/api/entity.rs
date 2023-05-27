@@ -1,9 +1,9 @@
 use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, Type};
 use anyhow::anyhow;
-use chumsky::container::Seq;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Copy, Clone)]
 pub enum EntityType {
+    None, // Unqualified EntityIds.
     Namespace,
     Dto,
     Rpc,
@@ -25,6 +25,10 @@ pub enum Entity<'a> {
 pub trait ToEntity {
     /// Create an [Entity] reference to this entity.
     fn to_entity(&self) -> Entity;
+
+    fn entity_type(&self) -> EntityType {
+        self.to_entity().ty()
+    }
 }
 
 pub trait FindEntity {
@@ -66,11 +70,13 @@ impl EntityType {
         // Keep these in line with [EntityId] documentation.
         // All variants are specified so additions to enum will force consideration here.
         match self {
+            EntityType::None => *ty == EntityType::None,
+
             EntityType::Namespace => match ty {
                 EntityType::Namespace | EntityType::Dto | EntityType::Rpc | EntityType::Enum => {
                     true
                 }
-                EntityType::Field | EntityType::Type => false,
+                EntityType::Field | EntityType::Type | EntityType::None => false,
             },
 
             EntityType::Dto => match ty {
@@ -79,14 +85,17 @@ impl EntityType {
                 | EntityType::Dto
                 | EntityType::Rpc
                 | EntityType::Enum
-                | EntityType::Type => false,
+                | EntityType::Type
+                | EntityType::None => false,
             },
 
             EntityType::Rpc => match ty {
                 EntityType::Field | EntityType::Type => true,
-                EntityType::Namespace | EntityType::Dto | EntityType::Rpc | EntityType::Enum => {
-                    false
-                }
+                EntityType::Namespace
+                | EntityType::Dto
+                | EntityType::Rpc
+                | EntityType::Enum
+                | EntityType::None => false,
             },
 
             EntityType::Enum => match ty {
@@ -95,7 +104,8 @@ impl EntityType {
                 | EntityType::Rpc
                 | EntityType::Enum
                 | EntityType::Type
-                | EntityType::Field => false,
+                | EntityType::Field
+                | EntityType::None => false,
             },
 
             EntityType::Field => match ty {
@@ -104,7 +114,8 @@ impl EntityType {
                 | EntityType::Dto
                 | EntityType::Rpc
                 | EntityType::Enum
-                | EntityType::Field => false,
+                | EntityType::Field
+                | EntityType::None => false,
             },
 
             EntityType::Type => match ty {
@@ -113,13 +124,14 @@ impl EntityType {
                 | EntityType::Rpc
                 | EntityType::Enum
                 | EntityType::Type
-                | EntityType::Field => false,
+                | EntityType::Field
+                | EntityType::None => false,
             },
         }
     }
 }
 
-impl Entity {
+impl Entity<'_> {
     pub fn ty(&self) -> EntityType {
         match self {
             Entity::Namespace(_) => EntityType::Namespace,
@@ -136,18 +148,19 @@ impl TryFrom<&str> for EntityType {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(match value {
-            _ if subtype::NAMESPACE_ALL.contains(&value) => EntityType::Namespace,
-            _ if subtype::DTO_ALL.contains(&value) => EntityType::Dto,
-            _ if subtype::RPC_ALL.contains(&value) => EntityType::Rpc,
-            _ if subtype::ENUM_ALL.contains(&value) => EntityType::Enum,
-            _ if subtype::FIELD_ALL.contains(&value) => EntityType::Field,
-            _ if subtype::PARAM_ALL.contains(&value) => EntityType::Field,
-            _ if subtype::RETURN_TY_ALL.contains(&value) => EntityType::Type,
+        match value {
+            _ if subtype::NAMESPACE_ALL.contains(&value) => Ok(EntityType::Namespace),
+            _ if subtype::DTO_ALL.contains(&value) => Ok(EntityType::Dto),
+            _ if subtype::RPC_ALL.contains(&value) => Ok(EntityType::Rpc),
+            _ if subtype::ENUM_ALL.contains(&value) => Ok(EntityType::Enum),
+            _ if subtype::FIELD_ALL.contains(&value) => Ok(EntityType::Field),
+            _ if subtype::PARAM_ALL.contains(&value) => Ok(EntityType::Field),
+            _ if subtype::TY_ALL.contains(&value) => Ok(EntityType::Type),
+            _ if subtype::RETURN_TY_ALL.contains(&value) => Ok(EntityType::Type),
             _ => Err(anyhow!(
                 "subtype '{}' does not map to a valid EntityType",
                 value
             )),
-        })
+        }
     }
 }

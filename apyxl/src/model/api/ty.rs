@@ -1,4 +1,5 @@
 use crate::model::EntityId;
+use anyhow::Result;
 use std::fmt::Debug;
 
 /// A type within the language or API. Types other than [Type::Api] are assumed to always
@@ -75,8 +76,8 @@ pub type UserTypeName = String;
 pub type Type = BaseType<EntityId, UserTypeName>;
 
 impl Type {
-    pub fn new_api(value: &str) -> Self {
-        Self::Api(EntityId::from(value))
+    pub fn new_api(value: &str) -> Result<Self> {
+        Ok(Self::Api(EntityId::try_from(value)?))
     }
 
     pub fn api(&self) -> Option<&EntityId> {

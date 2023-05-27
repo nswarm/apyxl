@@ -4,7 +4,7 @@ use anyhow::Result;
 use itertools::Itertools;
 
 use crate::generator::Generator;
-use crate::model::{Chunk, Dependencies};
+use crate::model::{Chunk, Dependencies, EntityType};
 use crate::output::{Indented, Output};
 use crate::view::{
     Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, SubView, Type,
@@ -60,12 +60,12 @@ fn write_imports<P: AsRef<Path>>(chunk_relative_paths: &[P], o: &mut dyn Output)
     let ids = chunk_relative_paths
         .iter()
         .map(|p| rust_util::path_to_entity_id(p.as_ref()))
-        .filter(|id| !id.path.is_empty())
+        .filter(|id| !id.is_empty())
         .sorted()
         .dedup();
     for id in ids {
         o.write_str("// use crate::")?;
-        for component in id.path {
+        for component in id.component_names() {
             o.write_str(&component)?;
             o.write_str("::")?;
         }
@@ -296,8 +296,8 @@ fn collect_chunk_dependencies<'v, 'a>(
         .collect_vec()
 }
 
-/// Collects all [model::EntityId]s that `dependent` depends on by recursing the [Namespace]
-/// hierarchy and collect all dependents of each [NamespaceChild].
+/// Collects all [model::EntityId]s that `dependent` [Namespace] depends on by recursing the
+/// hierarchy and collecting all dependents of each [NamespaceChild].
 fn collect_dependencies_recursively<'a>(
     dependent_id: &model::EntityId,
     dependent_ns: Namespace,
@@ -305,12 +305,24 @@ fn collect_dependencies_recursively<'a>(
 ) -> Vec<&'a model::EntityId> {
     let child_dependencies = dependent_ns
         .children()
-        .map(|child| dependent_id.child(child.name()))
+        .map(|child| {
+            // unwrap ok: we're iterating over known children.
+            dependent_id
+                .child(child.entity_type(), child.name())
+                .unwrap()
+        })
         .flat_map(|id| dependencies.get_for(&id));
     dependent_ns
         .namespaces()
         .flat_map(|ns| {
-            collect_dependencies_recursively(&dependent_id.child(ns.name()), ns, dependencies)
+            // unwrap ok: we're iterating over known children.
+            collect_dependencies_recursively(
+                &dependent_id
+                    .child(EntityType::Namespace, ns.name())
+                    .unwrap(),
+                ns,
+                dependencies,
+            )
         })
         .chain(child_dependencies)
         .collect_vec()
@@ -365,12 +377,12 @@ pub mod ns0 {
                             fields: vec![
                                 model::Field {
                                     name: "field0",
-                                    ty: model::Type::new_api("Type0"),
+                                    ty: model::Type::new_api("Type0")?,
                                     attributes: Default::default(),
                                 },
                                 model::Field {
                                     name: "field1",
-                                    ty: model::Type::new_api("Type1"),
+                                    ty: model::Type::new_api("Type1")?,
                                     attributes: Default::default(),
                                 },
                             ],
@@ -400,12 +412,12 @@ pub mod ns0 {
                             params: vec![
                                 model::Field {
                                     name: "param0",
-                                    ty: model::Type::new_api("Type0"),
+                                    ty: model::Type::new_api("Type0")?,
                                     attributes: Default::default(),
                                 },
                                 model::Field {
                                     name: "param1",
-                                    ty: model::Type::new_api("Type1"),
+                                    ty: model::Type::new_api("Type1")?,
                                     attributes: Default::default(),
                                 },
                             ],
@@ -434,7 +446,7 @@ pub mod ns0 {
                         &model::Rpc {
                             name: "rpc_name",
                             params: vec![],
-                            return_type: Some(model::Type::new_api("ReturnType")),
+                            return_type: Some(model::Type::new_api("ReturnType")?),
                             attributes: Default::default(),
                         },
                         &Transforms::default(),
@@ -454,7 +466,7 @@ pub mod ns0 {
                     view::Field::new(
                         &model::Field {
                             name: "asdf",
-                            ty: model::Type::new_api("Type"),
+                            ty: model::Type::new_api("Type")?,
                             attributes: Default::default(),
                         },
                         &vec![],
@@ -603,7 +615,7 @@ pub mod ns0 {
         test!(
             entity_id,
             "a::b::c",
-            model::Type::Api(model::EntityId::from("a.b.c"))
+            model::Type::Api(model::EntityId::try_from("a.b.c").unwrap())
         );
         test!(
             vec,
@@ -628,7 +640,7 @@ pub mod ns0 {
 
     #[test]
     fn entity_id() -> Result<()> {
-        let entity_id = model::EntityId::from("a.b.c");
+        let entity_id = model::EntityId::try_from("a.b.c")?;
         assert_output(
             |o| write_entity_id(view::EntityId::new(&entity_id, &vec![]), o),
             "a::b::c",

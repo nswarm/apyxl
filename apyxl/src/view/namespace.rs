@@ -4,6 +4,8 @@ use std::fmt::Debug;
 use dyn_clone::DynClone;
 
 use crate::model;
+use crate::model::entity::ToEntity;
+use crate::model::EntityType;
 use crate::view::{Attributes, Dto, Enum, Rpc, Transforms};
 
 /// A named, nestable wrapper for a set of API entities.
@@ -82,6 +84,15 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             NamespaceChild::Namespace(namespace) => namespace.attributes(),
         }
     }
+
+    pub fn entity_type(&self) -> EntityType {
+        match self {
+            NamespaceChild::Dto(dto) => dto.entity_type(),
+            NamespaceChild::Rpc(rpc) => rpc.entity_type(),
+            NamespaceChild::Enum(en) => en.entity_type(),
+            NamespaceChild::Namespace(namespace) => namespace.entity_type(),
+        }
+    }
 }
 
 impl<'v, 'a> Namespace<'v, 'a> {
@@ -102,6 +113,10 @@ impl<'v, 'a> Namespace<'v, 'a> {
             x.name(&mut name)
         }
         name
+    }
+
+    pub fn entity_type(&self) -> EntityType {
+        self.target.entity_type()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -241,11 +256,13 @@ mod tests {
 
         assert_eq!(root.name(), TestRenamer::renamed("_"));
         assert_eq!(
-            root.find_namespace(&EntityId::from("ns0")).unwrap().name(),
+            root.find_namespace(&EntityId::try_from("ns0").unwrap())
+                .unwrap()
+                .name(),
             TestRenamer::renamed("ns0")
         );
         assert_eq!(
-            root.find_namespace(&EntityId::from("ns0.ns1"))
+            root.find_namespace(&EntityId::try_from("ns0.ns1").unwrap())
                 .unwrap()
                 .name(),
             TestRenamer::renamed("ns1")
@@ -266,12 +283,12 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_id = EntityId::from("ns0.visible");
+        let visible_id = EntityId::try_from("ns0.d:visible").unwrap();
         let expected = model.api().find_child(&visible_id).unwrap();
         let found = root.find_child(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name());
 
-        let hidden_id = EntityId::from("ns0.hidden");
+        let hidden_id = EntityId::try_from("ns0.d:hidden").unwrap();
         let found = root.find_child(&hidden_id);
         assert!(found.is_none());
     }
@@ -290,12 +307,12 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_id = EntityId::from("ns0.visible");
+        let visible_id = EntityId::try_from("ns0.visible").unwrap();
         let expected = model.api().find_namespace(&visible_id);
         let found = root.find_namespace(&visible_id);
         assert_eq!(found.map(|v| v.target), expected);
 
-        let hidden_id = EntityId::from("ns0.hidden");
+        let hidden_id = EntityId::try_from("ns0.hidden").unwrap();
         let found = root.find_namespace(&hidden_id);
         assert!(found.is_none());
     }
@@ -314,12 +331,12 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_id = EntityId::from("ns0.visible");
+        let visible_id = EntityId::try_from("ns0.d:visible").unwrap();
         let expected = model.api().find_dto(&visible_id).unwrap();
         let found = root.find_dto(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name);
 
-        let hidden_id = EntityId::from("ns0.hidden");
+        let hidden_id = EntityId::try_from("ns0.d:hidden").unwrap();
         let found = root.find_dto(&hidden_id);
         assert!(found.is_none());
     }
@@ -338,12 +355,12 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_id = EntityId::from("ns0.visible");
+        let visible_id = EntityId::try_from("ns0.r:visible").unwrap();
         let expected = model.api().find_rpc(&visible_id).unwrap();
         let found = root.find_rpc(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name);
 
-        let hidden_id = EntityId::from("ns0.hidden");
+        let hidden_id = EntityId::try_from("ns0.r:hidden").unwrap();
         let found = root.find_rpc(&hidden_id);
         assert!(found.is_none());
     }
@@ -362,12 +379,12 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let visible_id = EntityId::from("ns0.visible");
+        let visible_id = EntityId::try_from("ns0.e:visible").unwrap();
         let expected = model.api().find_enum(&visible_id).unwrap();
         let found = root.find_enum(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name);
 
-        let hidden_id = EntityId::from("ns0.hidden");
+        let hidden_id = EntityId::try_from("ns0.e:hidden").unwrap();
         let found = root.find_enum(&hidden_id);
         assert!(found.is_none());
     }

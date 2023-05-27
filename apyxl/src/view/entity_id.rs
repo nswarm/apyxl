@@ -34,9 +34,8 @@ impl<'v> EntityId<'v> {
     pub fn path(&self) -> Vec<Cow<str>> {
         let mut value = self
             .target
-            .path
-            .iter()
-            .map(|s| Cow::Borrowed(s.as_str()))
+            .component_names()
+            .map(Cow::Borrowed)
             .collect_vec();
         for x in self.xforms {
             x.path(&mut value)
@@ -66,7 +65,9 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_entity_id_transform(TestRenamer {});
         let root = view.api();
-        let dto = root.find_dto(&EntityId::from("dto")).unwrap();
+        let dto = root
+            .find_dto(&EntityId::try_from("dto:dto").unwrap())
+            .unwrap();
         let fields = dto.fields().collect_vec();
         let ty = fields.get(0).unwrap().ty();
 

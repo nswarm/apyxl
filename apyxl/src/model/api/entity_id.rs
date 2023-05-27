@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 
 use anyhow::{anyhow, Result};
 use itertools::{zip_eq, Itertools};
@@ -12,6 +12,14 @@ use crate::model::api::entity::EntityType;
 /// entity within the API, and together define a path from through the hierarchy to a specific
 /// entity. [EntityId]s are relative to whatever context they are used within, i.e. there is no
 /// such thing as an "absolute path" style [EntityId].
+///
+/// *** Unqualified vs Qualified [EntityId]s ***
+///
+/// During parsing, [EntityId]s are "unqualified", meaning they do not have type data associated
+/// with each component. It's purely a list of names, because parsers can't necessarily know what
+/// type of entity the [EntityId] is referencing until the API is complete. Some methods may
+/// assert if used on unqualified [EntityId]s. During [crate::model::builder::Builder::build],
+/// all [EntityId]s will be qualified.
 ///
 /// *** String Representation ***
 ///
@@ -51,47 +59,90 @@ use crate::model::api::entity::EntityType;
 ///     [crate::model::Field]:     `ty`:                      [crate::model::Type] (nameless),
 ///     [crate::model::Enum]:      <none>
 ///     [crate::model::Type]:      <none>
-#[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct EntityId {
     components: Vec<Component>,
+    is_qualified: bool,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct Component {
     ty: EntityType,
     name: String,
 }
 
 impl EntityId {
-    pub fn from_parsed()
+    /// When parsing, you don't necessarily know what type of entity the [EntityId] is referencing.
+    /// using `new_unqualified` takes only names, and during [crate::model::builder::Builder::build]
+    /// any unqualified [EntityIds] will be qualified when the complete api is at its disposal.
+    pub fn new_unqualified(component_names: &str) -> Self {
+        Self::new_unqualified_vec(component_names.split('.'))
+    }
+
+    pub fn new_unqualified_vec<S: ToString>(component_names: impl Iterator<Item = S>) -> Self {
+        Self {
+            components: component_names
+                .map(|s| s.to_string())
+                .map(|name| Component {
+                    ty: EntityType::Namespace,
+                    name,
+                })
+                .collect_vec(),
+            is_qualified: false,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.components.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.components.len()
+    }
+
+    pub fn is_qualified(&self) -> bool {
+        self.is_qualified
+    }
+
+    pub fn component_names(&self) -> impl Iterator<Item = &str> {
+        self.components
+            .iter()
+            .map(|component| component.name.as_str())
+    }
 
     /// Return an [EntityId] of a step up from this [EntityId], if any.
+    ///
+    /// Unqualified [EntityId]: Callable.
     /// ```
     /// use apyxl::model::EntityId;
     /// let dto = EntityId::try_from("a.dto:Name").unwrap();
     /// let parent = dto.parent().unwrap();
-    /// let grandparent = parent.parent();
-    /// assert_eq!(parent, EntityId::try_from("a"));
-    /// assert_eq!(grandparent, None);
+    /// let grandparent = parent.parent().unwrap();
+    /// assert_eq!(parent, EntityId::try_from("a").unwrap());
+    /// assert_eq!(grandparent, EntityId::default());
+    /// assert_eq!(grandparent.parent(), None);
     /// ```
     pub fn parent(&self) -> Option<Self> {
         let path = &self.components;
-        if path.len() <= 1 {
+        if path.len() == 0 {
             return None;
         }
         let len = path.len() - 1;
         Some(Self {
             components: path[..len].to_vec(),
+            is_qualified: self.is_qualified,
         })
     }
 
     /// Extend the [EntityId] with the given child. Will error if the type is not valid on the
     /// current [EntityId] e.g. trying to attach a [Field] to a [Namespace].
+    ///
+    /// Unqualified [EntityId]: Callable. `ty` is ignored.
     /// ```
-    /// use apyxl::model::EntityId;
+    /// use apyxl::model::{EntityId, EntityType};
     /// let id = EntityId::try_from("a.b").unwrap();
-    /// let child = id.child(EntityType::Namespace, "c");
-    /// assert_eq!(child, Some(EntityId::try_from("a.b.c").unwrap()));
+    /// let child = id.child(EntityType::Namespace, "c").unwrap();
+    /// assert_eq!(child, EntityId::try_from("a.b.c").unwrap());
     /// ```
     pub fn child<S: ToString>(&self, ty: EntityType, name: S) -> Result<Self> {
         if let Some(last) = self.components.last() {
@@ -111,37 +162,64 @@ impl EntityId {
         Ok(child)
     }
 
+    /// Simplification of [EntityId::child] for unqualified ids. Panics if the EntityId is qualified.
+    pub fn child_unqualified<S: ToString>(&self, name: S) -> Self {
+        self.fail_qualified("child_unqualified");
+        self.child(EntityType::None, name).unwrap()
+    }
+
     /// Concat two [EntityId]s into one.
+    ///
+    /// Unqualified [EntityId]: Callable.
     /// ```
     /// use apyxl::model::EntityId;
     /// let lhs = EntityId::try_from("a.b").unwrap();
     /// let rhs = EntityId::try_from("c.dto:Name").unwrap();
     /// assert_eq!(
-    ///     lhs.concat(rhs),
-    ///     EntityId::try_from("a.b.c.dto:Name").unwrap();
+    ///     lhs.concat(&rhs).unwrap(),
+    ///     EntityId::try_from("a.b.c.dto:Name").unwrap(),
     /// );
     /// ```
     pub fn concat(&self, other: &EntityId) -> Result<Self> {
-        Ok(EntityId::try_from(
-            &Self {
-                components: [self.components.clone(), other.components.clone()].concat(),
+        let mut id = self.clone();
+        for component in &other.components {
+            let last_ty = id.components.last().map(|c| c.ty);
+            let is_valid_subtype = last_ty
+                .map(|ty| ty.is_valid_subtype(&component.ty))
+                .unwrap_or(true);
+            if is_valid_subtype {
+                id.components.push(component.clone());
+            } else {
+                return Err(anyhow!(
+                    "EntityId: '{:?}' is not a valid subtype for {:?}",
+                    component.ty,
+                    last_ty
+                ));
             }
-            .to_string(),
-        )?)
+        }
+        Ok(id)
     }
 
     /// True if there are namespace entities.
+    ///
+    /// Unqualified [EntityId]: _Not callable_
     pub fn has_namespace(&self) -> bool {
-        self.components.len() > 1
+        self.fail_unqualified("has_namespace");
+        self.components
+            .iter()
+            .any(|c| c.ty == EntityType::Namespace)
     }
 
     /// Returns the components _before_ the first non-namespace entity, if any.
+    ///
+    /// Unqualified [EntityId]: _Not callable_
     /// ```
     /// use apyxl::model::EntityId;
     /// let id = EntityId::try_from("a.b.c.dto:Name").unwrap();
-    /// assert_eq!(id.namespace(), EntityId::try_from("a.b.c").unwrap());
+    /// assert_eq!(id.namespace().unwrap(), EntityId::try_from("a.b.c").unwrap());
     /// ```
     pub fn namespace(&self) -> Option<EntityId> {
+        self.fail_unqualified("namespace");
         let components = self
             .components
             .iter()
@@ -151,17 +229,23 @@ impl EntityId {
         if components.is_empty() {
             None
         } else {
-            EntityId { components }
+            Some(EntityId {
+                components,
+                is_qualified: self.is_qualified,
+            })
         }
     }
 
     /// Returns an [EntityId] with the components _after_ any namespaces, if nay.
+    ///
+    /// Unqualified [EntityId]: _Not callable_
     /// ```
     /// use apyxl::model::EntityId;
-    /// let id = EntityId::try_from("a.b.c.dto:Name");
-    /// assert_eq!(id.without_namespace(), EntityId::try_from("dto:Name"));
+    /// let id = EntityId::try_from("a.b.c.dto:Name").unwrap();
+    /// assert_eq!(id.without_namespace().unwrap(), EntityId::try_from("dto:Name").unwrap());
     /// ```
     pub fn without_namespace(&self) -> Option<EntityId> {
+        self.fail_unqualified("without_namespace");
         let components = self
             .components
             .iter()
@@ -171,37 +255,69 @@ impl EntityId {
         if components.is_empty() {
             None
         } else {
-            EntityId { components }
+            Some(EntityId {
+                components,
+                is_qualified: self.is_qualified(),
+            })
         }
+    }
+
+    fn fail_qualified(&self, name: &str) {
+        assert!(
+            !self.is_qualified(),
+            "EntityId: do not call '{}' on a qualified EntityId",
+            name
+        );
+    }
+
+    fn fail_unqualified(&self, name: &str) {
+        assert!(
+            self.is_qualified(),
+            "EntityId: do not call '{}' on an unqualified EntityId",
+            name
+        );
     }
 }
 
 impl Display for EntityId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut s = vec![];
-        let mut last_component = None;
-        for c in self.components {
-            match c.ty {
-                EntityType::Namespace => s.push(c.name),
-                EntityType::Dto => s.push(format!("{}:{}", entity::subtype::DTO, c.name)),
-                EntityType::Rpc => s.push(format!("{}:{}", entity::subtype::RPC, c.name)),
-                EntityType::Enum => s.push(format!("{}:{}", entity::subtype::ENUM, c.name)),
-                EntityType::Field => s.push(format!("{}:{}", entity::subtype::FIELD, c.name)),
+        let mut path = vec![];
+        let mut last_component = Option::<&Component>::None;
+        for component in &self.components {
+            match component.ty {
+                EntityType::None => path.push(component.name.clone()),
+                EntityType::Namespace => path.push(component.name.clone()),
+                EntityType::Dto => {
+                    path.push(format!("{}:{}", entity::subtype::DTO, component.name))
+                }
+                EntityType::Rpc => {
+                    path.push(format!("{}:{}", entity::subtype::RPC, component.name))
+                }
+                EntityType::Enum => {
+                    path.push(format!("{}:{}", entity::subtype::ENUM, component.name))
+                }
+                EntityType::Field => {
+                    path.push(format!("{}:{}", entity::subtype::FIELD, component.name))
+                }
                 EntityType::Type => match last_component {
-                    Some(c) if c.ty == EntityType::Field => s.push(entity::subtype::TY.to_owned()),
+                    Some(c) if c.ty == EntityType::Field => {
+                        path.push(entity::subtype::TY.to_owned())
+                    }
                     Some(c) if c.ty == EntityType::Rpc => {
-                        s.push(entity::subtype::RETURN_TY.to_owned())
+                        path.push(entity::subtype::RETURN_TY.to_owned())
                     }
-                    _ => {
-                        return Err(std::fmt::Error::custom(
-                            "EntityId: cannot display context-dependent component 'Type'",
-                        ))
-                    }
+                    _ => return Err(std::fmt::Error),
                 },
             }
-            last_component = Some(&c);
+            last_component = Some(&component);
         }
-        write!(f, "{}", s.join("."))
+        write!(f, "{}", path.join("."))
+    }
+}
+
+impl Hash for EntityId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.components.hash(state)
     }
 }
 
@@ -235,12 +351,15 @@ impl<S: AsRef<str>> TryFrom<&[S]> for EntityId {
                 ));
             }
         }
-        Ok(Self { components })
+        Ok(Self {
+            components,
+            is_qualified: true,
+        })
     }
 }
 
 fn parse_component(subtype: &str, name: String, parent: Option<&Component>) -> Result<Component> {
-    let entity_type = EntityType::try_from(&subtype)?;
+    let entity_type = EntityType::try_from(subtype)?;
     if let Some(parent) = parent {
         if !parent.ty.is_valid_subtype(&entity_type) {
             return Err(anyhow!(
@@ -333,17 +452,13 @@ mod tests {
 
         #[test]
         fn slice() {
-            let _ = EntityId::try_from(&["ns0", "ns1", "dto:Name", "field:asdf"]).unwrap();
+            let _ =
+                EntityId::try_from(["ns0", "ns1", "dto:Name", "field:asdf"].as_slice()).unwrap();
         }
 
         #[test]
         fn str() {
-            let _ = EntityId::try_from(&"ns0.ns1.dto:Name.field:asdf").unwrap();
-        }
-
-        #[test]
-        fn string() {
-            let _ = EntityId::try_from("ns0.ns1.dto:Name.field:asdf".to_string()).unwrap();
+            let _ = EntityId::try_from("ns0.ns1.dto:Name.field:asdf").unwrap();
         }
     }
 
@@ -352,17 +467,19 @@ mod tests {
 
         #[test]
         fn test() {
+            let mut v = vec![
+                EntityId::try_from("a.b.c.dto:A.field:X").unwrap(),
+                EntityId::try_from("a.b.z.dto:C.field:X").unwrap(),
+                EntityId::try_from("a.b.z.dto:B.field:X").unwrap(),
+                EntityId::try_from("a.b").unwrap(),
+                EntityId::try_from("a.b.c.dto:A.field:Y").unwrap(),
+                EntityId::try_from("a.b.z.dto:A.field:X").unwrap(),
+                EntityId::try_from("a").unwrap(),
+                EntityId::try_from("a.b.c.dto:A.field:Z").unwrap(),
+            ];
+            v.sort();
             assert_eq!(
-                vec![
-                    EntityId::try_from("a.b.d:C.f:X").unwrap(),
-                    EntityId::try_from("a.b.c.d:A.f:Z").unwrap(),
-                    EntityId::try_from("a.b.c.d:A.f:X").unwrap(),
-                    EntityId::try_from("a.b.d:B.f:X").unwrap(),
-                    EntityId::try_from("a.b").unwrap(),
-                    EntityId::try_from("a.b.c.d:A.f:Y").unwrap(),
-                    EntityId::try_from("a.b.d:A.f:X").unwrap(),
-                ]
-                .sort(),
+                v,
                 vec![
                     EntityId::try_from("a").unwrap(),
                     EntityId::try_from("a.b").unwrap(),
@@ -387,15 +504,17 @@ mod tests {
             let abc = abc_dto.parent().unwrap();
             let ab = abc.parent().unwrap();
             let a = ab.parent().unwrap();
-            let none = a.parent();
+            let root = a.parent().unwrap();
+            let none = root.parent();
             assert_eq!(
                 EntityId::try_from("a.b").unwrap().parent().unwrap(),
                 EntityId::try_from("a").unwrap()
             );
 
-            assert_eq!(abc, EntityId::try_from("a.b.dto:Name"));
-            assert_eq!(ab, EntityId::try_from("a.b"));
-            assert_eq!(a, EntityId::try_from("a"));
+            assert_eq!(abc, EntityId::try_from("a.b.dto:Name").unwrap());
+            assert_eq!(ab, EntityId::try_from("a.b").unwrap());
+            assert_eq!(a, EntityId::try_from("a").unwrap());
+            assert_eq!(root, EntityId::default());
             assert!(none.is_none());
         }
 
@@ -403,17 +522,17 @@ mod tests {
         fn child_namespace() {
             let id = EntityId::try_from("a.b").unwrap();
             assert_eq!(
-                id.child(EntityType::Namespace, "c"),
-                EntityId::try_from("a.b.c").unwrap()
+                id.child(EntityType::Namespace, "c").unwrap(),
+                EntityId::try_from("a.b.c").unwrap(),
             );
         }
 
         #[test]
         fn child_subtype() {
             let id = EntityId::try_from("a.b").unwrap();
-            let dto = id.child(EntityType::Dto, "c");
-            let field = id.child(EntityType::Field, "d");
-            let ty = id.child(EntityType::Type, "ty");
+            let dto = id.child(EntityType::Dto, "c").unwrap();
+            let field = dto.child(EntityType::Field, "d").unwrap();
+            let ty = field.child(EntityType::Type, "ty").unwrap();
             assert_eq!(dto, EntityId::try_from("a.b.dto:c").unwrap());
             assert_eq!(field, EntityId::try_from("a.b.dto:c.field:d").unwrap());
             assert_eq!(ty, EntityId::try_from("a.b.dto:c.field:d.ty").unwrap());
@@ -439,7 +558,7 @@ mod tests {
                 .is_err());
             assert!(EntityId::try_from("rpc:x")
                 .unwrap()
-                .child(EntityType::Type, "x")
+                .child(EntityType::Dto, "x")
                 .is_err());
         }
 
@@ -457,7 +576,7 @@ mod tests {
 
         #[test]
         fn namespace_solo() {
-            let id = EntityId::try_from("a.b.c.dto:Name").unwrap();
+            let id = EntityId::try_from("a.b.c").unwrap();
             assert_eq!(id.namespace(), Some(id));
         }
 
@@ -488,7 +607,7 @@ mod tests {
 
         #[test]
         fn with_ty() -> Result<()> {
-            run_test("a.b.c.d:Name.f:name", "a.b.c.dto:Name.field:name.ty")
+            run_test("a.b.c.d:Name.f:name.ty", "a.b.c.dto:Name.field:name.ty")
         }
 
         #[test]

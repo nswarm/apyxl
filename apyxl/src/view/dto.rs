@@ -1,4 +1,6 @@
 use crate::model;
+use crate::model::entity::ToEntity;
+use crate::model::EntityType;
 use crate::view::{Attributes, Field, Transforms};
 use dyn_clone::DynClone;
 use std::borrow::Cow;
@@ -35,6 +37,10 @@ impl<'v, 'a> Dto<'v, 'a> {
             x.name(&mut name)
         }
         name
+    }
+
+    pub fn entity_type(&self) -> EntityType {
+        self.target.entity_type()
     }
 
     pub fn fields(&'a self) -> impl Iterator<Item = Field<'v, 'a>> {
@@ -86,11 +92,13 @@ mod tests {
         let root = view.api();
 
         assert_eq!(
-            root.find_dto(&EntityId::from("ns0.dto0")).unwrap().name(),
+            root.find_dto(&EntityId::try_from("ns0.d:dto0").unwrap())
+                .unwrap()
+                .name(),
             TestRenamer::renamed("dto0")
         );
         assert_eq!(
-            root.find_dto(&EntityId::from("ns0.ns1.dto1"))
+            root.find_dto(&EntityId::try_from("ns0.ns1.d:dto1").unwrap())
                 .unwrap()
                 .name(),
             TestRenamer::renamed("dto1")
@@ -111,7 +119,9 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_dto_transform(TestFilter {});
         let root = view.api();
-        let dto = root.find_dto(&EntityId::from("dto")).unwrap();
+        let dto = root
+            .find_dto(&EntityId::try_from("d:dto").unwrap())
+            .unwrap();
         let fields = dto.fields().map(|f| f.name().to_string()).collect_vec();
 
         assert_eq!(fields, vec!["visible0", "visible1"]);

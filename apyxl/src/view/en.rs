@@ -4,6 +4,8 @@ use std::fmt::Debug;
 use dyn_clone::DynClone;
 
 use crate::model;
+use crate::model::entity::ToEntity;
+use crate::model::EntityType;
 use crate::view::{Attributes, Transforms};
 
 /// A single enum within an [Api].
@@ -50,6 +52,10 @@ impl<'v, 'a> Enum<'v, 'a> {
             x.name(&mut name)
         }
         name
+    }
+
+    pub fn entity_type(&self) -> EntityType {
+        self.target.entity_type()
     }
 
     pub fn values(&'a self) -> impl Iterator<Item = EnumValue<'v, 'a>> {
@@ -120,11 +126,13 @@ mod tests {
         let root = view.api();
 
         assert_eq!(
-            root.find_enum(&EntityId::from("ns0.en0")).unwrap().name(),
+            root.find_enum(&EntityId::try_from("ns0.e:en0").unwrap())
+                .unwrap()
+                .name(),
             TestRenamer::renamed("en0")
         );
         assert_eq!(
-            root.find_enum(&EntityId::from("ns0.ns1.en1"))
+            root.find_enum(&EntityId::try_from("ns0.ns1.en1").unwrap())
                 .unwrap()
                 .name(),
             TestRenamer::renamed("en1")
@@ -146,7 +154,9 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_enum_transform(TestFilter {});
         let root = view.api();
-        let en = root.find_enum(&EntityId::from("en")).unwrap();
+        let en = root
+            .find_enum(&EntityId::try_from("e:en").unwrap())
+            .unwrap();
         let values = en
             .values()
             .map(|value| value.name().to_string())

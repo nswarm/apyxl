@@ -29,8 +29,8 @@ impl ApyxlParser for Rust {
         for (chunk, data) in input.chunks() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
             if let Some(file_path) = &chunk.relative_file_path {
-                for component in rust_util::path_to_entity_id(file_path).path {
-                    builder.enter_namespace(&component)
+                for component in rust_util::path_to_entity_id(file_path).component_names() {
+                    builder.enter_namespace(component)
                 }
             }
 
@@ -192,12 +192,7 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
         .separated_by(just("::"))
         .at_least(1)
         .collect::<Vec<_>>()
-        .map(|components| EntityId {
-            components: components
-                .into_iter()
-                .map(str::to_string)
-                .collect::<Vec<String>>(),
-        })
+        .map(|components| EntityId::new_unqualified_vec(components.into_iter()))
 }
 
 fn field<'a>(config: &'a Config) -> impl Parser<'a, &'a str, Field, Error> + 'a {
@@ -431,7 +426,10 @@ mod tests {
         let result = field(&CONFIG).parse("name: Type");
         let output = result.into_result().map_err(wrap_test_err)?;
         assert_eq!(output.name, "name");
-        assert_eq!(output.ty.api().unwrap().name().unwrap(), "Type");
+        assert_eq!(
+            output.ty.api().unwrap().component_names().last().unwrap(),
+            "Type"
+        );
         Ok(())
     }
 
@@ -474,7 +472,9 @@ mod tests {
             parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
             let model = builder.build().unwrap();
 
-            let namespace = model.api().find_namespace(&EntityId::from("a.b.c"));
+            let namespace = model
+                .api()
+                .find_namespace(&EntityId::new_unqualified("a.b.c"));
             assert!(namespace.is_some());
             assert!(namespace.unwrap().dto("dto").is_some());
             Ok(())
@@ -491,7 +491,9 @@ mod tests {
             parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
             let model = builder.build().unwrap();
 
-            let namespace = model.api().find_namespace(&EntityId::from("a.b"));
+            let namespace = model
+                .api()
+                .find_namespace(&EntityId::new_unqualified("a.b"));
             assert!(namespace.is_some());
             assert!(namespace.unwrap().dto("dto").is_some());
             Ok(())
@@ -508,7 +510,9 @@ mod tests {
             parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
             let model = builder.build().unwrap();
 
-            let namespace = model.api().find_namespace(&EntityId::from("a.b"));
+            let namespace = model
+                .api()
+                .find_namespace(&EntityId::new_unqualified("a.b"));
             assert!(namespace.is_some());
             assert!(namespace.unwrap().dto("dto").is_some());
             Ok(())
@@ -574,14 +578,18 @@ mod tests {
 
         test!(str, "&str", Type::String);
         test!(bytes_slice, "&[u8]", Type::Bytes);
-        test!(entity_id, "a::b::c", Type::Api(EntityId::from("a.b.c")));
+        test!(
+            entity_id,
+            "a::b::c",
+            Type::Api(EntityId::new_unqualified("a.b.c"))
+        );
 
         // Vec/Array.
         test!(vec, "Vec<i32>", Type::new_array(Type::I32));
         test!(
             vec_api,
             "Vec<a::b::c>",
-            Type::new_array(Type::Api(EntityId::from("a.b.c")))
+            Type::new_array(Type::Api(EntityId::new_unqualified("a.b.c")))
         );
         test!(
             vec_nested,
@@ -599,8 +607,8 @@ mod tests {
             map_api,
             "HashMap<dto, a::b::c>",
             Type::new_map(
-                Type::Api(EntityId::from("dto")),
-                Type::Api(EntityId::from("a.b.c")),
+                Type::Api(EntityId::new_unqualified("dto")),
+                Type::Api(EntityId::new_unqualified("a.b.c")),
             )
         );
         test!(
@@ -617,7 +625,7 @@ mod tests {
         test!(
             option_api,
             "Option<a::b::c>",
-            Type::new_optional(Type::Api(EntityId::from("a.b.c")))
+            Type::new_optional(Type::Api(EntityId::new_unqualified("a.b.c")))
         );
         test!(
             option_nested,
@@ -678,6 +686,7 @@ mod tests {
     mod entity_id {
         use anyhow::Result;
         use chumsky::Parser;
+        use itertools::Itertools;
 
         use crate::parser::rust::entity_id;
         use crate::parser::rust::tests::wrap_test_err;
@@ -688,7 +697,7 @@ mod tests {
                 .parse("_type")
                 .into_result()
                 .map_err(wrap_test_err)?;
-            assert_eq!(id.path, vec!["_type"]);
+            assert_eq!(id.component_names().collect_vec(), vec!["_type"]);
             Ok(())
         }
 
@@ -698,7 +707,7 @@ mod tests {
                 .parse("a::b::c")
                 .into_result()
                 .map_err(wrap_test_err)?;
-            assert_eq!(id.path, vec!["a", "b", "c"]);
+            assert_eq!(id.component_names().collect_vec(), vec!["a", "b", "c"]);
             Ok(())
         }
 
@@ -708,7 +717,7 @@ mod tests {
                 .parse("&Type")
                 .into_result()
                 .map_err(wrap_test_err)?;
-            assert_eq!(id.path, vec!["&Type"]);
+            assert_eq!(id.component_names().collect_vec(), vec!["&Type"]);
             Ok(())
         }
     }
@@ -986,7 +995,10 @@ mod tests {
                 .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 1);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
+            assert_eq!(
+                rpc.params[0].ty.api().unwrap().component_names().last(),
+                Some("ParamType0")
+            );
             Ok(())
         }
 
@@ -1002,11 +1014,20 @@ mod tests {
                 .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
+            assert_eq!(
+                rpc.params[0].ty.api().unwrap().component_names().last(),
+                Some("ParamType0")
+            );
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.api().unwrap().name(), Some("ParamType1"));
+            assert_eq!(
+                rpc.params[1].ty.api().unwrap().component_names().last(),
+                Some("ParamType1")
+            );
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.api().unwrap().name(), Some("ParamType2"));
+            assert_eq!(
+                rpc.params[2].ty.api().unwrap().component_names().last(),
+                Some("ParamType2")
+            );
             Ok(())
         }
 
@@ -1029,11 +1050,20 @@ mod tests {
                 .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
+            assert_eq!(
+                rpc.params[0].ty.api().unwrap().component_names().last(),
+                Some("ParamType0")
+            );
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.api().unwrap().name(), Some("ParamType1"));
+            assert_eq!(
+                rpc.params[1].ty.api().unwrap().component_names().last(),
+                Some("ParamType1")
+            );
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.api().unwrap().name(), Some("ParamType2"));
+            assert_eq!(
+                rpc.params[2].ty.api().unwrap().component_names().last(),
+                Some("ParamType2")
+            );
             Ok(())
         }
 
@@ -1052,11 +1082,20 @@ mod tests {
                 .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 3);
             assert_eq!(rpc.params[0].name, "param0");
-            assert_eq!(rpc.params[0].ty.api().unwrap().name(), Some("ParamType0"));
+            assert_eq!(
+                rpc.params[0].ty.api().unwrap().component_names().last(),
+                Some("ParamType0")
+            );
             assert_eq!(rpc.params[1].name, "param1");
-            assert_eq!(rpc.params[1].ty.api().unwrap().name(), Some("ParamType1"));
+            assert_eq!(
+                rpc.params[1].ty.api().unwrap().component_names().last(),
+                Some("ParamType1")
+            );
             assert_eq!(rpc.params[2].name, "param2");
-            assert_eq!(rpc.params[2].ty.api().unwrap().name(), Some("ParamType2"));
+            assert_eq!(
+                rpc.params[2].ty.api().unwrap().component_names().last(),
+                Some("ParamType2")
+            );
             Ok(())
         }
 
@@ -1071,7 +1110,9 @@ mod tests {
                 .into_result()
                 .map_err(wrap_test_err)?;
             assert_eq!(
-                rpc.return_type.as_ref().map(|x| x.api().unwrap().name()),
+                rpc.return_type
+                    .as_ref()
+                    .map(|x| x.api().unwrap().component_names().last()),
                 Some(Some("Asdfg"))
             );
             Ok(())
@@ -1088,7 +1129,9 @@ mod tests {
                 .into_result()
                 .map_err(wrap_test_err)?;
             assert_eq!(
-                rpc.return_type.as_ref().map(|x| x.api().unwrap().name()),
+                rpc.return_type
+                    .as_ref()
+                    .map(|x| x.api().unwrap().component_names().last()),
                 Some(Some("Asdfg"))
             );
             Ok(())

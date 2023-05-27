@@ -1,4 +1,5 @@
-use crate::model::{Attributes, Field};
+use crate::model::api::entity::ToEntity;
+use crate::model::{Attributes, Entity, Field};
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -15,5 +16,11 @@ impl<'a> Dto<'a> {
 
     pub fn field_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
         self.fields.iter_mut().find(|field| field.name == name)
+    }
+}
+
+impl ToEntity for Dto<'_> {
+    fn to_entity(&self) -> Entity {
+        Entity::Dto(self)
     }
 }

@@ -1,4 +1,4 @@
-use crate::model::{Api, EntityId, Namespace, Type};
+use crate::model::{Api, EntityId, EntityType, Namespace, NamespaceChild, Type};
 use itertools::Itertools;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
@@ -50,33 +50,49 @@ impl Dependencies {
     }
 
     fn add_nodes_recursively(&mut self, namespace: &Namespace, namespace_id: &EntityId) {
-        for dto in namespace.dtos() {
-            self.add_node(&namespace_id.child(dto.name));
-        }
+        // unwraps ok here because we're iterating known children.
 
-        for rpc in namespace.rpcs() {
-            self.add_node(&namespace_id.child(rpc.name));
-        }
-
-        for en in namespace.enums() {
-            self.add_node(&namespace_id.child(en.name));
+        for child in &namespace.children {
+            match child {
+                NamespaceChild::Dto(dto) => {
+                    self.add_node(&namespace_id.child(EntityType::Dto, dto.name).unwrap());
+                }
+                NamespaceChild::Rpc(rpc) => {
+                    self.add_node(&namespace_id.child(EntityType::Rpc, rpc.name).unwrap());
+                }
+                NamespaceChild::Enum(en) => {
+                    self.add_node(&namespace_id.child(EntityType::Enum, en.name).unwrap());
+                }
+                NamespaceChild::Namespace(_) => {}
+            }
         }
 
         for child in namespace.namespaces() {
-            self.add_nodes_recursively(child, &namespace_id.child(&child.name));
+            self.add_nodes_recursively(
+                child,
+                &namespace_id
+                    .child(EntityType::Namespace, &child.name)
+                    .unwrap(),
+            );
         }
     }
 
     fn add_edges_recursively(&mut self, namespace: &Namespace, namespace_id: &EntityId) {
+        // unwraps ok here because we're iterating known children.
+
         for dto in namespace.dtos() {
-            let from = *self.node(&namespace_id.child(dto.name)).unwrap();
+            let from = *self
+                .node(&namespace_id.child(EntityType::Dto, dto.name).unwrap())
+                .unwrap();
             for field in &dto.fields {
                 self.add_edge(from, namespace_id, &field.ty);
             }
         }
 
         for rpc in namespace.rpcs() {
-            let from = *self.node(&namespace_id.child(rpc.name)).unwrap();
+            let from = *self
+                .node(&namespace_id.child(EntityType::Rpc, rpc.name).unwrap())
+                .unwrap();
             for param in &rpc.params {
                 self.add_edge(from, namespace_id, &param.ty);
             }
@@ -86,7 +102,12 @@ impl Dependencies {
         }
 
         for child in namespace.namespaces() {
-            self.add_edges_recursively(child, &namespace_id.child(&child.name));
+            self.add_edges_recursively(
+                child,
+                &namespace_id
+                    .child(EntityType::Namespace, &child.name)
+                    .unwrap(),
+            );
         }
     }
 
@@ -103,7 +124,10 @@ impl Dependencies {
     fn node_relative(&self, base: &EntityId, relative: &EntityId) -> Option<&NodeIndex> {
         let mut it = Some(base.clone());
         while let Some(base) = it {
-            let entity_id = base.concat(relative);
+            let entity_id = match base.concat(relative) {
+                Ok(id) => id,
+                Err(_) => return None,
+            };
             if let Some(index) = self.node_map.get(&entity_id) {
                 return Some(index);
             }
@@ -168,7 +192,7 @@ mod tests {
 
         #[test]
         fn success() {
-            let node_id = EntityId::from("dto");
+            let node_id = EntityId::try_from("d:dto").unwrap();
             run_test(r#"struct dto {}"#, |deps| {
                 assert!(deps.contains_node(&node_id))
             });
@@ -176,7 +200,7 @@ mod tests {
 
         #[test]
         fn failure() {
-            let node_id = EntityId::from("rpc");
+            let node_id = EntityId::try_from("r:rpc").unwrap();
             run_test(r#"struct dto {}"#, |deps| {
                 assert!(!deps.contains_node(&node_id))
             });
@@ -189,8 +213,8 @@ mod tests {
 
         #[test]
         fn sibling() {
-            let from = EntityId::from("dto1");
-            let to = EntityId::from("dto0");
+            let from = EntityId::try_from("d:dto1").unwrap();
+            let to = EntityId::try_from("d:dto0").unwrap();
             run_test(
                 r#"
             struct dto0 {}
@@ -204,8 +228,8 @@ mod tests {
 
         #[test]
         fn parent() {
-            let from = EntityId::from("ns.dto1");
-            let to = EntityId::from("dto0");
+            let from = EntityId::try_from("ns.d:dto1").unwrap();
+            let to = EntityId::try_from("d:dto0").unwrap();
             run_test(
                 r#"
             struct dto0 {}
@@ -221,8 +245,8 @@ mod tests {
 
         #[test]
         fn nephew() {
-            let from = EntityId::from("dto1");
-            let to = EntityId::from("ns.dto0");
+            let from = EntityId::try_from("d:dto1").unwrap();
+            let to = EntityId::try_from("ns.d:dto0").unwrap();
             run_test(
                 r#"
             mod ns {
@@ -238,8 +262,8 @@ mod tests {
 
         #[test]
         fn cousin() {
-            let from = EntityId::from("ns1.dto1");
-            let to = EntityId::from("ns0.dto0");
+            let from = EntityId::try_from("ns1.d:dto1").unwrap();
+            let to = EntityId::try_from("ns0.d:dto0").unwrap();
             run_test(
                 r#"
             mod ns0 {
@@ -257,8 +281,8 @@ mod tests {
 
         #[test]
         fn always_fully_qualified() {
-            let a = EntityId::from("ns0.ns1.dto1");
-            let b = EntityId::from("ns0.dto0");
+            let a = EntityId::try_from("ns0.ns1.d:dto1").unwrap();
+            let b = EntityId::try_from("ns0.d:dto0").unwrap();
             run_test(
                 r#"
             mod ns0 {
@@ -281,8 +305,8 @@ mod tests {
 
         #[test]
         fn failure() {
-            let from = EntityId::from("dto0");
-            let to = EntityId::from("dto1");
+            let from = EntityId::try_from("d:dto0").unwrap();
+            let to = EntityId::try_from("d:dto1").unwrap();
             run_test(
                 r#"
             struct dto0 {}
@@ -316,10 +340,13 @@ mod tests {
             }
             "#,
                 |deps| {
-                    let deps = deps.get_for(&EntityId::from("ns0.dto0"));
+                    let deps = deps.get_for(&EntityId::try_from("ns0.d:dto0").unwrap());
                     assert_eq!(
                         deps,
-                        vec![&EntityId::from("ns0.ns1.dto1"), &EntityId::from("ns0.en")]
+                        vec![
+                            &EntityId::try_from("ns0.ns1.d:dto1").unwrap(),
+                            &EntityId::try_from("ns0.e:en").unwrap()
+                        ]
                     );
                 },
             );
@@ -343,9 +370,13 @@ mod tests {
             }
             "#,
                 |deps| {
-                    assert!(deps.node(&EntityId::from("dto")).is_some());
-                    assert!(deps.node(&EntityId::from("ns0.dto")).is_some());
-                    assert!(deps.node(&EntityId::from("ns0.ns1.dto")).is_some());
+                    assert!(deps.node(&EntityId::try_from("d:dto").unwrap()).is_some());
+                    assert!(deps
+                        .node(&EntityId::try_from("ns0.d:dto").unwrap())
+                        .is_some());
+                    assert!(deps
+                        .node(&EntityId::try_from("ns0.ns1.d:dto").unwrap())
+                        .is_some());
                     assert_eq!(deps.graph.node_count(), 3);
                 },
             );
@@ -364,9 +395,13 @@ mod tests {
             }
             "#,
                 |deps| {
-                    assert!(deps.node(&EntityId::from("rpc")).is_some());
-                    assert!(deps.node(&EntityId::from("ns0.rpc")).is_some());
-                    assert!(deps.node(&EntityId::from("ns0.ns1.rpc")).is_some());
+                    assert!(deps.node(&EntityId::try_from("r:rpc").unwrap()).is_some());
+                    assert!(deps
+                        .node(&EntityId::try_from("ns0.r:rpc").unwrap())
+                        .is_some());
+                    assert!(deps
+                        .node(&EntityId::try_from("ns0.ns1.r:rpc").unwrap())
+                        .is_some());
                     assert_eq!(deps.graph.node_count(), 3);
                 },
             );
@@ -385,9 +420,13 @@ mod tests {
             }
             "#,
                 |deps| {
-                    assert!(deps.node(&EntityId::from("en")).is_some());
-                    assert!(deps.node(&EntityId::from("ns0.en")).is_some());
-                    assert!(deps.node(&EntityId::from("ns0.ns1.en")).is_some());
+                    assert!(deps.node(&EntityId::try_from("e:en").unwrap()).is_some());
+                    assert!(deps
+                        .node(&EntityId::try_from("ns0.e:en").unwrap())
+                        .is_some());
+                    assert!(deps
+                        .node(&EntityId::try_from("ns0.ns1.e:en").unwrap())
+                        .is_some());
                     assert_eq!(deps.graph.node_count(), 3);
                 },
             );
@@ -509,9 +548,9 @@ mod tests {
         }
 
         fn run_complex_type_test(data: &str) {
-            let src = EntityId::from("ns.src");
-            let dto = EntityId::from("ns.dto");
-            let en = EntityId::from("ns.en");
+            let src = EntityId::try_from("ns.d:src").unwrap();
+            let dto = EntityId::try_from("ns.d:dto").unwrap();
+            let en = EntityId::try_from("ns.e:en").unwrap();
             run_test(data, |deps| {
                 assert!(deps.contains_edge(&src, &dto));
                 assert!(deps.contains_edge(&src, &en));

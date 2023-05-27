@@ -1,10 +1,9 @@
 use crate::model;
-use itertools::Itertools;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 pub fn path_to_entity_id(path: &Path) -> model::EntityId {
-    model::EntityId::from(path_iter(&namespace_path(path)).collect_vec())
+    model::EntityId::new_unqualified_vec(path_iter(&namespace_path(path)))
 }
 
 /// Iterate over path as strings.

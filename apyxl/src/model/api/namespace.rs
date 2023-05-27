@@ -1,4 +1,4 @@
-use crate::model::api::entity::{Entity, FindEntity, ToEntity};
+use crate::model::api::entity::{Entity, EntityType, FindEntity, ToEntity};
 use crate::model::{Attributes, Dto, EntityId, Enum, Rpc};
 use itertools::Itertools;
 use std::borrow::Cow;
@@ -39,16 +39,23 @@ pub enum NamespaceChild<'a> {
 
 impl FindEntity for Namespace<'_> {
     fn find_entity(&self, id: &EntityId) -> Option<Entity> {
-        if !id.has_namespace() {
-            return id
-                .name()
-                .and_then(|name| self.child(&name).map(|child| child.find_entity(id)));
-        }
+        // todo
+        // if !id.has_namespace() {
+        //     return id
+        //         .name()
+        //         .and_then(|name| self.child(&name).map(|child| child.find_entity(id)));
+        // }
         // match self.find_namespace(&entity_id.namespace()) {
         //     None => None,
         //     Some(namespace) => namespace.find_entity(id.),
         // }
         None
+    }
+}
+
+impl ToEntity for Namespace<'_> {
+    fn to_entity(&self) -> Entity {
+        Entity::Namespace(self)
     }
 }
 
@@ -264,11 +271,8 @@ impl<'a> Namespace<'a> {
 
     /// Find a [NamespaceChild] by [EntityId] relative to this [Namespace].
     pub fn find_child(&self, entity_id: &EntityId) -> Option<&NamespaceChild<'a>> {
-        if !entity_id.has_namespace() {
-            return entity_id.name().and_then(|name| self.child(&name));
-        }
-        let namespace = self.find_namespace(&entity_id.namespace());
-        let name = entity_id.name();
+        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.child(&name),
             _ => None,
@@ -277,11 +281,8 @@ impl<'a> Namespace<'a> {
 
     /// Find a [Dto] by [EntityId] relative to this [Namespace].
     pub fn find_dto(&self, entity_id: &EntityId) -> Option<&Dto<'a>> {
-        if !entity_id.has_namespace() {
-            return entity_id.name().and_then(|name| self.dto(&name));
-        }
-        let namespace = self.find_namespace(&entity_id.namespace());
-        let name = entity_id.name();
+        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.dto(&name),
             _ => None,
@@ -290,11 +291,8 @@ impl<'a> Namespace<'a> {
 
     /// Find a [Dto] by [EntityId] relative to this [Namespace].
     pub fn find_dto_mut(&mut self, entity_id: &EntityId) -> Option<&mut Dto<'a>> {
-        if !entity_id.has_namespace() {
-            return entity_id.name().and_then(|name| self.dto_mut(&name));
-        }
-        let namespace = self.find_namespace_mut(&entity_id.namespace());
-        let name = entity_id.name();
+        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.dto_mut(&name),
             _ => None,
@@ -303,8 +301,8 @@ impl<'a> Namespace<'a> {
 
     /// Find a [Rpc] by [EntityId] relative to this [Namespace].
     pub fn find_rpc(&self, entity_id: &EntityId) -> Option<&Rpc<'a>> {
-        let namespace = self.find_namespace(&entity_id.namespace());
-        let name = entity_id.name();
+        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.rpc(&name),
             _ => None,
@@ -313,8 +311,8 @@ impl<'a> Namespace<'a> {
 
     /// Find a [Rpc] by [EntityId] relative to this [Namespace].
     pub fn find_rpc_mut(&mut self, entity_id: &EntityId) -> Option<&mut Rpc<'a>> {
-        let namespace = self.find_namespace_mut(&entity_id.namespace());
-        let name = entity_id.name();
+        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.rpc_mut(&name),
             _ => None,
@@ -323,8 +321,8 @@ impl<'a> Namespace<'a> {
 
     /// Find a [Enum] by [EntityId] relative to this [Namespace].
     pub fn find_enum(&self, entity_id: &EntityId) -> Option<&Enum<'a>> {
-        let namespace = self.find_namespace(&entity_id.namespace());
-        let name = entity_id.name();
+        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.en(&name),
             _ => None,
@@ -333,8 +331,8 @@ impl<'a> Namespace<'a> {
 
     /// Find a [Enum] by [EntityId] relative to this [Namespace].
     pub fn find_enum_mut(&mut self, entity_id: &EntityId) -> Option<&mut Enum<'a>> {
-        let namespace = self.find_namespace_mut(&entity_id.namespace());
-        let name = entity_id.name();
+        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.en_mut(&name),
             _ => None,
@@ -345,7 +343,7 @@ impl<'a> Namespace<'a> {
     /// If the type ref is empty, this [Namespace] will be returned.
     pub fn find_namespace(&self, entity_id: &EntityId) -> Option<&Namespace<'a>> {
         let mut namespace_it = self;
-        for name in &entity_id.path {
+        for name in entity_id.component_names() {
             if let Some(namespace) = namespace_it.namespace(name) {
                 namespace_it = namespace;
             } else {
@@ -358,7 +356,7 @@ impl<'a> Namespace<'a> {
     /// Find a [Namespace] by [EntityId] relative to this [Namespace].
     pub fn find_namespace_mut(&mut self, entity_id: &EntityId) -> Option<&mut Namespace<'a>> {
         let mut namespace_it = self;
-        for name in &entity_id.path {
+        for name in entity_id.component_names() {
             if let Some(namespace) = namespace_it.namespace_mut(name) {
                 namespace_it = namespace;
             } else {
@@ -408,6 +406,10 @@ impl<'a> NamespaceChild<'a> {
             NamespaceChild::Namespace(namespace) => &mut namespace.attributes,
         }
     }
+
+    pub fn entity_type(&self) -> EntityType {
+        self.to_entity().ty()
+    }
 }
 
 impl ToEntity for NamespaceChild<'_> {
@@ -418,6 +420,22 @@ impl ToEntity for NamespaceChild<'_> {
             NamespaceChild::Enum(en) => en.to_entity(),
             NamespaceChild::Namespace(namespace) => namespace.to_entity(),
         }
+    }
+}
+
+fn unqualified_name(id: &EntityId) -> Option<&str> {
+    if id.len() > 0 {
+        id.component_names().last()
+    } else {
+        None
+    }
+}
+
+fn unqualified_namespace(id: &EntityId) -> EntityId {
+    if id.len() > 1 {
+        EntityId::new_unqualified_vec(id.component_names().take(id.len() - 1))
+    } else {
+        EntityId::default()
     }
 }
 
@@ -541,8 +559,8 @@ mod tests {
         #[test]
         fn dto() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::from(test_dto(1).name);
-            let entity_id2 = EntityId::from(test_dto(2).name);
+            let entity_id1 = EntityId::new_unqualified(test_dto(1).name);
+            let entity_id2 = EntityId::new_unqualified(test_dto(2).name);
             assert_eq!(api.find_dto(&entity_id1), Some(&test_dto(1)));
             assert_eq!(api.find_dto_mut(&entity_id2), Some(&mut test_dto(2)));
         }
@@ -550,8 +568,8 @@ mod tests {
         #[test]
         fn rpc() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::from(test_dto(1).name);
-            let entity_id2 = EntityId::from(test_dto(2).name);
+            let entity_id1 = EntityId::new_unqualified(test_dto(1).name);
+            let entity_id2 = EntityId::new_unqualified(test_dto(2).name);
             assert_eq!(api.find_rpc(&entity_id1), Some(&test_rpc(1)),);
             assert_eq!(api.find_rpc_mut(&entity_id2), Some(&mut test_rpc(2)),);
         }
@@ -559,8 +577,8 @@ mod tests {
         #[test]
         fn namespace() {
             let mut api = complex_api();
-            let entity_id1 = EntityId::from([complex_namespace(1).name].as_slice());
-            let entity_id2 = EntityId::from([complex_namespace(2).name].as_slice());
+            let entity_id1 = EntityId::new_unqualified(&complex_namespace(1).name);
+            let entity_id2 = EntityId::new_unqualified(&complex_namespace(2).name);
             assert_eq!(api.find_namespace(&entity_id1), Some(&complex_namespace(1)));
             assert_eq!(
                 api.find_namespace_mut(&entity_id2),
@@ -571,8 +589,9 @@ mod tests {
         #[test]
         fn child() {
             let api = complex_api();
-            let entity_id =
-                EntityId::from([complex_namespace(1).name, Cow::Borrowed(NAMES[3])].as_slice());
+            let entity_id = EntityId::new_unqualified_vec(
+                [complex_namespace(1).name, Cow::Borrowed(NAMES[3])].iter(),
+            );
             assert_eq!(api.find_dto(&entity_id), Some(&test_dto(3)));
             assert_eq!(api.find_rpc(&entity_id), Some(&test_rpc(3)));
             assert_eq!(api.find_namespace(&entity_id), Some(&test_namespace(3)));
@@ -581,13 +600,13 @@ mod tests {
         #[test]
         fn multi_depth_child() {
             let api = complex_api();
-            let entity_id = EntityId::from(
+            let entity_id = EntityId::new_unqualified_vec(
                 [
                     complex_namespace(1).name,
                     test_namespace(4).name,
                     Cow::Borrowed(NAMES[5]),
                 ]
-                .as_slice(),
+                .iter(),
             );
             assert_eq!(api.find_dto(&entity_id), Some(&test_dto(5)));
         }
@@ -604,16 +623,19 @@ mod tests {
 
         #[test]
         fn parent_is_root() {
-            let ty = EntityId::from("dto");
+            let ty = EntityId::new_unqualified("dto");
             assert_eq!(ty.parent(), Some(EntityId::default()));
         }
 
         #[test]
         fn typical() {
-            let ty = EntityId::from("ns0.ns1.dto");
+            let ty = EntityId::new_unqualified("ns0.ns1.dto");
             let parent = ty.parent();
-            assert_eq!(parent, Some(EntityId::from("ns0.ns1")));
-            assert_eq!(parent.unwrap().parent(), Some(EntityId::from("ns0")));
+            assert_eq!(parent, Some(EntityId::new_unqualified("ns0.ns1")));
+            assert_eq!(
+                parent.unwrap().parent(),
+                Some(EntityId::new_unqualified("ns0"))
+            );
         }
     }
 
@@ -633,7 +655,7 @@ mod tests {
         );
         let mut api = exe.api();
         let expected_chunk = PathBuf::from("a/b/c");
-        api.find_namespace_mut(&EntityId::from("ns0"))
+        api.find_namespace_mut(&EntityId::new_unqualified("ns0"))
             .unwrap()
             .apply_attr_to_children_recursively(|attr| {
                 attr.chunk
@@ -642,7 +664,7 @@ mod tests {
                     .push(expected_chunk.clone())
             });
         assert_eq!(
-            api.find_namespace(&EntityId::from("ns0.ns1"))
+            api.find_namespace(&EntityId::new_unqualified("ns0.ns1"))
                 .unwrap()
                 .attributes
                 .chunk
@@ -652,7 +674,7 @@ mod tests {
             vec![expected_chunk.clone()]
         );
         assert_eq!(
-            api.find_dto(&EntityId::from("ns0.dto"))
+            api.find_dto(&EntityId::new_unqualified("ns0.dto"))
                 .unwrap()
                 .attributes
                 .chunk
@@ -662,7 +684,7 @@ mod tests {
             vec![expected_chunk.clone()]
         );
         assert_eq!(
-            api.find_rpc(&EntityId::from("ns0.rpc"))
+            api.find_rpc(&EntityId::new_unqualified("ns0.rpc"))
                 .unwrap()
                 .attributes
                 .chunk
@@ -672,7 +694,7 @@ mod tests {
             vec![expected_chunk.clone()]
         );
         assert_eq!(
-            api.find_dto(&EntityId::from("ns0.ns1.dto"))
+            api.find_dto(&EntityId::new_unqualified("ns0.ns1.dto"))
                 .unwrap()
                 .attributes
                 .chunk
@@ -682,7 +704,7 @@ mod tests {
             vec![expected_chunk.clone()]
         );
         assert_eq!(
-            api.find_rpc(&EntityId::from("ns0.ns1.rpc"))
+            api.find_rpc(&EntityId::new_unqualified("ns0.ns1.rpc"))
                 .unwrap()
                 .attributes
                 .chunk

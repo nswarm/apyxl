@@ -1,4 +1,5 @@
-use crate::model::Attributes;
+use crate::model::api::entity::ToEntity;
+use crate::model::{Attributes, Entity};
 
 /// A single enum type in the within an [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -25,5 +26,11 @@ impl<'a> Enum<'a> {
 
     pub fn value_mut(&mut self, name: &str) -> Option<&mut EnumValue<'a>> {
         self.values.iter_mut().find(|value| value.name == name)
+    }
+}
+
+impl ToEntity for Enum<'_> {
+    fn to_entity(&self) -> Entity {
+        Entity::Enum(self)
     }
 }

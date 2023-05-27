@@ -4,6 +4,8 @@ pub use dto::Dto;
 pub use en::Enum;
 pub use en::EnumValue;
 pub use en::EnumValueNumber;
+pub use entity::Entity;
+pub use entity::EntityType;
 pub use entity_id::EntityId;
 pub use field::Field;
 pub use namespace::Namespace;
@@ -18,7 +20,7 @@ mod attributes;
 mod dependencies;
 mod dto;
 mod en;
-mod entity;
+pub(crate) mod entity;
 mod entity_id;
 mod field;
 mod namespace;
@@ -49,7 +51,8 @@ impl Api<'_> {
                     if namespace.find_dto(find_ty).is_some()
                         || namespace.find_enum(find_ty).is_some()
                     {
-                        return Some(iter.concat(find_ty));
+                        // unwrap ok: the find^ calls verify it already.
+                        return Some(iter.concat(find_ty).unwrap());
                     }
                 }
             }

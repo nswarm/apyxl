@@ -4,6 +4,8 @@ use std::fmt::Debug;
 use dyn_clone::DynClone;
 
 use crate::model;
+use crate::model::entity::ToEntity;
+use crate::model::EntityType;
 use crate::view::{Attributes, Field, Transforms, Type};
 
 /// A single Remote Procedure Call (RPC) within an [Api].
@@ -38,6 +40,10 @@ impl<'v, 'a> Rpc<'v, 'a> {
             x.name(&mut name)
         }
         name
+    }
+
+    pub fn entity_type(&self) -> EntityType {
+        self.target.entity_type()
     }
 
     pub fn params(&'a self) -> impl Iterator<Item = Field<'v, 'a>> {
@@ -97,11 +103,13 @@ mod tests {
         let root = view.api();
 
         assert_eq!(
-            root.find_rpc(&EntityId::from("ns0.rpc0")).unwrap().name(),
+            root.find_rpc(&EntityId::try_from("ns0.r:rpc0").unwrap())
+                .unwrap()
+                .name(),
             TestRenamer::renamed("rpc0")
         );
         assert_eq!(
-            root.find_rpc(&EntityId::from("ns0.ns1.rpc1"))
+            root.find_rpc(&EntityId::try_from("ns0.ns1.r:rpc1").unwrap())
                 .unwrap()
                 .name(),
             TestRenamer::renamed("rpc1")
@@ -118,7 +126,9 @@ mod tests {
         let model = exe.model();
         let view = model.view().with_rpc_transform(TestFilter {});
         let root = view.api();
-        let rpc = root.find_rpc(&EntityId::from("rpc")).unwrap();
+        let rpc = root
+            .find_rpc(&EntityId::try_from("r:rpc").unwrap())
+            .unwrap();
         let params = rpc.params().map(|f| f.name().to_string()).collect_vec();
 
         assert_eq!(params, vec!["visible0", "visible1"]);

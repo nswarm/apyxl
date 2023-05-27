@@ -1,4 +1,5 @@
-use crate::model::{Attributes, Field, Type};
+use crate::model::api::entity::ToEntity;
+use crate::model::{Attributes, Entity, Field, Type};
 
 /// A single Remote Procedure Call (RPC) within an [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -16,5 +17,11 @@ impl<'a> Rpc<'a> {
 
     pub fn param_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
         self.params.iter_mut().find(|param| param.name == name)
+    }
+}
+
+impl ToEntity for Rpc<'_> {
+    fn to_entity(&self) -> Entity {
+        Entity::Rpc(self)
     }
 }
