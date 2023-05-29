@@ -20,7 +20,7 @@ mod attributes;
 mod dependencies;
 mod dto;
 mod en;
-pub(crate) mod entity;
+pub mod entity;
 mod entity_id;
 mod field;
 mod namespace;
@@ -36,23 +36,35 @@ pub type Api<'a> = Namespace<'a>;
 
 impl Api<'_> {
     /// Find `find_ty` by walking up the namespace hierarchy, starting at `initial_namespace`.
-    /// Returns the fully qualified type id if it exists.
-    pub fn find_type_relative(
+    /// Returns the fully qualified type [EntityId] if it exists.
+    /// Only supports finding [Dto]s and [Enum]s.
+    pub fn find_qualified_type_relative(
         &self,
-        initial_namespace: EntityId,
+        initial_namespace: &EntityId,
         find_ty: &EntityId,
     ) -> Option<EntityId> {
-        let mut iter = initial_namespace;
+        let mut iter = initial_namespace.to_qualified_namespaces();
         loop {
-            let namespace = self.find_namespace(&iter);
-            match namespace {
+            match self.find_namespace(&iter) {
                 None => return None,
                 Some(namespace) => {
-                    if namespace.find_dto(find_ty).is_some()
-                        || namespace.find_enum(find_ty).is_some()
-                    {
-                        // unwrap ok: the find^ calls verify it already.
-                        return Some(iter.concat(find_ty).unwrap());
+                    let is_dto = namespace.find_dto(find_ty).is_some();
+                    let is_enum = namespace.find_enum(find_ty).is_some();
+                    if is_dto || is_enum {
+                        let mut id = iter;
+                        let len = find_ty.len();
+                        for (i, name) in find_ty.component_names().enumerate() {
+                            let ty = if i < len - 1 {
+                                EntityType::Namespace
+                            } else if is_dto {
+                                EntityType::Dto
+                            } else {
+                                EntityType::Enum
+                            };
+                            // unwrap ok: the find^ calls verify it already.
+                            id = id.child(ty, name).unwrap();
+                        }
+                        return Some(id);
                     }
                 }
             }
@@ -66,8 +78,129 @@ impl Api<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::EntityId;
+    use crate::test_util::executor::TestExecutor;
+
     #[test]
-    fn find_type_relative() {
-        todo!()
+    fn dto_from_root() {
+        let initial_namespace = EntityId::default();
+        let find_id = EntityId::new_unqualified("ns0.dto");
+        run_test(
+            r#"
+            mod ns0 {
+                struct dto {}
+            }
+            "#,
+            &initial_namespace,
+            &find_id,
+            Some(EntityId::try_from("ns0.d:dto").unwrap()),
+        );
+    }
+
+    #[test]
+    fn dto_from_ns() {
+        let initial_namespace = EntityId::new_unqualified("ns0");
+        let find_id = EntityId::new_unqualified("ns1.dto");
+        run_test(
+            r#"
+            mod ns0 {
+                mod ns1 {
+                    struct dto {}
+                }
+            }
+            "#,
+            &initial_namespace,
+            &find_id,
+            Some(EntityId::try_from("ns0.ns1.d:dto").unwrap()),
+        );
+    }
+
+    #[test]
+    fn dto_from_sibling() {
+        let initial_namespace = EntityId::new_unqualified("ns0.other");
+        let find_id = EntityId::new_unqualified("ns1.dto");
+        run_test(
+            r#"
+            mod ns0 {
+                mod ns1 {
+                    struct dto {}
+                }
+                mod other {
+                }
+            }
+            "#,
+            &initial_namespace,
+            &find_id,
+            Some(EntityId::try_from("ns0.ns1.d:dto").unwrap()),
+        );
+    }
+
+    #[test]
+    fn dto_overqualified() {
+        let initial_namespace = EntityId::new_unqualified("ns0.ns1.ns2.other");
+        let find_id = EntityId::new_unqualified("ns1.ns2.dto");
+        run_test(
+            r#"
+            mod ns0 {
+                mod ns1 {
+                    mod ns2 {
+                        struct dto {}
+                        mod other {}
+                    }
+                }
+            }
+            "#,
+            &initial_namespace,
+            &find_id,
+            Some(EntityId::try_from("ns0.ns1.ns2.d:dto").unwrap()),
+        );
+    }
+
+    #[test]
+    fn enum_from_ns() {
+        let initial_namespace = EntityId::new_unqualified("ns0");
+        let find_id = EntityId::new_unqualified("ns1.en");
+        run_test(
+            r#"
+            mod ns0 {
+                mod ns1 {
+                    enum en {}
+                }
+            }
+            "#,
+            &initial_namespace,
+            &find_id,
+            Some(EntityId::try_from("ns0.ns1.e:en").unwrap()),
+        );
+    }
+
+    #[test]
+    fn does_not_exist() {
+        let initial_namespace = EntityId::default();
+        let find_id = EntityId::new_unqualified("asdf.dto");
+        run_test(
+            r#"
+            mod ns0 {
+                struct dto {}
+            }
+            "#,
+            &initial_namespace,
+            &find_id,
+            None,
+        );
+    }
+
+    fn run_test(
+        data: &str,
+        initial_namespace: &EntityId,
+        find_ty: &EntityId,
+        expected: Option<EntityId>,
+    ) {
+        let mut exe = TestExecutor::new(data);
+        let api = exe.api();
+        assert_eq!(
+            api.find_qualified_type_relative(initial_namespace, find_ty),
+            expected,
+        );
     }
 }

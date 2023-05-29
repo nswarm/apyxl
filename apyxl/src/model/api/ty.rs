@@ -1,6 +1,8 @@
-use crate::model::EntityId;
-use anyhow::Result;
 use std::fmt::Debug;
+
+use anyhow::Result;
+
+use crate::model::EntityId;
 
 /// A type within the language or API. Types other than [Type::Api] are assumed to always
 /// exist during API validation and can be used by [crate::Generator]s to map to the relevant known

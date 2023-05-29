@@ -1,5 +1,6 @@
 use crate::model::api::entity::ToEntity;
-use crate::model::{Attributes, Entity};
+use crate::model::entity::{EntityMut, FindEntity};
+use crate::model::{Attributes, Entity, EntityId};
 
 /// A single enum type in the within an [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -32,5 +33,23 @@ impl<'a> Enum<'a> {
 impl ToEntity for Enum<'_> {
     fn to_entity(&self) -> Entity {
         Entity::Enum(self)
+    }
+}
+
+impl<'api> FindEntity<'api> for Enum<'api> {
+    fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
+        if id.is_empty() {
+            Some(Entity::Enum(self))
+        } else {
+            None
+        }
+    }
+
+    fn find_entity_mut<'a>(&'a mut self, id: EntityId) -> Option<EntityMut<'a, 'api>> {
+        if id.is_empty() {
+            Some(EntityMut::Enum(self))
+        } else {
+            None
+        }
     }
 }

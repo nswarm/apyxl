@@ -121,7 +121,7 @@ impl<'a> Builder<'a> {
 
         self.pre_validation_print();
 
-        let errors = [
+        let (oks, errs): (Vec<_>, Vec<_>) = [
             validate::recurse_api(&self.api, validate::namespace_names),
             validate::recurse_api(&self.api, validate::dto_names),
             validate::recurse_api(&self.api, validate::dto_field_names),
@@ -138,13 +138,17 @@ impl<'a> Builder<'a> {
         ]
         .into_iter()
         .flatten()
-        .collect_vec();
+        .partition(|x| x.is_ok());
 
-        if errors.is_empty() {
-            Ok(Model::new(self.api, self.metadata))
-        } else {
-            Err(errors)
+        if !errs.is_empty() {
+            return Err(errs.into_iter().map(Result::unwrap_err).collect_vec());
         }
+
+        for mutation in oks.into_iter().map(Result::unwrap).filter_map(|m| m) {
+            mutation.execute(&mut self.api).unwrap();
+        }
+
+        Ok(Model::new(self.api, self.metadata))
     }
 
     pub fn metadata(&self) -> &Metadata {
@@ -633,7 +637,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateRpc(EntityId::new_unqualified("ns.rpc")),
+                    ValidationError::DuplicateRpc(EntityId::try_from("ns.r:rpc").unwrap()),
                 );
             }
 
@@ -713,7 +717,7 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new_unqualified("ns");
+                let expected_entity_id = EntityId::try_from("ns").unwrap();
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -743,7 +747,7 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new_unqualified("ns.dto");
+                let expected_entity_id = EntityId::try_from("ns.d:dto").unwrap();
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -771,7 +775,7 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
-                        EntityId::new_unqualified("dto"),
+                        EntityId::try_from("d:dto").unwrap(),
                         "field1".to_string(),
                         expected_index,
                         EntityId::new_unqualified("ns.dto"),
@@ -807,7 +811,7 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new_unqualified("ns");
+                let expected_entity_id = EntityId::try_from("ns").unwrap();
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -833,7 +837,7 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new_unqualified("ns.rpc");
+                let expected_entity_id = EntityId::try_from("ns.r:rpc").unwrap();
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -858,7 +862,7 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidFieldType(
-                        EntityId::new_unqualified("rpc"),
+                        EntityId::try_from("r:rpc").unwrap(),
                         "param1".to_string(),
                         expected_index,
                         EntityId::new_unqualified("ns.dto"),
@@ -879,7 +883,7 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::InvalidRpcReturnType(
-                        EntityId::new_unqualified("rpc"),
+                        EntityId::try_from("r:rpc").unwrap(),
                         EntityId::new_unqualified("ns.dto"),
                     ),
                 );
@@ -913,7 +917,7 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new_unqualified("ns");
+                let expected_entity_id = EntityId::try_from("ns").unwrap();
                 let expected_index = 2;
                 assert_contains_error(
                     &result,
@@ -943,7 +947,7 @@ mod tests {
                     .name = "";
 
                 let result = builder.build();
-                let expected_entity_id = EntityId::new_unqualified("ns.en");
+                let expected_entity_id = EntityId::try_from("ns.e:en").unwrap();
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
@@ -971,7 +975,7 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::DuplicateEnumValue(
-                        EntityId::new_unqualified("ns.en"),
+                        EntityId::try_from("ns.e:en").unwrap(),
                         "val".to_string(),
                     ),
                 );
@@ -995,9 +999,9 @@ mod tests {
                 let mut exe = TestExecutor::new("mod asdf {}".replace("asdf", UNDEFINED_NAMESPACE));
                 assert_contains_error(
                     &build_from_input(&mut exe),
-                    ValidationError::InvalidNamespaceName(EntityId::new_unqualified(
-                        UNDEFINED_NAMESPACE,
-                    )),
+                    ValidationError::InvalidNamespaceName(
+                        EntityId::new_unqualified(UNDEFINED_NAMESPACE).to_qualified_namespaces(),
+                    ),
                 );
             }
 
@@ -1012,9 +1016,10 @@ mod tests {
                 );
                 assert_contains_error(
                     &build_from_input(&mut exe),
-                    ValidationError::InvalidNamespaceName(EntityId::new_unqualified_vec(
-                        ["ns", UNDEFINED_NAMESPACE].iter(),
-                    )),
+                    ValidationError::InvalidNamespaceName(
+                        EntityId::new_unqualified_vec(["ns", UNDEFINED_NAMESPACE].iter())
+                            .to_qualified_namespaces(),
+                    ),
                 );
             }
         }
@@ -1042,6 +1047,91 @@ mod tests {
                 );
                 assert_eq!(actual_chunk_metadata.chunk, chunk_metadata.chunk);
                 Ok(())
+            }
+        }
+
+        mod qualifies_types {
+            use crate::model::entity::FindEntity;
+            use crate::model::{Api, Entity, EntityId};
+            use crate::test_util::executor::TestExecutor;
+
+            #[test]
+            fn dto_field_types() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns0 {
+                        struct dep0 {}
+                        mod ns1 {
+                            enum dep1 {}
+                        }
+                    }
+                    mod ns2 {
+                        struct dto {
+                            zero: ns0::dep0,
+                            one: ns0::ns1::dep1,
+                        }
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "ns2.d:dto.f:zero.ty", "ns0.dto:dep0");
+                assert_qualified_ty(&model.api, "ns2.d:dto.f:one.ty", "ns0.ns1.enum:dep1");
+            }
+
+            #[test]
+            fn rpc_param_types() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns0 {
+                        struct dep0 {}
+                        mod ns1 {
+                            enum dep1 {}
+                        }
+                    }
+                    mod ns2 {
+                        fn rpc(
+                            zero: ns0::dep0,
+                            one: ns0::ns1::dep1,
+                        ) {}
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "ns2.r:rpc.f:zero.ty", "ns0.dto:dep0");
+                assert_qualified_ty(&model.api, "ns2.r:rpc.f:one.ty", "ns0.ns1.enum:dep1");
+            }
+
+            #[test]
+            fn rpc_return_type() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns0 {
+                        mod ns1 {
+                            enum dep {}
+                        }
+                    }
+                    mod ns2 {
+                        fn rpc() -> ns0::ns1::dep {}
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "ns2.r:rpc.return_ty", "ns0.ns1.enum:dep");
+            }
+
+            fn assert_qualified_ty(api: &Api, ty_id: &str, expected_target_id: &str) {
+                let ty_id = EntityId::try_from(ty_id).unwrap();
+                let ty_entity = api.find_entity(ty_id).unwrap();
+                if let Entity::Type(ty) = ty_entity {
+                    let target = ty.api().unwrap();
+                    assert!(target.is_qualified());
+                    assert_eq!(target.to_string(), expected_target_id);
+                } else {
+                    panic!("found wrong type");
+                }
             }
         }
     }

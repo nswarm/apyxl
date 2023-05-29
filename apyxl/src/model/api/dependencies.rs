@@ -81,18 +81,16 @@ impl Dependencies {
         // unwraps ok here because we're iterating known children.
 
         for dto in namespace.dtos() {
-            let from = *self
-                .node(&namespace_id.child(EntityType::Dto, dto.name).unwrap())
-                .unwrap();
+            let from_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
+            let from = *self.node(&from_id).unwrap();
             for field in &dto.fields {
                 self.add_edge(from, namespace_id, &field.ty);
             }
         }
 
         for rpc in namespace.rpcs() {
-            let from = *self
-                .node(&namespace_id.child(EntityType::Rpc, rpc.name).unwrap())
-                .unwrap();
+            let from_id = namespace_id.child(EntityType::Rpc, rpc.name).unwrap();
+            let from = *self.node(&from_id).unwrap();
             for param in &rpc.params {
                 self.add_edge(from, namespace_id, &param.ty);
             }
@@ -326,8 +324,8 @@ mod tests {
                 r#"
             mod ns0 {
                 struct dto0 {
-                    field: en,
-                    field: ns1::dto1,
+                    field_a: en,
+                    field_b: ns1::dto1,
                 }
 
                 enum en {}
@@ -459,7 +457,7 @@ mod tests {
                 r#"
             struct dto0 {}
             struct dto1 {}
-            fn rpc(param: dto0, param: dto1) {}
+            fn rpc(param_a: dto0, param_b: dto1) {}
             "#,
                 |deps| {
                     assert_eq!(deps.graph.edge_count(), 2);
@@ -491,8 +489,8 @@ mod tests {
                 r#"
                 mod ns {
                     struct src {
-                        field: Vec<dto>,
-                        field: Vec<en>,
+                        field_a: Vec<dto>,
+                        field_b: Vec<en>,
                     }
                     struct dto {}
                     enum en {}
@@ -507,8 +505,8 @@ mod tests {
                 r#"
                 mod ns {
                     struct src {
-                        field: Option<dto>,
-                        field: Option<en>,
+                        field_a: Option<dto>,
+                        field_b: Option<en>,
                     }
                     struct dto {}
                     enum en {}
@@ -571,7 +569,8 @@ mod tests {
 
     fn run_test<F: Fn(&Dependencies)>(data: &str, f: F) {
         let mut exe = TestExecutor::new(data);
-        let api = exe.api();
+        let model = exe.build();
+        let api = model.api;
         let mut dependencies = Dependencies::default();
         dependencies.build(&api);
         println!("MAP: {:#?} ", dependencies.node_map);

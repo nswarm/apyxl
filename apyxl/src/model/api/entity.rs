@@ -13,13 +13,122 @@ pub enum EntityType {
 }
 
 /// Reference to a specific entity within an API.
-pub enum Entity<'a> {
-    Namespace(&'a Namespace<'a>),
-    Dto(&'a Dto<'a>),
-    Rpc(&'a Rpc<'a>),
-    Enum(&'a Enum<'a>),
-    Field(&'a Field<'a>),
+pub enum Entity<'a, 'api> {
+    Namespace(&'a Namespace<'api>),
+    Dto(&'a Dto<'api>),
+    Rpc(&'a Rpc<'api>),
+    Enum(&'a Enum<'api>),
+    Field(&'a Field<'api>),
     Type(&'a Type),
+}
+
+/// Mutable reference to a specific entity within an API.
+pub enum EntityMut<'a, 'api> {
+    Namespace(&'a mut Namespace<'api>),
+    Dto(&'a mut Dto<'api>),
+    Rpc(&'a mut Rpc<'api>),
+    Enum(&'a mut Enum<'api>),
+    Field(&'a mut Field<'api>),
+    Type(&'a mut Type),
+}
+
+/// Find an entity mutably by qualified [EntityId].
+// pub fn find_entity_mut<'a, 'b>(
+//     ns: &'b mut Namespace<'a>,
+//     mut id: EntityId,
+// ) -> Option<EntityMut<'a, 'b>> {
+//     // This is a free fn to avoid recursive mutable self references.
+//     let mut entity = EntityMut::Namespace(ns);
+//     while let Some((ty, name)) = id.pop_front() {
+//         match (entity, ty) {
+//             (EntityMut::Namespace(ns), EntityType::Namespace) => match ns.namespace_mut(&name) {
+//                 None => return None,
+//                 Some(value) => entity = EntityMut::Namespace(value),
+//             },
+//             (EntityMut::Namespace(ns), EntityType::Dto) => match ns.dto_mut(&name) {
+//                 None => return None,
+//                 Some(value) => entity = EntityMut::Dto(value),
+//             },
+//             (EntityMut::Namespace(ns), EntityType::Rpc) => match ns.rpc_mut(&name) {
+//                 None => return None,
+//                 Some(value) => entity = EntityMut::Rpc(value),
+//             },
+//             _ => return None,
+//         }
+//     }
+//     Some(entity)
+// }
+
+// pub fn mutate_entity<'a>(ns: &'a mut Namespace<'a>, mut id: EntityId, ) {
+//     // This is a free fn to avoid recursive mutable self references.
+//     let mut entity = EntityMut::Namespace(ns);
+//     while let Some((ty, name)) = id.pop_front() {
+//         match (entity, ty) {
+//             (EntityMut::Namespace(ns), EntityType::Namespace) => match ns.namespace_mut(&name) {
+//                 None => return None,
+//                 Some(value) => entity = EntityMut::Namespace(value),
+//             },
+//             (EntityMut::Namespace(ns), EntityType::Dto) => match ns.dto_mut(&name) {
+//                 None => return None,
+//                 Some(value) => entity = EntityMut::Dto(value),
+//             },
+//             (EntityMut::Namespace(ns), EntityType::Rpc) => match ns.rpc_mut(&name) {
+//                 None => return None,
+//                 Some(value) => entity = EntityMut::Rpc(value),
+//             },
+//             _ => return None,
+//         }
+//     }
+//     Some(entity)
+// }
+
+pub trait FindEntity<'api> {
+    /// Find an [Entity] by qualified [EntityId], if it exists.
+    fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>>;
+
+    /// Find an [Entity] by qualified [EntityId], if it exists.
+    fn find_entity_mut<'a>(&'a mut self, id: EntityId) -> Option<EntityMut<'a, 'api>>;
+}
+
+impl<'api> FindEntity<'api> for Entity<'_, 'api> {
+    fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
+        match self {
+            Entity::Namespace(ns) => ns.find_entity(id),
+            Entity::Dto(dto) => dto.find_entity(id),
+            Entity::Rpc(rpc) => rpc.find_entity(id),
+            Entity::Enum(_) => None,
+            Entity::Field(field) => field.find_entity(id),
+            Entity::Type(_) => None,
+        }
+    }
+
+    fn find_entity_mut<'a>(&'a mut self, _: EntityId) -> Option<EntityMut<'a, 'api>> {
+        panic!("cannot find mut through immutable Entity reference")
+    }
+}
+
+impl<'api> FindEntity<'api> for EntityMut<'_, 'api> {
+    fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
+        match self {
+            EntityMut::Namespace(ns) => ns.find_entity(id),
+            EntityMut::Dto(dto) => dto.find_entity(id),
+            EntityMut::Rpc(rpc) => rpc.find_entity(id),
+            EntityMut::Enum(en) => en.find_entity(id),
+            EntityMut::Field(field) => field.find_entity(id),
+            EntityMut::Type(_) => None,
+        }
+    }
+
+    fn find_entity_mut<'a>(&'a mut self, id: EntityId) -> Option<EntityMut<'a, 'api>> {
+        match self {
+            EntityMut::Namespace(ns) => ns.find_entity_mut(id),
+            EntityMut::Dto(dto) => dto.find_entity_mut(id),
+            EntityMut::Rpc(rpc) => rpc.find_entity_mut(id),
+            EntityMut::Enum(en) => en.find_entity_mut(id),
+            EntityMut::Field(field) => field.find_entity_mut(id),
+            EntityMut::Type(_) => None,
+        }
+    }
 }
 
 pub trait ToEntity {
@@ -29,11 +138,6 @@ pub trait ToEntity {
     fn entity_type(&self) -> EntityType {
         self.to_entity().ty()
     }
-}
-
-pub trait FindEntity {
-    /// Find an [Entity] by [EntityId], if it exists.
-    fn find_entity(&self, id: &EntityId) -> Option<Entity>;
 }
 
 // Keep these in line with [EntityId] documentation.
@@ -131,7 +235,7 @@ impl EntityType {
     }
 }
 
-impl Entity<'_> {
+impl Entity<'_, '_> {
     pub fn ty(&self) -> EntityType {
         match self {
             Entity::Namespace(_) => EntityType::Namespace,

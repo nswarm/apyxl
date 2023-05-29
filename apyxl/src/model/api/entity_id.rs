@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
@@ -61,14 +62,13 @@ use crate::model::api::entity::EntityType;
 ///     [crate::model::Type]:      <none>
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct EntityId {
-    components: Vec<Component>,
-    is_qualified: bool,
+    components: VecDeque<Component>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-struct Component {
-    ty: EntityType,
-    name: String,
+pub struct Component {
+    pub ty: EntityType,
+    pub name: String,
 }
 
 impl EntityId {
@@ -84,11 +84,10 @@ impl EntityId {
             components: component_names
                 .map(|s| s.to_string())
                 .map(|name| Component {
-                    ty: EntityType::Namespace,
+                    ty: EntityType::None,
                     name,
                 })
-                .collect_vec(),
-            is_qualified: false,
+                .collect::<VecDeque<_>>(),
         }
     }
 
@@ -101,13 +100,43 @@ impl EntityId {
     }
 
     pub fn is_qualified(&self) -> bool {
-        self.is_qualified
+        !self.components.iter().any(|c| c.ty == EntityType::None)
     }
 
     pub fn component_names(&self) -> impl Iterator<Item = &str> {
         self.components
             .iter()
             .map(|component| component.name.as_str())
+    }
+
+    /// Returns a qualified copy of this [EntityId] assuming that every component is a namespace.
+    pub fn to_qualified_namespaces(&self) -> Self {
+        if self.is_qualified() {
+            return self.clone();
+        }
+        let mut qualified = Self::default();
+        for name in self.component_names() {
+            qualified.components.push_back(Component {
+                ty: EntityType::Namespace,
+                name: name.to_string(),
+            })
+        }
+        qualified
+    }
+
+    /// Returns an unqualified copy of this [EntityId].
+    pub fn to_unqualified(&self) -> Self {
+        if !self.is_qualified() {
+            return self.clone();
+        }
+        let mut qualified = Self::default();
+        for name in self.component_names() {
+            qualified.components.push_back(Component {
+                ty: EntityType::None,
+                name: name.to_string(),
+            })
+        }
+        qualified
     }
 
     /// Return an [EntityId] of a step up from this [EntityId], if any.
@@ -123,15 +152,13 @@ impl EntityId {
     /// assert_eq!(grandparent.parent(), None);
     /// ```
     pub fn parent(&self) -> Option<Self> {
-        let path = &self.components;
-        if path.len() == 0 {
+        let components = &self.components;
+        if components.len() == 0 {
             return None;
         }
-        let len = path.len() - 1;
-        Some(Self {
-            components: path[..len].to_vec(),
-            is_qualified: self.is_qualified,
-        })
+        let mut components = components.clone();
+        let _ = components.pop_back();
+        Some(Self { components })
     }
 
     /// Extend the [EntityId] with the given child. Will error if the type is not valid on the
@@ -145,7 +172,7 @@ impl EntityId {
     /// assert_eq!(child, EntityId::try_from("a.b.c").unwrap());
     /// ```
     pub fn child<S: ToString>(&self, ty: EntityType, name: S) -> Result<Self> {
-        if let Some(last) = self.components.last() {
+        if let Some(last) = self.components.iter().last() {
             if !last.ty.is_valid_subtype(&ty) {
                 return Err(anyhow!(
                     "EntityId: '{:?}' is not a valid subtype for {:?}",
@@ -155,7 +182,7 @@ impl EntityId {
             }
         }
         let mut child = self.clone();
-        child.components.push(Component {
+        child.components.push_back(Component {
             ty,
             name: name.to_string(),
         });
@@ -183,12 +210,12 @@ impl EntityId {
     pub fn concat(&self, other: &EntityId) -> Result<Self> {
         let mut id = self.clone();
         for component in &other.components {
-            let last_ty = id.components.last().map(|c| c.ty);
+            let last_ty = id.components.iter().last().map(|c| c.ty);
             let is_valid_subtype = last_ty
                 .map(|ty| ty.is_valid_subtype(&component.ty))
                 .unwrap_or(true);
             if is_valid_subtype {
-                id.components.push(component.clone());
+                id.components.push_back(component.clone());
             } else {
                 return Err(anyhow!(
                     "EntityId: '{:?}' is not a valid subtype for {:?}",
@@ -225,14 +252,11 @@ impl EntityId {
             .iter()
             .filter(|c| c.ty == EntityType::Namespace)
             .map(Clone::clone)
-            .collect_vec();
+            .collect::<VecDeque<_>>();
         if components.is_empty() {
             None
         } else {
-            Some(EntityId {
-                components,
-                is_qualified: self.is_qualified,
-            })
+            Some(EntityId { components })
         }
     }
 
@@ -251,14 +275,31 @@ impl EntityId {
             .iter()
             .filter(|c| c.ty != EntityType::Namespace)
             .map(Clone::clone)
-            .collect_vec();
+            .collect::<VecDeque<_>>();
         if components.is_empty() {
             None
         } else {
-            Some(EntityId {
-                components,
-                is_qualified: self.is_qualified(),
-            })
+            Some(EntityId { components })
+        }
+    }
+
+    /// Removes and returns the first component of this [EntityId].
+    /// ```
+    /// use apyxl::model::{EntityId, EntityType};
+    /// let mut id = EntityId::try_from("a.dto:Name").unwrap();
+    ///
+    /// assert_eq!(id.pop_front(), Some((EntityType::Namespace, "a".to_string())));
+    /// assert_eq!(id, EntityId::try_from("dto:Name").unwrap());
+    ///
+    /// assert_eq!(id.pop_front(), Some((EntityType::Dto, "Name".to_string())));
+    /// assert_eq!(id, EntityId::default());
+    ///
+    /// assert_eq!(id.pop_front(), None);
+    /// ```
+    pub fn pop_front(&mut self) -> Option<(EntityType, String)> {
+        match self.components.pop_front() {
+            None => None,
+            Some(component) => Some((component.ty, component.name)),
         }
     }
 
@@ -325,25 +366,25 @@ impl<S: AsRef<str>> TryFrom<&[S]> for EntityId {
     type Error = anyhow::Error;
 
     fn try_from(value: &[S]) -> Result<Self, Self::Error> {
-        let mut components = vec![];
+        let mut components = VecDeque::new();
         for s in value.iter().map(AsRef::as_ref) {
             let split = s.split(":").collect_vec();
-            let parent = components.last();
+            let parent = components.iter().last();
             if split.len() < 2 {
                 let value = split.get(0).unwrap();
                 // Namespaces are allowed without subtype.
                 if let Ok(c) =
                     parse_component(entity::subtype::NAMESPACE, value.to_string(), parent)
                 {
-                    components.push(c);
+                    components.push_back(c);
                     continue;
                 }
                 // "nameless" subtypes are allowed depending on context.
-                components.push(parse_component(value, value.to_string(), parent)?);
+                components.push_back(parse_component(value, value.to_string(), parent)?);
             } else if split.len() == 2 {
                 let subtype = split.get(0).unwrap();
                 let name = split.get(1).unwrap().to_string();
-                components.push(parse_component(subtype, name, parent)?);
+                components.push_back(parse_component(subtype, name, parent)?);
             } else {
                 return Err(anyhow!(
                     "EntityId: component '{}' must be in the form `type:name`",
@@ -351,10 +392,7 @@ impl<S: AsRef<str>> TryFrom<&[S]> for EntityId {
                 ));
             }
         }
-        Ok(Self {
-            components,
-            is_qualified: true,
-        })
+        Ok(Self { components })
     }
 }
 

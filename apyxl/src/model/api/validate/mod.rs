@@ -1,9 +1,12 @@
+mod mutation;
+
 use std::fmt::Debug;
 
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::model::{Api, EntityId, Field, Type, UNDEFINED_NAMESPACE};
+pub use crate::model::validate::mutation::Mutation;
+use crate::model::{entity, Api, EntityId, EntityType, Field, Type, UNDEFINED_NAMESPACE};
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError {
@@ -46,23 +49,27 @@ pub enum ValidationError {
     DuplicateEnumValue(EntityId, String),
 }
 
-pub fn namespace_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub type ValidationResult = Result<Option<Mutation>, ValidationError>;
+
+pub fn namespace_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .namespaces()
-        .filter_map(|child| {
+        .map(|child| {
             if child.name == UNDEFINED_NAMESPACE {
-                Some(ValidationError::InvalidNamespaceName(
-                    namespace_id.child_unqualified(&child.name).to_owned(),
+                Err(ValidationError::InvalidNamespaceName(
+                    namespace_id
+                        .child(EntityType::Namespace, &child.name)
+                        .unwrap(),
                 ))
             } else {
-                None
+                Ok(None)
             }
         })
         .collect_vec()
 }
 
-pub fn no_duplicate_dto_enums(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn no_duplicate_dto_enums(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     let namespace = api
         .find_namespace(&namespace_id)
         .expect("namespace must exist in api");
@@ -72,106 +79,120 @@ pub fn no_duplicate_dto_enums(api: &Api, namespace_id: EntityId) -> Vec<Validati
         .chain(enum_names)
         .duplicates()
         .map(|name| {
-            ValidationError::DuplicateDtoOrEnum(namespace_id.child_unqualified(name).to_owned())
+            Err(ValidationError::DuplicateDtoOrEnum(
+                namespace_id.to_unqualified().child_unqualified(name),
+            ))
         })
         .collect_vec()
 }
 
-pub fn no_duplicate_rpcs(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn no_duplicate_rpcs(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .rpcs()
         .duplicates_by(|rpc| rpc.name)
         .map(|rpc| {
-            ValidationError::DuplicateRpc(namespace_id.child_unqualified(rpc.name).to_owned())
+            Err(ValidationError::DuplicateRpc(
+                namespace_id
+                    .to_qualified_namespaces()
+                    .child(EntityType::Rpc, rpc.name)
+                    .unwrap(),
+            ))
         })
         .collect_vec()
 }
 
-pub fn dto_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn dto_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .dtos()
         .enumerate()
-        .filter_map(|(i, dto)| {
+        .map(|(i, dto)| {
             if dto.name.is_empty() {
-                Some(ValidationError::InvalidDtoName(
-                    namespace_id.clone().to_owned(),
-                    i,
-                ))
+                Err(ValidationError::InvalidDtoName(namespace_id.clone(), i))
             } else {
-                None
+                Ok(None)
             }
         })
         .collect_vec()
 }
 
-pub fn dto_field_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn dto_field_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .dtos()
-        .flat_map(|dto| field_names(&dto.fields, namespace_id.child_unqualified(dto.name)))
+        .flat_map(|dto| {
+            field_names(
+                &dto.fields,
+                namespace_id.child(EntityType::Dto, dto.name).unwrap(),
+            )
+        })
         .collect_vec()
 }
 
-pub fn rpc_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn rpc_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .rpcs()
         .enumerate()
-        .filter_map(|(i, rpc)| {
+        .map(|(i, rpc)| {
             if rpc.name.is_empty() {
-                Some(ValidationError::InvalidRpcName(namespace_id.to_owned(), i))
+                Err(ValidationError::InvalidRpcName(namespace_id.clone(), i))
             } else {
-                None
+                Ok(None)
             }
         })
         .collect_vec()
 }
 
-pub fn rpc_param_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn rpc_param_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .rpcs()
-        .flat_map(|rpc| field_names(&rpc.params, namespace_id.child_unqualified(rpc.name)))
+        .flat_map(|rpc| {
+            field_names(
+                &rpc.params,
+                namespace_id.child(EntityType::Rpc, rpc.name).unwrap(),
+            )
+        })
         .collect_vec()
 }
 
-pub fn enum_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn enum_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .enums()
         .enumerate()
-        .filter_map(|(i, en)| {
+        .map(|(i, en)| {
             if en.name.is_empty() {
-                Some(ValidationError::InvalidEnumName(namespace_id.to_owned(), i))
+                Err(ValidationError::InvalidEnumName(namespace_id.clone(), i))
             } else {
-                None
+                Ok(None)
             }
         })
         .collect_vec()
 }
 
-pub fn enum_value_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn enum_value_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .enums()
         .flat_map(|en| {
-            en.values.iter().enumerate().filter_map(|(i, value)| {
+            en.values.iter().enumerate().map(|(i, value)| {
                 if value.name.is_empty() {
-                    Some(ValidationError::InvalidEnumValueName(
-                        namespace_id.child_unqualified(en.name),
+                    Err(ValidationError::InvalidEnumValueName(
+                        namespace_id.child(EntityType::Enum, en.name).unwrap(),
                         i,
                     ))
                 } else {
-                    None
+                    Ok(None)
                 }
             })
         })
         .collect_vec()
 }
 
-pub fn no_duplicate_enum_value_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn no_duplicate_enum_value_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .enums()
@@ -180,66 +201,72 @@ pub fn no_duplicate_enum_value_names(api: &Api, namespace_id: EntityId) -> Vec<V
                 .iter()
                 .duplicates_by(|value| value.name)
                 .map(|value| {
-                    ValidationError::DuplicateEnumValue(
-                        namespace_id.child_unqualified(en.name),
-                        value.name.to_owned(),
-                    )
+                    Err(ValidationError::DuplicateEnumValue(
+                        namespace_id.child(EntityType::Enum, en.name).unwrap(),
+                        value.name.to_string(),
+                    ))
                 })
         })
         .collect_vec()
 }
 
-pub fn field_names(fields: &[Field], parent_entity_id: EntityId) -> Vec<ValidationError> {
+pub fn field_names(fields: &[Field], parent_entity_id: EntityId) -> Vec<ValidationResult> {
     fields
         .iter()
         .enumerate()
-        .filter_map(|(i, field)| {
+        .map(|(i, field)| {
             if field.name.is_empty() {
-                Some(ValidationError::InvalidFieldName(
-                    parent_entity_id.to_owned(),
+                Err(ValidationError::InvalidFieldName(
+                    parent_entity_id.clone(),
                     i,
                 ))
             } else {
-                None
+                Ok(None)
             }
         })
         .collect_vec()
 }
 
-pub fn dto_field_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn dto_field_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .dtos()
         .flat_map(|dto| {
-            let dto_id = namespace_id.child_unqualified(dto.name);
+            let dto_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
             field_types(api, &dto.fields, namespace_id.clone(), dto_id)
         })
         .collect_vec()
 }
 
-pub fn rpc_param_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn rpc_param_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .rpcs()
         .flat_map(|rpc| {
-            let rpc_id = namespace_id.child_unqualified(rpc.name);
+            let rpc_id = namespace_id.child(EntityType::Rpc, rpc.name).unwrap();
             field_types(api, &rpc.params, namespace_id.clone(), rpc_id)
         })
         .collect_vec()
 }
 
-pub fn rpc_return_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationError> {
+pub fn rpc_return_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .rpcs()
         .filter_map(|rpc| rpc.return_type.as_ref().map(|ty| (rpc.name, ty)))
-        .filter_map(|(rpc_name, return_type)| {
-            match fully_qualify_type(api, &namespace_id, return_type) {
-                Ok(_) => None,
-                Err(err_entity_id) => Some(ValidationError::InvalidRpcReturnType(
-                    namespace_id.child_unqualified(rpc_name).to_owned(),
-                    err_entity_id.to_owned(),
-                )),
+        .map(|(rpc_name, return_type)| {
+            let rpc_id = namespace_id.child(EntityType::Rpc, rpc_name).unwrap();
+            let return_ty_id = rpc_id
+                .child(EntityType::Type, entity::subtype::RETURN_TY)
+                .unwrap();
+            match qualify_type(api, &namespace_id, return_type) {
+                Ok(Some(qualified_ty)) => {
+                    Ok(Some(Mutation::new_qualify_type(return_ty_id, qualified_ty)))
+                }
+                Err(err_entity_id) => {
+                    Err(ValidationError::InvalidRpcReturnType(rpc_id, err_entity_id))
+                }
+                _ => Ok(None),
             }
         })
         .collect_vec()
@@ -250,39 +277,69 @@ pub fn field_types<'a, 'b: 'a>(
     fields: &[Field],
     namespace_id: EntityId,
     parent_entity_id: EntityId,
-) -> Vec<ValidationError> {
+) -> Vec<ValidationResult> {
     fields
         .iter()
         .enumerate()
-        .filter_map(
-            |(i, field)| match fully_qualify_type(api, &namespace_id, &field.ty) {
-                Ok(_) => None,
-                Err(err_entity_id) => Some(ValidationError::InvalidFieldType(
+        .map(|(i, field)| {
+            let field_id = parent_entity_id
+                .child(EntityType::Field, field.name)
+                .unwrap();
+            let ty_id = field_id
+                .child(EntityType::Type, entity::subtype::TY)
+                .unwrap();
+            match qualify_type(api, &namespace_id, &field.ty) {
+                Ok(Some(qualified_ty)) => Ok(Some(Mutation::new_qualify_type(ty_id, qualified_ty))),
+                Err(err_entity_id) => Err(ValidationError::InvalidFieldType(
                     parent_entity_id.clone(),
                     field.name.to_string(),
                     i,
-                    err_entity_id.to_owned(),
+                    err_entity_id,
                 )),
-            },
-        )
+                _ => Ok(None),
+            }
+        })
         .collect_vec()
 }
 
-fn fully_qualify_type(api: &Api, namespace_id: &EntityId, ty: &Type) -> Result<(), EntityId> {
+/// Returns a [Type] with all [EntityId]s qualified, recursively. If an [EntityId] does not exist
+/// in the `api`, it returns the [EntityId] which could not be qualified as an error.
+/// If there are no [EntityId]s in the [Type] (i.e. it's all primitives), returns Ok(None).
+fn qualify_type(api: &Api, namespace_id: &EntityId, ty: &Type) -> Result<Option<Type>, EntityId> {
+    // This fn is recursive to support nested types like `Vec<EnumA, Map<EnumB, Vec<DtoA>>>`
+    // It digs into the [Type] `ty` until it runs into a [Type::Api] that has an [EntityId] to
+    // be qualified and returns the qualified version. On the way back up the stack each [Type]
+    // will wrap the result in its own enum variant so that by the time we reach the top, it has
+    // the same structure as the input type `ty`.
     match ty {
         Type::Api(id) => {
-            let fqt = api
-                .find_type_relative(namespace_id.clone(), id)
+            let qualified_id = api
+                .find_qualified_type_relative(namespace_id, id)
                 .ok_or(id.clone())?;
-            // todo return mutation
-            // *id = fqt;
+            return Ok(Some(Type::Api(qualified_id)));
         }
 
-        Type::Array(ty) => fully_qualify_type(api, namespace_id, ty)?,
-        Type::Optional(ty) => fully_qualify_type(api, namespace_id, ty)?,
+        Type::Array(ty) => {
+            return qualify_type(api, namespace_id, ty)
+                .map(|opt| opt.map(|ty| Type::Array(Box::new(ty))))
+        }
+
+        Type::Optional(ty) => {
+            return qualify_type(api, namespace_id, ty)
+                .map(|opt| opt.map(|ty| Type::Optional(Box::new(ty))))
+        }
+
         Type::Map { key, value } => {
-            fully_qualify_type(api, namespace_id, key)?;
-            fully_qualify_type(api, namespace_id, value)?;
+            let key_ty = qualify_type(api, namespace_id, key)?;
+            let value_ty = qualify_type(api, namespace_id, value)?;
+            return if key_ty.is_some() || value_ty.is_some() {
+                Ok(Some(Type::Map {
+                    key: key_ty.map(Box::new).unwrap_or(key.clone()),
+                    value: value_ty.map(Box::new).unwrap_or(value.clone()),
+                }))
+            } else {
+                Ok(None)
+            };
         }
 
         // Nothing to qualify.
@@ -306,7 +363,7 @@ fn fully_qualify_type(api: &Api, namespace_id: &EntityId, ty: &Type) -> Result<(
         Type::Bytes => {}
         Type::User(_) => {}
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Calls the function `action` for each [Namespace] in the `api`. `action` will be passed the [Namespace]
@@ -314,10 +371,10 @@ fn fully_qualify_type(api: &Api, namespace_id: &EntityId, ty: &Type) -> Result<(
 ///
 /// `'a` is the lifetime of the [Api] bound.
 /// `'b` is the lifetime of the [Builder::build] process.
-pub(crate) fn recurse_api<'a, 'b, Action>(api: &'b Api<'a>, action: Action) -> Vec<ValidationError>
+pub(crate) fn recurse_api<'a, 'b, Action>(api: &'b Api<'a>, action: Action) -> Vec<ValidationResult>
 where
     'b: 'a,
-    Action: Copy + Fn(&'b Api<'a>, EntityId) -> Vec<ValidationError>,
+    Action: Copy + Fn(&'b Api<'a>, EntityId) -> Vec<ValidationResult>,
 {
     recurse_namespaces(api, EntityId::default(), action)
 }
@@ -326,17 +383,23 @@ fn recurse_namespaces<'a, 'b, Action>(
     api: &'b Api<'a>,
     namespace_id: EntityId,
     action: Action,
-) -> Vec<ValidationError>
+) -> Vec<ValidationResult>
 where
     'b: 'a,
-    Action: Copy + Fn(&'b Api<'a>, EntityId) -> Vec<ValidationError>,
+    Action: Copy + Fn(&'b Api<'a>, EntityId) -> Vec<ValidationResult>,
 {
     let namespace = api
         .find_namespace(&namespace_id)
         .expect("namespace must exist in api");
 
     let child_results = namespace.namespaces().flat_map(|child| {
-        recurse_namespaces(api, namespace_id.child_unqualified(&child.name), action)
+        recurse_namespaces(
+            api,
+            namespace_id
+                .child(EntityType::Namespace, &child.name)
+                .unwrap(),
+            action,
+        )
     });
 
     child_results
@@ -353,7 +416,7 @@ mod tests {
     use crate::test_util::executor::TestExecutor;
 
     #[test]
-    fn happy_path() {
+    fn test_rpc_return_types() {
         let mut exe = TestExecutor::new(
             r#"
             mod ns0 {
@@ -384,12 +447,169 @@ mod tests {
         );
         let api = exe.api();
 
-        let namespace_id = EntityId::new_unqualified("ns0.ns1.ns2");
-        assert_eq!(rpc_return_types(&api, namespace_id), vec![]);
+        let namespace_id = EntityId::try_from("ns0.ns1.ns2").unwrap();
+        assert!(rpc_return_types(&api, namespace_id)
+            .iter()
+            .all(|result| result.is_ok()));
+    }
+
+    mod qualify_type {
+        use crate::model::validate::qualify_type;
+        use crate::model::{EntityId, Type};
+        use crate::test_util::executor::TestExecutor;
+
+        #[test]
+        fn primitive() {
+            run_test("", &EntityId::default(), &Type::String, None);
+        }
+
+        #[test]
+        fn api() {
+            run_test(
+                "mod ns { struct dto {} }",
+                &EntityId::default(),
+                &Type::Api(EntityId::new_unqualified("ns.dto")),
+                Some(Type::new_api("ns.d:dto").unwrap()),
+            );
+        }
+
+        #[test]
+        fn array_primitive() {
+            run_test(
+                "",
+                &EntityId::default(),
+                &Type::new_array(Type::String),
+                None,
+            );
+        }
+
+        #[test]
+        fn array_complex() {
+            run_test(
+                "mod ns { struct dto {} }",
+                &EntityId::default(),
+                &Type::new_array(Type::Api(EntityId::new_unqualified("ns.dto"))),
+                Some(Type::new_array(Type::new_api("ns.d:dto").unwrap())),
+            );
+        }
+
+        #[test]
+        fn optional_primitive() {
+            run_test(
+                "",
+                &EntityId::default(),
+                &Type::new_optional(Type::String),
+                None,
+            );
+        }
+
+        #[test]
+        fn optional_complex() {
+            run_test(
+                "mod ns { struct dto {} }",
+                &EntityId::default(),
+                &Type::new_optional(Type::Api(EntityId::new_unqualified("ns.dto"))),
+                Some(Type::new_optional(Type::new_api("ns.d:dto").unwrap())),
+            );
+        }
+
+        #[test]
+        fn map_primitive() {
+            run_test(
+                "",
+                &EntityId::default(),
+                &Type::new_map(Type::String, Type::String),
+                None,
+            );
+        }
+
+        #[test]
+        fn map_complex() {
+            run_test(
+                r#"
+                mod ns0 {
+                    struct dto {}
+                    mod ns1 {
+                        enum en {}
+                    }
+                }
+                "#,
+                &EntityId::default(),
+                &Type::new_map(
+                    Type::Api(EntityId::new_unqualified("ns0.ns1.en")),
+                    Type::Api(EntityId::new_unqualified("ns0.dto")),
+                ),
+                Some(Type::new_map(
+                    Type::new_api("ns0.ns1.e:en").unwrap(),
+                    Type::new_api("ns0.d:dto").unwrap(),
+                )),
+            );
+        }
+
+        #[test]
+        fn nested() {
+            run_test(
+                r#"
+                mod ns0 {
+                    struct dto {}
+                    mod ns1 {
+                        enum en {}
+                    }
+                }
+                "#,
+                &EntityId::default(),
+                &Type::new_array(Type::new_map(
+                    Type::Api(EntityId::new_unqualified("ns0.ns1.en")),
+                    Type::Api(EntityId::new_unqualified("ns0.dto")),
+                )),
+                Some(Type::new_array(Type::new_map(
+                    Type::new_api("ns0.ns1.e:en").unwrap(),
+                    Type::new_api("ns0.d:dto").unwrap(),
+                ))),
+            );
+        }
+
+        #[test]
+        fn error() {
+            run_test_err(
+                "",
+                &EntityId::default(),
+                &Type::Api(EntityId::new_unqualified("dto")),
+            );
+        }
+
+        #[test]
+        fn error_nested() {
+            run_test_err(
+                "",
+                &EntityId::default(),
+                &Type::new_array(Type::new_map(
+                    Type::String,
+                    Type::Api(EntityId::new_unqualified("dto")),
+                )),
+            );
+        }
+
+        fn run_test(
+            data: &str,
+            namespace_id: &EntityId,
+            unqualified: &Type,
+            expected: Option<Type>,
+        ) {
+            let mut exe = TestExecutor::new(data);
+            let api = exe.api();
+            let qualified = qualify_type(&api, namespace_id, &unqualified).unwrap();
+            assert_eq!(qualified, expected);
+        }
+
+        fn run_test_err(data: &str, namespace_id: &EntityId, unqualified: &Type) {
+            let mut exe = TestExecutor::new(data);
+            let api = exe.api();
+            assert!(qualify_type(&api, namespace_id, &unqualified).is_err());
+        }
     }
 
     mod field_types {
-
         use crate::model::api::validate::field_types;
         use crate::model::EntityId;
         use crate::test_util::executor::TestExecutor;
@@ -409,7 +629,7 @@ mod tests {
                     struct dto2 {}
                 }
                 "#,
-                &EntityId::new_unqualified("dto0"),
+                &EntityId::try_from("d:dto0").unwrap(),
             );
         }
 
@@ -427,7 +647,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new_unqualified("ns0.ns1.dto0"),
+                &EntityId::try_from("ns0.ns1.d:dto0").unwrap(),
             );
         }
 
@@ -444,7 +664,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new_unqualified("ns0.ns1.dto0"),
+                &EntityId::try_from("ns0.ns1.d:dto0").unwrap(),
             );
         }
 
@@ -461,7 +681,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new_unqualified("ns0.ns1.dto0"),
+                &EntityId::try_from("ns0.ns1.d:dto0").unwrap(),
             );
         }
 
@@ -480,7 +700,7 @@ mod tests {
                 }
                 struct dto2 {}
                 "#,
-                &EntityId::new_unqualified("ns0.ns1.dto0"),
+                &EntityId::try_from("ns0.ns1.d:dto0").unwrap(),
             );
         }
 
@@ -501,7 +721,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new_unqualified("ns0.dto0"),
+                &EntityId::try_from("ns0.d:dto0").unwrap(),
             );
         }
 
@@ -526,7 +746,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new_unqualified("ns0.ns1.dto0"),
+                &EntityId::try_from("ns0.ns1.d:dto0").unwrap(),
             );
         }
 
@@ -551,7 +771,7 @@ mod tests {
                     }
                 }
                 "#,
-                &EntityId::new_unqualified("ns0.ns1.ns2.dto0"),
+                &EntityId::try_from("ns0.ns1.ns2.d:dto0").unwrap(),
             );
         }
 
@@ -559,17 +779,16 @@ mod tests {
             let mut exe = TestExecutor::new(input_data);
             let api = exe.api();
 
-            assert_eq!(
-                field_types(
-                    &api,
-                    &api.find_dto(source_dto)
-                        .expect("couldn't find source dto")
-                        .fields,
-                    source_dto.parent().expect("dto has no parent"),
-                    source_dto.clone(),
-                ),
-                vec![]
-            );
+            assert!(field_types(
+                &api,
+                &api.find_dto(source_dto)
+                    .expect("couldn't find source dto")
+                    .fields,
+                source_dto.parent().expect("dto has no parent"),
+                source_dto.clone(),
+            )
+            .iter()
+            .all(|result| result.is_ok()));
         }
     }
 }

@@ -32,4 +32,17 @@ impl TestExecutor {
         // Skip deps which rely on valid api.
         model::Model::without_deps(self.api(), Metadata::default())
     }
+
+    pub fn build(&mut self) -> model::Model {
+        let mut builder = Builder::default();
+        self.parser
+            .parse(&CONFIG, &mut self.input, &mut builder)
+            .expect("failed to parse input");
+        builder.build().unwrap_or_else(|errs| {
+            for err in errs {
+                println!("Error: {}", err)
+            }
+            panic!("^ Validation errors building api ^");
+        })
+    }
 }

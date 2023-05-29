@@ -1,4 +1,5 @@
-use crate::model::api::entity::{Entity, EntityType, FindEntity, ToEntity};
+use crate::model::api::entity::{Entity, EntityType, ToEntity};
+use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Attributes, Dto, EntityId, Enum, Rpc};
 use itertools::Itertools;
 use std::borrow::Cow;
@@ -19,43 +20,43 @@ pub enum NamespaceChild<'a> {
     Namespace(Namespace<'a>),
 }
 
-// todo ?
-// pub trait ToNamespaceChild {
-//     fn to_namespace_child(self) -> NamespaceChild;
-// }
-//
-// pub trait NamespaceChildSelector {
-//     fn select<T>(&self, child: &NamespaceChild) -> Option<T> {}
-// }
-//
-// impl NamespaceChildSelector for Dto<'_> {
-//     fn select<T>(&self, child: &NamespaceChild) -> Option<&T> {
-//         match child {
-//             NamespaceChild::Dto(dto) => dto,
-//             _ => None,
-//         }
-//     }
-// }
-
-impl FindEntity for Namespace<'_> {
-    fn find_entity(&self, id: &EntityId) -> Option<Entity> {
-        // todo
-        // if !id.has_namespace() {
-        //     return id
-        //         .name()
-        //         .and_then(|name| self.child(&name).map(|child| child.find_entity(id)));
-        // }
-        // match self.find_namespace(&entity_id.namespace()) {
-        //     None => None,
-        //     Some(namespace) => namespace.find_entity(id.),
-        // }
-        None
-    }
-}
-
 impl ToEntity for Namespace<'_> {
     fn to_entity(&self) -> Entity {
         Entity::Namespace(self)
+    }
+}
+
+impl<'api> FindEntity<'api> for Namespace<'api> {
+    fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
+        if let Some((ty, name)) = id.pop_front() {
+            match ty {
+                EntityType::Namespace => self.namespace(&name).map_or(None, |x| x.find_entity(id)),
+                EntityType::Dto => self.dto(&name).map_or(None, |x| x.find_entity(id)),
+                EntityType::Rpc => self.rpc(&name).map_or(None, |x| x.find_entity(id)),
+                EntityType::Enum => self.en(&name).map_or(None, |x| x.find_entity(id)),
+
+                EntityType::None | EntityType::Field | EntityType::Type => None,
+            }
+        } else {
+            Some(Entity::Namespace(self))
+        }
+    }
+
+    fn find_entity_mut<'a>(&'a mut self, mut id: EntityId) -> Option<EntityMut<'a, 'api>> {
+        if let Some((ty, name)) = id.pop_front() {
+            match ty {
+                EntityType::Namespace => self
+                    .namespace_mut(&name)
+                    .map_or(None, |x| x.find_entity_mut(id)),
+                EntityType::Dto => self.dto_mut(&name).map_or(None, |x| x.find_entity_mut(id)),
+                EntityType::Rpc => self.rpc_mut(&name).map_or(None, |x| x.find_entity_mut(id)),
+                EntityType::Enum => self.en_mut(&name).map_or(None, |x| x.find_entity_mut(id)),
+
+                EntityType::None | EntityType::Field | EntityType::Type => None,
+            }
+        } else {
+            Some(EntityMut::Namespace(self))
+        }
     }
 }
 
