@@ -4,26 +4,26 @@ use crate::view::{Namespace, Transformer, Transforms};
 /// A view into the [Model] starting at a specific [Namespace] with additional [Transforms].
 #[derive(Debug)]
 pub struct SubView<'a> {
-    entity_id: model::EntityId,
+    namespace_id: model::EntityId,
     namespace: &'a model::Namespace<'a>,
     xforms: Transforms,
 }
 
 impl<'a> SubView<'a> {
     pub fn new(
-        entity_id: model::EntityId,
+        namespace_id: model::EntityId,
         namespace: &'a model::Namespace<'a>,
         xforms: Transforms,
     ) -> Self {
         Self {
-            entity_id,
+            namespace_id: namespace_id.to_qualified_namespaces(),
             namespace,
             xforms,
         }
     }
 
     pub fn root_id(&self) -> &model::EntityId {
-        &self.entity_id
+        &self.namespace_id
     }
 
     pub fn namespace<'v>(&'v self) -> Namespace<'v, 'a> {
