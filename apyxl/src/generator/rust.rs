@@ -237,6 +237,8 @@ fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
 }
 
 fn write_entity_id(entity_id: EntityId, o: &mut dyn Output) -> Result<()> {
+    // Fully qualify everything by crate.
+    o.write_str("crate::")?;
     write_joined(
         &entity_id.path().iter().map(|s| s.as_ref()).collect_vec(),
         "::",
@@ -343,10 +345,26 @@ mod tests {
 
     #[test]
     fn full_generation() -> Result<()> {
-        let expected = r#"pub fn rpc_name(
+        let data = r#"
+pub fn rpc_name(
     dto: DtoName,
     dto2: ns0::DtoName,
 ) -> DtoName {}
+
+struct DtoName {
+    i: i32,
+}
+
+pub mod ns0 {
+    struct DtoName {
+        i: i32,
+    }
+}
+"#;
+        let expected = r#"pub fn rpc_name(
+    dto: crate::DtoName,
+    dto2: crate::ns0::DtoName,
+) -> crate::DtoName {}
 
 struct DtoName {
     i: i32,
@@ -360,7 +378,7 @@ pub mod ns0 {
 }
 
 "#;
-        let mut exe = TestExecutor::new(expected);
+        let mut exe = TestExecutor::new(data);
         let model = exe.model();
         let view = model.view();
         assert_output(move |o| Rust::default().generate(view, o), expected)
@@ -394,8 +412,8 @@ pub mod ns0 {
                 )
             },
             r#"struct DtoName {
-    field0: Type0,
-    field1: Type1,
+    field0: crate::Type0,
+    field1: crate::Type1,
 }
 "#,
         )
@@ -430,8 +448,8 @@ pub mod ns0 {
                 )
             },
             r#"pub fn rpc_name(
-    param0: Type0,
-    param1: Type1,
+    param0: crate::Type0,
+    param1: crate::Type1,
 ) {}
 "#,
         )
@@ -454,7 +472,7 @@ pub mod ns0 {
                     &mut Indented::new(o, INDENT),
                 )
             },
-            "pub fn rpc_name() -> ReturnType {}\n",
+            "pub fn rpc_name() -> crate::ReturnType {}\n",
         )
     }
 
@@ -476,7 +494,7 @@ pub mod ns0 {
                     o,
                 )
             },
-            "asdf: Type,",
+            "asdf: crate::Type,",
         )
     }
 
@@ -614,7 +632,7 @@ pub mod ns0 {
         test!(bytes, "Vec<u8>", model::Type::Bytes);
         test!(
             entity_id,
-            "a::b::c",
+            "crate::a::b::c",
             model::Type::Api(model::EntityId::try_from("a.b.c").unwrap())
         );
         test!(
@@ -643,7 +661,7 @@ pub mod ns0 {
         let entity_id = model::EntityId::try_from("a.b.c")?;
         assert_output(
             |o| write_entity_id(view::EntityId::new(&entity_id, &vec![]), o),
-            "a::b::c",
+            "crate::a::b::c",
         )
     }
 
