@@ -125,9 +125,11 @@ impl<'a> Builder<'a> {
             validate::recurse_api(&self.api, validate::namespace_names),
             validate::recurse_api(&self.api, validate::dto_names),
             validate::recurse_api(&self.api, validate::dto_field_names),
+            validate::recurse_api(&self.api, validate::dto_field_names_no_duplicates),
             validate::recurse_api(&self.api, validate::dto_field_types),
             validate::recurse_api(&self.api, validate::rpc_names),
             validate::recurse_api(&self.api, validate::rpc_param_names),
+            validate::recurse_api(&self.api, validate::rpc_param_names_no_duplicates),
             validate::recurse_api(&self.api, validate::rpc_param_types),
             validate::recurse_api(&self.api, validate::rpc_return_types),
             validate::recurse_api(&self.api, validate::enum_names),
@@ -759,6 +761,29 @@ mod tests {
             }
 
             #[test]
+            fn field_name_duplicates() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct dto {
+                            field: bool,
+                            field: bool,
+                        }
+                    }"#,
+                );
+                let mut builder = test_builder(&mut exe);
+                let result = builder.build();
+                let expected_entity_id = EntityId::try_from("ns.d:dto").unwrap();
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateFieldName(
+                        expected_entity_id.to_owned(),
+                        "field".to_string(),
+                    ),
+                );
+            }
+
+            #[test]
             fn field_type_invalid_linkage() {
                 let mut exe = TestExecutor::new(
                     r#"
@@ -844,6 +869,26 @@ mod tests {
                     ValidationError::InvalidFieldName(
                         expected_entity_id.to_owned(),
                         expected_index,
+                    ),
+                );
+            }
+
+            #[test]
+            fn param_name_duplicates() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        fn rpc(param: bool, param: bool) {}
+                    }"#,
+                );
+                let mut builder = test_builder(&mut exe);
+                let result = builder.build();
+                let expected_entity_id = EntityId::try_from("ns.r:rpc").unwrap();
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateFieldName(
+                        expected_entity_id.to_owned(),
+                        "param".to_string(),
                     ),
                 );
             }

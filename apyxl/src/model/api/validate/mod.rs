@@ -47,6 +47,9 @@ pub enum ValidationError {
 
     #[error("Duplicate enum value name within enum '{1}': '{0}'")]
     DuplicateEnumValue(EntityId, String),
+
+    #[error("Duplicate field name within entity '{1}': '{0}'")]
+    DuplicateFieldName(EntityId, String),
 }
 
 pub type ValidationResult = Result<Option<Mutation>, ValidationError>;
@@ -130,6 +133,19 @@ pub fn dto_field_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .collect_vec()
 }
 
+pub fn dto_field_names_no_duplicates(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+    api.find_namespace(&namespace_id)
+        .expect("namespace must exist in api")
+        .dtos()
+        .flat_map(|dto| {
+            duplicate_field_names(
+                &dto.fields,
+                namespace_id.child(EntityType::Dto, dto.name).unwrap(),
+            )
+        })
+        .collect_vec()
+}
+
 pub fn rpc_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
@@ -151,6 +167,19 @@ pub fn rpc_param_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .rpcs()
         .flat_map(|rpc| {
             field_names(
+                &rpc.params,
+                namespace_id.child(EntityType::Rpc, rpc.name).unwrap(),
+            )
+        })
+        .collect_vec()
+}
+
+pub fn rpc_param_names_no_duplicates(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+    api.find_namespace(&namespace_id)
+        .expect("namespace must exist in api")
+        .rpcs()
+        .flat_map(|rpc| {
+            duplicate_field_names(
                 &rpc.params,
                 namespace_id.child(EntityType::Rpc, rpc.name).unwrap(),
             )
@@ -223,6 +252,22 @@ pub fn field_names(fields: &[Field], parent_entity_id: EntityId) -> Vec<Validati
             } else {
                 Ok(None)
             }
+        })
+        .collect_vec()
+}
+
+pub fn duplicate_field_names(
+    fields: &[Field],
+    parent_entity_id: EntityId,
+) -> Vec<ValidationResult> {
+    fields
+        .iter()
+        .duplicates_by(|field| field.name)
+        .map(|field| {
+            Err(ValidationError::DuplicateFieldName(
+                parent_entity_id.clone(),
+                field.name.to_string(),
+            ))
         })
         .collect_vec()
 }
