@@ -771,7 +771,7 @@ mod tests {
                         }
                     }"#,
                 );
-                let mut builder = test_builder(&mut exe);
+                let builder = test_builder(&mut exe);
                 let result = builder.build();
                 let expected_entity_id = EntityId::try_from("ns.d:dto").unwrap();
                 assert_contains_error(
@@ -881,7 +881,7 @@ mod tests {
                         fn rpc(param: bool, param: bool) {}
                     }"#,
                 );
-                let mut builder = test_builder(&mut exe);
+                let builder = test_builder(&mut exe);
                 let result = builder.build();
                 let expected_entity_id = EntityId::try_from("ns.r:rpc").unwrap();
                 assert_contains_error(

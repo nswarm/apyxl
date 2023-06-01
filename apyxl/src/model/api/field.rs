@@ -6,7 +6,7 @@ use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Type};
 pub struct Field<'a> {
     pub name: &'a str,
     pub ty: Type,
-    pub attributes: Attributes,
+    pub attributes: Attributes<'a>,
 }
 
 impl<'api> FindEntity<'api> for Field<'api> {

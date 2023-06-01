@@ -7,7 +7,7 @@ use crate::model::{Attributes, Entity, EntityId, EntityType, Field};
 pub struct Dto<'a> {
     pub name: &'a str,
     pub fields: Vec<Field<'a>>,
-    pub attributes: Attributes,
+    pub attributes: Attributes<'a>,
 }
 
 impl<'a> Dto<'a> {

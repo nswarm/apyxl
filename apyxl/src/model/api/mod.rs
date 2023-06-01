@@ -1,4 +1,5 @@
 pub use attributes::Attributes;
+pub use attributes::Comment;
 pub use dependencies::Dependencies;
 pub use dto::Dto;
 pub use en::Enum;

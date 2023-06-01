@@ -3,12 +3,11 @@ use std::borrow::Cow;
 use anyhow::{anyhow, Result};
 use chumsky::error;
 use chumsky::prelude::*;
-use chumsky::text::whitespace;
 use log::debug;
 
 use crate::model::{
-    Api, Dto, EntityId, Enum, EnumValue, EnumValueNumber, Field, Namespace, NamespaceChild, Rpc,
-    Type, UNDEFINED_NAMESPACE,
+    Api, Attributes, Comment, Dto, EntityId, Enum, EnumValue, EnumValueNumber, Field, Namespace,
+    NamespaceChild, Rpc, Type, UNDEFINED_NAMESPACE,
 };
 use crate::parser::Config;
 use crate::{model, Input};
@@ -156,9 +155,9 @@ fn vec<'a>(
     ty: impl Parser<'a, &'a str, Type, Error<'a>>,
 ) -> impl Parser<'a, &'a str, Type, Error<'a>> {
     just("Vec<")
-        .then_ignore(whitespace())
+        .then_ignore(text::whitespace())
         .ignore_then(ty)
-        .then_ignore(whitespace())
+        .then_ignore(text::whitespace())
         .then_ignore(just('>'))
         .map(|inner| Type::new_array(inner))
 }
@@ -167,12 +166,12 @@ fn map<'a>(
     ty: impl Parser<'a, &'a str, Type, Error<'a>> + Clone,
 ) -> impl Parser<'a, &'a str, Type, Error<'a>> {
     just("HashMap<")
-        .then_ignore(whitespace())
+        .then_ignore(text::whitespace())
         .ignore_then(ty.clone())
         .then_ignore(just(',').padded())
         .then(ty)
         .then_ignore(just('>'))
-        .then_ignore(whitespace())
+        .then_ignore(text::whitespace())
         .map(|(key, value)| Type::new_map(key, value))
 }
 
@@ -180,9 +179,9 @@ fn option<'a>(
     ty: impl Parser<'a, &'a str, Type, Error<'a>>,
 ) -> impl Parser<'a, &'a str, Type, Error<'a>> {
     just("Option<")
-        .then_ignore(whitespace())
+        .then_ignore(text::whitespace())
         .ignore_then(ty)
-        .then_ignore(whitespace())
+        .then_ignore(text::whitespace())
         .then_ignore(just('>'))
         .map(|inner| Type::new_optional(inner))
 }
@@ -196,16 +195,16 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
 }
 
 fn field<'a>(config: &'a Config) -> impl Parser<'a, &'a str, Field, Error> + 'a {
-    text::ident()
+    let field = text::ident()
         .then_ignore(just(':').padded())
-        .then(ty(config))
-        .padded()
-        .map(|(name, ty)| Field {
+        .then(ty(config));
+    multi_comment()
+        .then(field)
+        .map(|(comments, (name, ty))| Field {
             name,
             ty,
-            attributes: Default::default(),
+            attributes: Attributes::with_comments(comments),
         })
-        .padded_by(multi_comment())
 }
 
 fn dto(config: &Config) -> impl Parser<&str, Dto, Error> {
@@ -216,55 +215,104 @@ fn dto(config: &Config) -> impl Parser<&str, Dto, Error> {
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
-        .padded_by(multi_comment())
         .delimited_by(just('{').padded(), just('}').padded());
     let name = text::keyword("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
         .ignore_then(text::keyword("struct").padded())
         .ignore_then(text::ident());
-    attr.or_not()
+    let dto = attr
+        .or_not()
         .padded()
         .ignore_then(name)
         .then(fields)
-        .map(|(name, fields)| Dto {
+        .then_ignore(multi_comment());
+    multi_comment()
+        .then(dto)
+        .map(|(comments, (name, fields))| Dto {
             name,
             fields,
-            attributes: Default::default(),
+            attributes: Attributes::with_comments(comments),
         })
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum ExprBlock<'a> {
-    Comment(&'a str),
+    Comment(Comment<'a>),
     Body(&'a str),
     Nested(Vec<ExprBlock<'a>>),
 }
 
-fn block_comment<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+/// Parses a block comment starting with `/*` and ending with `*/`. The entire contents will be
+/// a single element in the vec. This also does not currently handle indentation very well, so the
+/// indentation from the source will be present in the comment data.
+///
+/// ```
+/// /*
+/// i am
+///     a multiline
+/// comment
+/// */
+/// ```
+/// would result in
+/// `vec!["i am\n    a multiline\ncomment"]`
+fn block_comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
     any()
         .and_is(just("*/").not())
         .repeated()
         .slice()
         .map(&str::trim)
         .delimited_by(just("/*"), just("*/"))
+        .map(|s| {
+            if !s.is_empty() {
+                Comment::from(vec![s])
+            } else {
+                Comment::default()
+            }
+        })
 }
 
-fn line_comment<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
-    just("//").ignore_then(
-        any()
-            .and_is(just('\n').not())
-            .repeated()
-            .slice()
-            .map(&str::trim),
-    )
+/// Parses a line comment where each line starts with `//`. Each line is an element in the returned
+/// vec without the prefixed `//`, including all padding and empty lines.
+///
+/// ```
+/// // i am
+/// //     a multiline
+/// // comment
+/// //
+/// ```
+/// would result in
+/// `vec!["i am", "    a multiline", "comment", ""]`
+fn line_comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
+    let text = any().and_is(just('\n').not()).repeated().slice();
+    let line_start = just("//").then(just(' ').or_not());
+    let line = text::inline_whitespace()
+        .then(line_start)
+        .ignore_then(text)
+        .then_ignore(just('\n'));
+    line.map(|s| Cow::Borrowed(s))
+        .repeated()
+        .at_least(1)
+        .collect::<Vec<_>>()
+        .map(|v| v.into())
 }
 
-fn comment<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+/// Parses a single line or block comment group. Each line is an element in the returned vec.
+fn comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
     choice((line_comment(), block_comment()))
 }
 
-fn multi_comment<'a>() -> impl Parser<'a, &'a str, Vec<&'a str>, Error<'a>> {
+/// Parses a single line or block comment group. Each line is an element in the returned vec.
+/// Cannot fail, instead returns an empty [Comment].
+fn comment_or_empty<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
+    comment()
+        .padded()
+        .or_not()
+        .map(|opt| opt.unwrap_or(Comment::default()))
+}
+
+/// Parses zero or more [comment]s (which are themselves Vec<&str>) into a Vec.
+fn multi_comment<'a>() -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> {
     comment().padded().repeated().collect::<Vec<_>>()
 }
 
@@ -292,17 +340,19 @@ fn rpc(config: &Config) -> impl Parser<&str, Rpc, Error> {
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
-        .padded_by(multi_comment())
+        // .padded_by(multi_comment())
         .delimited_by(just('(').padded(), just(')').padded());
     let return_type = just("->").ignore_then(ty(config).padded());
-    name.then(params)
+    multi_comment()
+        .then(name)
+        .then(params)
         .then(return_type.or_not())
         .then_ignore(expr_block().padded())
-        .map(|((name, params), return_type)| Rpc {
+        .map(|(((comments, name), params), return_type)| Rpc {
             name,
             params,
             return_type,
-            attributes: Default::default(),
+            attributes: Attributes::with_comments(comments),
         })
 }
 
@@ -314,15 +364,15 @@ fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
             str::parse::<EnumValueNumber>(s)
                 .map_err(|_| error::Error::<&'a str>::expected_found(None, None, span))
         }));
-    text::ident()
+    multi_comment()
+        .then(text::ident())
         .then(number.or_not())
         .padded()
-        .map(|(name, number)| EnumValue {
+        .map(|((comments, name), number)| EnumValue {
             name,
             number: number.unwrap_or(INVALID_ENUM_NUMBER),
-            attributes: Default::default(),
+            attributes: Attributes::with_comments(comments),
         })
-        .padded_by(multi_comment())
 }
 
 fn en<'a>() -> impl Parser<'a, &'a str, Enum<'a>, Error<'a>> {
@@ -335,13 +385,15 @@ fn en<'a>() -> impl Parser<'a, &'a str, Enum<'a>, Error<'a>> {
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
-        .padded_by(multi_comment())
         .delimited_by(just('{').padded(), just('}').padded());
-    name.then(values).map(|(name, values)| Enum {
-        name,
-        values: apply_enum_value_number_defaults(values),
-        attributes: Default::default(),
-    })
+    multi_comment()
+        .then(name)
+        .then(values)
+        .map(|((comments, name), values)| Enum {
+            name,
+            values: apply_enum_value_number_defaults(values),
+            attributes: Attributes::with_comments(comments),
+        })
 }
 
 fn apply_enum_value_number_defaults(mut values: Vec<EnumValue>) -> Vec<EnumValue> {
@@ -367,7 +419,6 @@ fn namespace_children<'a>(
         en().map(NamespaceChild::Enum),
         namespace.map(NamespaceChild::Namespace),
     ))
-    .padded_by(multi_comment())
     .repeated()
     .collect::<Vec<_>>()
 }
@@ -381,17 +432,17 @@ fn namespace(config: &Config) -> impl Parser<&str, Namespace, Error> {
         let body = namespace_children(config, nested)
             .boxed()
             .delimited_by(just('{').padded(), just('}').padded());
-        mod_keyword
-            .padded()
-            .ignore_then(text::ident())
+        multi_comment()
+            .then(mod_keyword.padded().ignore_then(text::ident()))
             // or_not to allow declaration-only in the form:
             //      mod name;
             .then(just(';').padded().map(|_| None).or(body.map(|c| Some(c))))
-            .map(|(name, children)| Namespace {
+            .map(|((comments, name), children)| Namespace {
                 name: Cow::Borrowed(name),
                 children: children.unwrap_or(vec![]),
-                attributes: Default::default(),
+                attributes: Attributes::with_comments(comments),
             })
+            .boxed()
     })
 }
 
@@ -726,7 +777,7 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::NamespaceChild;
+        use crate::model::{Comment, NamespaceChild};
         use crate::parser::rust::namespace;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
@@ -832,12 +883,33 @@ mod tests {
             }
             Ok(())
         }
+
+        #[test]
+        fn comment() -> Result<()> {
+            let ns = namespace(&CONFIG)
+                .parse(
+                    r#"
+            // multi
+            // line
+            // comment
+            mod ns {}
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                ns.attributes.comments,
+                vec![Comment::unowned(&["multi", "line", "comment"])]
+            );
+            Ok(())
+        }
     }
 
     mod dto {
         use anyhow::Result;
         use chumsky::Parser;
 
+        use crate::model::Comment;
         use crate::parser::rust::dto;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
@@ -909,15 +981,34 @@ mod tests {
         }
 
         #[test]
+        fn comment() -> Result<()> {
+            let dto = dto(&CONFIG)
+                .parse(
+                    r#"
+            // multi
+            // line
+            // comment
+            struct StructName {}
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                dto.attributes.comments,
+                vec![Comment::unowned(&["multi", "line", "comment"])]
+            );
+            Ok(())
+        }
+
+        #[test]
         fn fields_with_comments() -> Result<()> {
             let dto = dto(&CONFIG)
                 .parse(
                     r#"
             struct StructName {
-                // asdf
-                // asdf
-                field0: i32, /* asdf */ field1: f32,
-                // asdf
+                // multi
+                // line
+                field0: i32, /* comment */ field1: f32,
             }
             "#,
                 )
@@ -927,11 +1018,20 @@ mod tests {
             assert_eq!(dto.fields.len(), 2);
             assert_eq!(dto.fields[0].name, "field0");
             assert_eq!(dto.fields[1].name, "field1");
+            assert_eq!(
+                dto.fields[0].attributes.comments,
+                vec![Comment::unowned(&["multi", "line"])]
+            );
+            assert_eq!(
+                dto.fields[1].attributes.comments,
+                vec![Comment::unowned(&["comment"])]
+            );
             Ok(())
         }
     }
 
     mod rpc {
+        use crate::model::Comment;
         use anyhow::Result;
         use chumsky::Parser;
 
@@ -981,6 +1081,26 @@ mod tests {
                 )
                 .into_result();
             assert!(rpc.is_err());
+        }
+
+        #[test]
+        fn comment() -> Result<()> {
+            let rpc = rpc(&CONFIG)
+                .parse(
+                    r#"
+            // multi
+            // line
+            // comment
+            fn rpc() {}
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                rpc.attributes.comments,
+                vec![Comment::unowned(&["multi", "line", "comment"])]
+            );
+            Ok(())
         }
 
         #[test]
@@ -1037,32 +1157,30 @@ mod tests {
                 .parse(
                     r#"
             fn rpc_name(
-                // asdf
-                // asdf
-                param0: ParamType0, /* asdf */ param1: ParamType1,
-                // asdf
-                param2: ParamType2 /* asdf */
-                // asdf
+                // multi
+                // line
+                param0: ParamType0, /* comment */ param1: ParamType1,
+                // multi
+                // line
+                // comment
+                param2: ParamType2
             ) {}
             "#,
                 )
                 .into_result()
                 .map_err(wrap_test_err)?;
             assert_eq!(rpc.params.len(), 3);
-            assert_eq!(rpc.params[0].name, "param0");
             assert_eq!(
-                rpc.params[0].ty.api().unwrap().component_names().last(),
-                Some("ParamType0")
+                rpc.params[0].attributes.comments,
+                vec![Comment::unowned(&["multi", "line"])]
             );
-            assert_eq!(rpc.params[1].name, "param1");
             assert_eq!(
-                rpc.params[1].ty.api().unwrap().component_names().last(),
-                Some("ParamType1")
+                rpc.params[1].attributes.comments,
+                vec![Comment::unowned(&["comment"])]
             );
-            assert_eq!(rpc.params[2].name, "param2");
             assert_eq!(
-                rpc.params[2].ty.api().unwrap().component_names().last(),
-                Some("ParamType2")
+                rpc.params[2].attributes.comments,
+                vec![Comment::unowned(&["multi", "line", "comment"])]
             );
             Ok(())
         }
@@ -1161,7 +1279,7 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::{EnumValue, EnumValueNumber};
+        use crate::model::{Comment, EnumValue, EnumValueNumber};
         use crate::parser::rust::en;
         use crate::parser::rust::tests::wrap_test_err;
 
@@ -1232,6 +1350,60 @@ mod tests {
             Ok(())
         }
 
+        #[test]
+        fn comment() -> Result<()> {
+            let en = en()
+                .parse(
+                    r#"
+            // multi
+            // line
+            // comment
+            enum en {}
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                en.attributes.comments,
+                vec![Comment::unowned(&["multi", "line", "comment"])]
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn enum_value_comments() -> Result<()> {
+            let en = en()
+                .parse(
+                    r#"
+                    enum en {
+                        // multi
+                        // line
+                        Value0, /* comment */ Value1,
+                        // multi
+                        // line
+                        // comment
+                        Value2,
+                    }
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(en.values.len(), 3);
+            assert_eq!(
+                en.values[0].attributes.comments,
+                vec![Comment::unowned(&["multi", "line"])]
+            );
+            assert_eq!(
+                en.values[1].attributes.comments,
+                vec![Comment::unowned(&["comment"])]
+            );
+            assert_eq!(
+                en.values[2].attributes.comments,
+                vec![Comment::unowned(&["multi", "line", "comment"])]
+            );
+            Ok(())
+        }
+
         fn assert_value(
             actual: Option<&EnumValue>,
             expected_name: &str,
@@ -1252,17 +1424,82 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
+        use crate::model::Comment;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
-        use crate::parser::rust::{comment, namespace};
+        use crate::parser::rust::{comment, comment_or_empty, multi_comment, namespace};
+
+        #[test]
+        fn empty_comment_err() {
+            assert!(comment().parse("").into_result().is_err());
+        }
+
+        #[test]
+        fn empty_comment() -> Result<()> {
+            let value = comment_or_empty()
+                .parse("")
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(value, Comment::default());
+            Ok(())
+        }
 
         #[test]
         fn line_comment() -> Result<()> {
             let value = comment()
-                .parse("// line comment")
+                .parse("// line comment\n")
                 .into_result()
                 .map_err(wrap_test_err)?;
-            assert_eq!(value, "line comment");
+            assert_eq!(value, Comment::unowned(&["line comment"]));
+            Ok(())
+        }
+
+        #[test]
+        fn line_comment_multi_with_spacing() -> Result<()> {
+            let value = comment()
+                .parse(
+                    r#"//
+                // line one
+                //     line two
+                // line three
+                //
+"#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                value,
+                Comment::unowned(&["", "line one", "    line two", "line three", ""])
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn test_multi_comment() -> Result<()> {
+            let value = multi_comment()
+                .parse(
+                    r#"
+                    /* line one */
+                    // line two
+                    // line three
+
+                    // line four
+                    /* line five */
+                    /* line six */
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                value,
+                vec![
+                    Comment::unowned(&["line one"]),
+                    Comment::unowned(&["line two", "line three"]),
+                    Comment::unowned(&["line four"]),
+                    Comment::unowned(&["line five"]),
+                    Comment::unowned(&["line six"]),
+                ]
+            );
             Ok(())
         }
 
@@ -1272,16 +1509,19 @@ mod tests {
                 .parse("/* block comment */")
                 .into_result()
                 .map_err(wrap_test_err)?;
-            assert_eq!(value, "block comment");
+            assert_eq!(value, Comment::unowned(&["block comment"]));
             Ok(())
         }
 
         #[test]
-        fn line_comment_inside_namespace() -> Result<()> {
+        fn line_comments_inside_namespace() -> Result<()> {
             namespace(&CONFIG)
                 .parse(
                     r#"
                     mod ns { // comment
+                        // comment
+
+                        // comment
                         // comment
                         // comment
                         struct dto {} // comment
@@ -1316,6 +1556,7 @@ mod tests {
     mod expr_block {
         use chumsky::{text, Parser};
 
+        use crate::model::Comment;
         use crate::parser::rust::{expr_block, ExprBlock};
 
         #[test]
@@ -1370,7 +1611,10 @@ mod tests {
                     }"#,
                 )
                 .into_result();
-            assert_eq!(result.unwrap(), vec![ExprBlock::Comment("don't break! }")]);
+            assert_eq!(
+                result.unwrap(),
+                vec![ExprBlock::Comment(Comment::unowned(&["don't break! }"]))],
+            );
         }
 
         #[test]
@@ -1385,8 +1629,8 @@ mod tests {
             assert_eq!(
                 result.unwrap(),
                 vec![ExprBlock::Nested(vec![ExprBlock::Comment(
-                    "don't break! {{{"
-                )]),]
+                    Comment::unowned(&["don't break! {{{"])
+                )])]
             );
         }
 

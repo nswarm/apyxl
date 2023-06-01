@@ -8,7 +8,7 @@ pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
     pub return_type: Option<Type>,
-    pub attributes: Attributes,
+    pub attributes: Attributes<'a>,
 }
 
 impl<'a> Rpc<'a> {

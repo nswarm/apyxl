@@ -149,6 +149,11 @@ pub(crate) trait Transformer: Sized {
         self.xforms().entity_id.push(Box::new(xform));
         self
     }
+
+    fn with_attribute_transform(mut self, xform: impl AttributeTransform + 'static) -> Self {
+        self.xforms().attr.push(Box::new(xform));
+        self
+    }
 }
 
 impl Transforms {

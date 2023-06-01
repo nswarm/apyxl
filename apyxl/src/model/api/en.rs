@@ -7,7 +7,7 @@ use crate::model::{Attributes, Entity, EntityId};
 pub struct Enum<'a> {
     pub name: &'a str,
     pub values: Vec<EnumValue<'a>>,
-    pub attributes: Attributes,
+    pub attributes: Attributes<'a>,
 }
 
 pub type EnumValueNumber = i64;
@@ -17,7 +17,7 @@ pub type EnumValueNumber = i64;
 pub struct EnumValue<'a> {
     pub name: &'a str,
     pub number: EnumValueNumber,
-    pub attributes: Attributes,
+    pub attributes: Attributes<'a>,
 }
 
 impl<'a> Enum<'a> {

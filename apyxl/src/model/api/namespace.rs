@@ -9,7 +9,7 @@ use std::borrow::Cow;
 pub struct Namespace<'a> {
     pub name: Cow<'a, str>,
     pub children: Vec<NamespaceChild<'a>>,
-    pub attributes: Attributes,
+    pub attributes: Attributes<'a>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -390,7 +390,7 @@ impl<'a> NamespaceChild<'a> {
         }
     }
 
-    pub fn attributes(&self) -> &Attributes {
+    pub fn attributes(&self) -> &Attributes<'a> {
         match self {
             NamespaceChild::Dto(dto) => &dto.attributes,
             NamespaceChild::Rpc(rpc) => &rpc.attributes,
@@ -399,7 +399,7 @@ impl<'a> NamespaceChild<'a> {
         }
     }
 
-    pub fn attributes_mut(&mut self) -> &mut Attributes {
+    pub fn attributes_mut(&mut self) -> &mut Attributes<'a> {
         match self {
             NamespaceChild::Dto(dto) => &mut dto.attributes,
             NamespaceChild::Rpc(rpc) => &mut rpc.attributes,
