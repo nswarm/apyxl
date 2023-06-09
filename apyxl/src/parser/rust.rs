@@ -33,10 +33,13 @@ impl ApyxlParser for Rust {
                 }
             }
 
-            let children = choice((use_decl().ignored(), comment().ignored()))
+            let imports = multi_comment()
+                .then(use_decl())
                 .padded()
                 .repeated()
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+
+            let children = imports
                 .ignore_then(namespace_children(&config, namespace(&config)).padded())
                 .then_ignore(end())
                 .parse(&data)
@@ -302,15 +305,6 @@ fn comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
     choice((line_comment(), block_comment()))
 }
 
-/// Parses a single line or block comment group. Each line is an element in the returned vec.
-/// Cannot fail, instead returns an empty [Comment].
-fn comment_or_empty<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
-    comment()
-        .padded()
-        .or_not()
-        .map(|opt| opt.unwrap_or(Comment::default()))
-}
-
 /// Parses zero or more [comment]s (which are themselves Vec<&str>) into a Vec.
 fn multi_comment<'a>() -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> {
     comment().padded().repeated().collect::<Vec<_>>()
@@ -453,7 +447,7 @@ mod tests {
     use chumsky::Parser;
     use lazy_static::lazy_static;
 
-    use crate::model::{Builder, UNDEFINED_NAMESPACE};
+    use crate::model::{Builder, Comment, UNDEFINED_NAMESPACE};
     use crate::parser::rust::field;
     use crate::parser::{Config, UserType};
     use crate::{input, parser, Parser as ApyxlParser};
@@ -493,6 +487,7 @@ mod tests {
         // comment
         // comment
         pub use asdf;
+        // rpc comment
         fn rpc() {}
         struct dto {}
         mod namespace {}
@@ -505,6 +500,11 @@ mod tests {
         assert!(model.api().dto("dto").is_some());
         assert!(model.api().rpc("rpc").is_some());
         assert!(model.api().namespace("namespace").is_some());
+        // make sure comment after use is attributed to rpc.
+        assert_eq!(
+            model.api().rpc("rpc").unwrap().attributes.comments,
+            vec![Comment::unowned(&["rpc comment"])]
+        );
         Ok(())
     }
 
@@ -909,10 +909,10 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::Comment;
-        use crate::parser::rust::dto;
+        use crate::model::{Comment, NamespaceChild};
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::{dto, namespace, namespace_children};
 
         #[test]
         fn empty() -> Result<()> {
@@ -1427,21 +1427,11 @@ mod tests {
         use crate::model::Comment;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
-        use crate::parser::rust::{comment, comment_or_empty, multi_comment, namespace};
+        use crate::parser::rust::{comment, multi_comment, namespace};
 
         #[test]
         fn empty_comment_err() {
             assert!(comment().parse("").into_result().is_err());
-        }
-
-        #[test]
-        fn empty_comment() -> Result<()> {
-            let value = comment_or_empty()
-                .parse("")
-                .into_result()
-                .map_err(wrap_test_err)?;
-            assert_eq!(value, Comment::default());
-            Ok(())
         }
 
         #[test]

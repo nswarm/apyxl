@@ -52,7 +52,7 @@ mod tests {
                     struct dto {}
                 "#,
         );
-        let model = exe.model();
+        let model = exe.build();
         let view = model
             .view()
             .with_attribute_transform(CommentWordFilterTransform {});
