@@ -6,8 +6,8 @@ use chumsky::prelude::*;
 use log::debug;
 
 use crate::model::{
-    Api, Attributes, Comment, Dto, EntityId, Enum, EnumValue, EnumValueNumber, Field, Namespace,
-    NamespaceChild, Rpc, Type, UNDEFINED_NAMESPACE,
+    attribute, Api, Attributes, Comment, Dto, EntityId, Enum, EnumValue, EnumValueNumber, Field,
+    Namespace, NamespaceChild, Rpc, Type, UNDEFINED_NAMESPACE,
 };
 use crate::parser::Config;
 use crate::{model, Input};
@@ -202,18 +202,47 @@ fn field<'a>(config: &'a Config) -> impl Parser<'a, &'a str, Field, Error> + 'a 
         .then_ignore(just(':').padded())
         .then(ty(config));
     multi_comment()
+        .then(attributes().padded())
         .then(field)
-        .map(|(comments, (name, ty))| Field {
+        .map(|((comments, user), (name, ty))| Field {
             name,
             ty,
-            attributes: Attributes::with_comments(comments),
+            attributes: Attributes {
+                comments,
+                user,
+                ..Default::default()
+            },
         })
 }
 
+fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Error<'a>> {
+    let name = text::ident();
+    let data = text::ident()
+        .then(just('=').padded().ignore_then(text::ident()).or_not())
+        .map(|(lhs, rhs)| match rhs {
+            None => attribute::UserData::new(None, lhs),
+            Some(rhs) => attribute::UserData::new(Some(lhs), rhs),
+        });
+    let data_list = data
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('(').padded(), just(')').padded())
+        .or_not();
+    name.then(data_list)
+        .map(|(name, data)| attribute::User {
+            name,
+            data: data.unwrap_or(vec![]),
+        })
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just("#[").padded(), just(']').padded())
+        .or_not()
+        .map(|opt| opt.unwrap_or(vec![]))
+}
+
 fn dto(config: &Config) -> impl Parser<&str, Dto, Error> {
-    let attr = just("#[")
-        .then(any().and_is(just("]").not()).repeated().slice())
-        .then(just(']'));
     let fields = field(config)
         .separated_by(just(',').padded())
         .allow_trailing()
@@ -224,18 +253,21 @@ fn dto(config: &Config) -> impl Parser<&str, Dto, Error> {
         .or_not()
         .ignore_then(text::keyword("struct").padded())
         .ignore_then(text::ident());
-    let dto = attr
-        .or_not()
+    let dto = attributes()
         .padded()
-        .ignore_then(name)
+        .then(name)
         .then(fields)
         .then_ignore(multi_comment());
     multi_comment()
         .then(dto)
-        .map(|(comments, (name, fields))| Dto {
+        .map(|(comments, ((user, name), fields))| Dto {
             name,
             fields,
-            attributes: Attributes::with_comments(comments),
+            attributes: Attributes {
+                comments,
+                user,
+                ..Default::default()
+            },
         })
 }
 
@@ -334,19 +366,23 @@ fn rpc(config: &Config) -> impl Parser<&str, Rpc, Error> {
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
-        // .padded_by(multi_comment())
         .delimited_by(just('(').padded(), just(')').padded());
     let return_type = just("->").ignore_then(ty(config).padded());
     multi_comment()
+        .then(attributes().padded())
         .then(name)
         .then(params)
         .then(return_type.or_not())
         .then_ignore(expr_block().padded())
-        .map(|(((comments, name), params), return_type)| Rpc {
+        .map(|((((comments, user), name), params), return_type)| Rpc {
             name,
             params,
             return_type,
-            attributes: Attributes::with_comments(comments),
+            attributes: Attributes {
+                comments,
+                user,
+                ..Default::default()
+            },
         })
 }
 
@@ -359,13 +395,18 @@ fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
                 .map_err(|_| error::Error::<&'a str>::expected_found(None, None, span))
         }));
     multi_comment()
+        .then(attributes().padded())
         .then(text::ident())
         .then(number.or_not())
         .padded()
-        .map(|((comments, name), number)| EnumValue {
+        .map(|(((comments, user), name), number)| EnumValue {
             name,
             number: number.unwrap_or(INVALID_ENUM_NUMBER),
-            attributes: Attributes::with_comments(comments),
+            attributes: Attributes {
+                comments,
+                user,
+                ..Default::default()
+            },
         })
 }
 
@@ -381,12 +422,17 @@ fn en<'a>() -> impl Parser<'a, &'a str, Enum<'a>, Error<'a>> {
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded());
     multi_comment()
+        .then(attributes().padded())
         .then(name)
         .then(values)
-        .map(|((comments, name), values)| Enum {
+        .map(|(((comments, user), name), values)| Enum {
             name,
             values: apply_enum_value_number_defaults(values),
-            attributes: Attributes::with_comments(comments),
+            attributes: Attributes {
+                comments,
+                user,
+                ..Default::default()
+            },
         })
 }
 
@@ -427,14 +473,19 @@ fn namespace(config: &Config) -> impl Parser<&str, Namespace, Error> {
             .boxed()
             .delimited_by(just('{').padded(), just('}').padded());
         multi_comment()
+            .then(attributes().padded())
             .then(mod_keyword.padded().ignore_then(text::ident()))
             // or_not to allow declaration-only in the form:
             //      mod name;
             .then(just(';').padded().map(|_| None).or(body.map(|c| Some(c))))
-            .map(|((comments, name), children)| Namespace {
+            .map(|(((comments, user), name), children)| Namespace {
                 name: Cow::Borrowed(name),
                 children: children.unwrap_or(vec![]),
-                attributes: Attributes::with_comments(comments),
+                attributes: Attributes {
+                    comments,
+                    user,
+                    ..Default::default()
+                },
             })
             .boxed()
     })
@@ -777,7 +828,7 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::{Comment, NamespaceChild};
+        use crate::model::{attribute, Comment, NamespaceChild};
         use crate::parser::rust::namespace;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
@@ -903,16 +954,37 @@ mod tests {
             );
             Ok(())
         }
+
+        #[test]
+        fn attributes() -> Result<()> {
+            let namespace = namespace(&CONFIG)
+                .parse(
+                    r#"
+                    #[flag1, flag2]
+                    mod ns {}
+                    "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                namespace.attributes.user,
+                vec![
+                    attribute::User::new_flag("flag1"),
+                    attribute::User::new_flag("flag2"),
+                ]
+            );
+            Ok(())
+        }
     }
 
     mod dto {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::{Comment, NamespaceChild};
+        use crate::model::{attribute, Comment};
+        use crate::parser::rust::dto;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
-        use crate::parser::rust::{dto, namespace, namespace_children};
 
         #[test]
         fn empty() -> Result<()> {
@@ -935,22 +1007,6 @@ mod tests {
                 .parse(
                     r#"
             pub struct StructName {}
-            "#,
-                )
-                .into_result()
-                .map_err(wrap_test_err)?;
-            assert_eq!(dto.name, "StructName");
-            assert_eq!(dto.fields.len(), 0);
-            Ok(())
-        }
-
-        #[test]
-        fn ignore_derive() -> Result<()> {
-            let dto = dto(&CONFIG)
-                .parse(
-                    r#"
-            #[derive(Whatever)]
-            struct StructName {}
             "#,
                 )
                 .into_result()
@@ -1028,13 +1084,35 @@ mod tests {
             );
             Ok(())
         }
+
+        #[test]
+        fn attributes() -> Result<()> {
+            let dto = dto(&CONFIG)
+                .parse(
+                    r#"
+                #[flag1, flag2]
+                struct StructName {}
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(dto.name, "StructName");
+            assert_eq!(
+                dto.attributes.user,
+                vec![
+                    attribute::User::new_flag("flag1"),
+                    attribute::User::new_flag("flag2"),
+                ]
+            );
+            Ok(())
+        }
     }
 
     mod rpc {
-        use crate::model::Comment;
         use anyhow::Result;
         use chumsky::Parser;
 
+        use crate::model::{attribute, Comment};
         use crate::parser::rust::rpc;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
@@ -1254,12 +1332,34 @@ mod tests {
             );
             Ok(())
         }
+
+        #[test]
+        fn attributes() -> Result<()> {
+            let rpc = rpc(&CONFIG)
+                .parse(
+                    r#"
+                #[flag1, flag2]
+                fn rpc() {}
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                rpc.attributes.user,
+                vec![
+                    attribute::User::new_flag("flag1"),
+                    attribute::User::new_flag("flag2"),
+                ]
+            );
+            Ok(())
+        }
     }
 
     mod en_value {
         use anyhow::Result;
         use chumsky::Parser;
 
+        use crate::model::attribute;
         use crate::parser::rust::en_value;
         use crate::parser::rust::tests::wrap_test_err;
 
@@ -1273,13 +1373,34 @@ mod tests {
             assert_eq!(value.number, 1);
             Ok(())
         }
+
+        #[test]
+        fn attributes() -> Result<()> {
+            let value = en_value()
+                .parse(
+                    r#"
+                    #[flag1, flag2]
+                    Value = 1
+                    "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                value.attributes.user,
+                vec![
+                    attribute::User::new_flag("flag1"),
+                    attribute::User::new_flag("flag2"),
+                ]
+            );
+            Ok(())
+        }
     }
 
     mod en {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::{Comment, EnumValue, EnumValueNumber};
+        use crate::model::{attribute, Comment, EnumValue, EnumValueNumber};
         use crate::parser::rust::en;
         use crate::parser::rust::tests::wrap_test_err;
 
@@ -1400,6 +1521,27 @@ mod tests {
             assert_eq!(
                 en.values[2].attributes.comments,
                 vec![Comment::unowned(&["multi", "line", "comment"])]
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn attributes() -> Result<()> {
+            let en = en()
+                .parse(
+                    r#"
+                    #[flag1, flag2]
+                    enum Enum {}
+                    "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(
+                en.attributes.user,
+                vec![
+                    attribute::User::new_flag("flag1"),
+                    attribute::User::new_flag("flag2"),
+                ]
             );
             Ok(())
         }
@@ -1640,6 +1782,104 @@ mod tests {
                 .into_result();
             assert!(result.is_ok(), "parse should not fail");
             assert_eq!(result.unwrap(), "not_ignored");
+        }
+    }
+
+    mod attributes {
+        use chumsky::Parser;
+
+        use crate::model::attribute;
+        use crate::model::attribute::UserData;
+        use crate::parser::rust::dto;
+        use crate::parser::rust::tests::CONFIG;
+
+        #[test]
+        fn flags() {
+            run_test(
+                r#"
+                    #[flag1, flag2, flag3]
+                    struct dto {}
+                    "#,
+                vec![
+                    attribute::User::new_flag("flag1"),
+                    attribute::User::new_flag("flag2"),
+                    attribute::User::new_flag("flag3"),
+                ],
+            )
+        }
+
+        #[test]
+        fn lists() {
+            run_test(
+                r#"
+                    #[attr0(a_one), attr1(a_two, b_two, c_two)]
+                    struct dto {}
+                    "#,
+                vec![
+                    attribute::User::new("attr0", vec![UserData::new(None, "a_one")]),
+                    attribute::User::new(
+                        "attr1",
+                        vec![
+                            UserData::new(None, "a_two"),
+                            UserData::new(None, "b_two"),
+                            UserData::new(None, "c_two"),
+                        ],
+                    ),
+                ],
+            )
+        }
+
+        #[test]
+        fn maps() {
+            run_test(
+                r#"
+                    #[attr0(k0 = v0, k1 = v1), attr1(k00 = v00)]
+                    struct dto {}
+                    "#,
+                vec![
+                    attribute::User::new(
+                        "attr0",
+                        vec![
+                            UserData::new(Some("k0"), "v0"),
+                            UserData::new(Some("k1"), "v1"),
+                        ],
+                    ),
+                    attribute::User::new("attr1", vec![UserData::new(Some("k00"), "v00")]),
+                ],
+            )
+        }
+
+        #[test]
+        fn mixed() {
+            run_test(
+                r#"
+                    #[attr0(k0 = v0, k1 = v1), attr1, attr2(one, two, three)]
+                    struct dto {}
+                    "#,
+                vec![
+                    attribute::User::new(
+                        "attr0",
+                        vec![
+                            UserData::new(Some("k0"), "v0"),
+                            UserData::new(Some("k1"), "v1"),
+                        ],
+                    ),
+                    attribute::User::new_flag("attr1"),
+                    attribute::User::new(
+                        "attr2",
+                        vec![
+                            UserData::new(None, "one"),
+                            UserData::new(None, "two"),
+                            UserData::new(None, "three"),
+                        ],
+                    ),
+                ],
+            )
+        }
+
+        fn run_test(content: &str, expected: Vec<attribute::User>) {
+            let dto = dto(&CONFIG).parse(content).into_result().unwrap();
+            assert_eq!(dto.attributes.user, expected);
         }
     }
 }
