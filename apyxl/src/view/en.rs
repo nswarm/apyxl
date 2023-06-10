@@ -6,7 +6,7 @@ use dyn_clone::DynClone;
 use crate::model;
 use crate::model::entity::ToEntity;
 use crate::model::EntityType;
-use crate::view::{Attributes, Transforms};
+use crate::view::{AttributeTransform, Attributes, Transforms};
 
 /// A single enum within an [Api].
 /// Wraps [model::Enum].
@@ -22,6 +22,7 @@ pub struct Enum<'v, 'a> {
 pub struct EnumValue<'v, 'a> {
     target: &'v model::EnumValue<'a>,
     xforms: &'v Vec<Box<dyn EnumValueTransform>>,
+    attr_xforms: &'v Vec<Box<dyn AttributeTransform>>,
 }
 
 pub trait EnumTransform: Debug + DynClone {
@@ -63,7 +64,7 @@ impl<'v, 'a> Enum<'v, 'a> {
             .values
             .iter()
             .filter(|value| self.filter_value(value))
-            .map(move |value| EnumValue::new(value, &self.xforms.en_value))
+            .map(move |value| EnumValue::new(value, &self.xforms.en_value, &self.xforms.attr))
     }
 
     pub fn attributes(&self) -> Attributes {
@@ -79,8 +80,13 @@ impl<'v, 'a> EnumValue<'v, 'a> {
     pub fn new(
         target: &'v model::EnumValue<'a>,
         xforms: &'v Vec<Box<dyn EnumValueTransform>>,
+        attr_xforms: &'v Vec<Box<dyn AttributeTransform>>,
     ) -> Self {
-        Self { target, xforms }
+        Self {
+            target,
+            xforms,
+            attr_xforms,
+        }
     }
 
     pub fn name(&self) -> Cow<str> {
@@ -97,6 +103,10 @@ impl<'v, 'a> EnumValue<'v, 'a> {
             x.number(&mut number)
         }
         number
+    }
+
+    pub fn attributes(&self) -> Attributes {
+        Attributes::new(&self.target.attributes, &self.attr_xforms)
     }
 }
 

@@ -4,10 +4,11 @@ use anyhow::Result;
 use itertools::Itertools;
 
 use crate::generator::Generator;
-use crate::model::{Chunk, Dependencies, EntityType};
+use crate::model::{attribute, Chunk, Comment, Dependencies, EntityType};
 use crate::output::{Indented, Output};
 use crate::view::{
-    Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, SubView, Type,
+    Attributes, Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, SubView,
+    Type,
 };
 use crate::{model, rust_util};
 
@@ -76,6 +77,8 @@ fn write_imports<P: AsRef<Path>>(chunk_relative_paths: &[P], o: &mut dyn Output)
 }
 
 fn write_namespace(namespace: Namespace, o: &mut Indented) -> Result<()> {
+    write_attributes(&namespace.attributes(), o)?;
+
     o.write_str("pub mod ")?;
     o.write_str(&namespace.name())?;
 
@@ -115,6 +118,8 @@ fn write_namespace_contents(namespace: Namespace, o: &mut Indented) -> Result<()
 }
 
 fn write_dto(dto: Dto, o: &mut Indented) -> Result<()> {
+    write_attributes(&dto.attributes(), o)?;
+
     write_dto_start(dto, o)?;
 
     for field in dto.fields() {
@@ -126,6 +131,8 @@ fn write_dto(dto: Dto, o: &mut Indented) -> Result<()> {
 }
 
 fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {
+    write_attributes(&rpc.attributes(), o)?;
+
     o.write_str("pub fn ")?;
     o.write_str(&rpc.name())?;
 
@@ -153,6 +160,8 @@ fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {
 }
 
 fn write_enum(en: Enum, o: &mut Indented) -> Result<()> {
+    write_attributes(&en.attributes(), o)?;
+
     o.write_str("enum ")?;
     o.write_str(&en.name())?;
     o.write(' ')?;
@@ -167,6 +176,8 @@ fn write_enum(en: Enum, o: &mut Indented) -> Result<()> {
 }
 
 fn write_enum_value(value: EnumValue, o: &mut dyn Output) -> Result<()> {
+    write_attributes(&value.attributes(), o)?;
+
     o.write_str(&value.name())?;
     o.write_str(" = ")?;
     o.write_str(&value.number().to_string())?;
@@ -198,9 +209,66 @@ fn write_field(field: Field, o: &mut dyn Output) -> Result<()> {
 }
 
 fn write_param(field: Field, o: &mut dyn Output) -> Result<()> {
+    write_attributes(&field.attributes(), o)?;
+
     o.write_str(&field.name())?;
     o.write_str(": ")?;
     write_type(field.ty(), o)
+}
+
+fn write_attributes(attributes: &Attributes, o: &mut dyn Output) -> Result<()> {
+    write_comments(&attributes.comments(), o)?;
+    write_user_attributes(attributes.user(), o)?;
+    Ok(())
+}
+
+fn write_comments(comments: &[Comment], o: &mut dyn Output) -> Result<()> {
+    write_joined(comments, "\n", o, |comment, o| {
+        for line in comment.lines() {
+            o.write_str("// ")?;
+            o.write_str(line)?;
+            o.newline()?;
+        }
+        Ok(())
+    })?;
+    Ok(())
+}
+
+fn write_user_attributes(user_attributes: &[attribute::User], o: &mut dyn Output) -> Result<()> {
+    if user_attributes.is_empty() {
+        return Ok(());
+    }
+    o.write_str("#[")?;
+    write_joined(user_attributes, ", ", o, |attr, o| {
+        write_user_attribute(attr.name, &attr.data, o)
+    })?;
+    o.write(']')?;
+    o.newline()?;
+    Ok(())
+}
+
+fn write_user_attribute(
+    name: &str,
+    data: &[attribute::UserData],
+    o: &mut dyn Output,
+) -> Result<()> {
+    o.write_str(name)?;
+    if data.is_empty() {
+        return Ok(());
+    }
+    o.write('(')?;
+    write_joined(data, ", ", o, |data, o| {
+        match data.key {
+            None => {}
+            Some(key) => {
+                o.write_str(key)?;
+                o.write_str(" = ")?;
+            }
+        }
+        o.write_str(data.value)
+    })?;
+    o.write(')')?;
+    Ok(())
 }
 
 fn write_type(ty: Type, o: &mut dyn Output) -> Result<()> {
@@ -239,7 +307,7 @@ fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
 fn write_entity_id(entity_id: EntityId, o: &mut dyn Output) -> Result<()> {
     // Fully qualify everything by crate.
     o.write_str("crate::")?;
-    write_joined(
+    write_joined_str(
         &entity_id.path().iter().map(|s| s.as_ref()).collect_vec(),
         "::",
         o,
@@ -266,14 +334,29 @@ fn write_option(ty: InnerType, o: &mut dyn Output) -> Result<()> {
     o.write('>')
 }
 
+fn write_joined_str(components: &[&str], separator: &str, o: &mut dyn Output) -> Result<()> {
+    write_joined(components, separator, o, |component, o| {
+        o.write_str(component)
+    })
+}
+
 /// Writes the `components` joined with `separator` without unnecessary allocations.
-fn write_joined(components: &[&str], separator: &str, o: &mut dyn Output) -> Result<()> {
-    let len = components.len();
-    for (i, component) in components.iter().enumerate() {
-        o.write_str(component)?;
-        if i < len - 1 {
+fn write_joined<T, F>(
+    components: &[T],
+    separator: &str,
+    o: &mut dyn Output,
+    write_component: F,
+) -> Result<()>
+where
+    F: Fn(&T, &mut dyn Output) -> Result<()>,
+{
+    let mut first = true;
+    for component in components {
+        if !first {
             o.write_str(separator)?;
         }
+        first = false;
+        write_component(component, o)?;
     }
     Ok(())
 }
@@ -338,6 +421,7 @@ mod tests {
         write_dto, write_entity_id, write_enum, write_field, write_rpc, INDENT,
     };
     use crate::generator::Rust;
+    use crate::model::{attribute, Attributes};
     use crate::output::Indented;
     use crate::test_util::executor::TestExecutor;
     use crate::view::Transforms;
@@ -346,6 +430,12 @@ mod tests {
     #[test]
     fn full_generation() -> Result<()> {
         let data = r#"
+pub enum EnumName {
+    One = 1,
+    Two,
+    Three = 99,
+}
+
 pub fn rpc_name(
     dto: DtoName,
     dto2: ns0::DtoName,
@@ -365,6 +455,12 @@ pub mod ns0 {
     dto: crate::DtoName,
     dto2: crate::ns0::DtoName,
 ) -> crate::DtoName {}
+
+enum EnumName {
+    One = 1,
+    Two = 2,
+    Three = 99,
+}
 
 struct DtoName {
     i: i32,
@@ -386,7 +482,7 @@ pub mod ns0 {
 
     #[test]
     fn dto() -> Result<()> {
-        assert_output(
+        assert_output_slice(
             |o| {
                 write_dto(
                     view::Dto::new(
@@ -396,32 +492,36 @@ pub mod ns0 {
                                 model::Field {
                                     name: "field0",
                                     ty: model::Type::new_api("Type0")?,
-                                    attributes: Default::default(),
+                                    attributes: test_attributes(),
                                 },
                                 model::Field {
                                     name: "field1",
                                     ty: model::Type::new_api("Type1")?,
-                                    attributes: Default::default(),
+                                    attributes: test_attributes(),
                                 },
                             ],
-                            attributes: Default::default(),
+                            attributes: test_attributes(),
                         },
                         &Transforms::default(),
                     ),
                     &mut Indented::new(o, INDENT),
                 )
             },
-            r#"struct DtoName {
-    field0: crate::Type0,
-    field1: crate::Type1,
-}
-"#,
+            &[
+                expected_attribute_str(),
+                "struct DtoName {",
+                &indent("    ", expected_attribute_str()),
+                "    field0: crate::Type0,",
+                &indent("    ", expected_attribute_str()),
+                "    field1: crate::Type1,",
+                "}\n",
+            ],
         )
     }
 
     #[test]
     fn rpc() -> Result<()> {
-        assert_output(
+        assert_output_slice(
             |o| {
                 write_rpc(
                     view::Rpc::new(
@@ -431,27 +531,31 @@ pub mod ns0 {
                                 model::Field {
                                     name: "param0",
                                     ty: model::Type::new_api("Type0")?,
-                                    attributes: Default::default(),
+                                    attributes: test_attributes(),
                                 },
                                 model::Field {
                                     name: "param1",
                                     ty: model::Type::new_api("Type1")?,
-                                    attributes: Default::default(),
+                                    attributes: test_attributes(),
                                 },
                             ],
                             return_type: None,
-                            attributes: Default::default(),
+                            attributes: test_attributes(),
                         },
                         &Transforms::default(),
                     ),
                     &mut Indented::new(o, INDENT),
                 )
             },
-            r#"pub fn rpc_name(
-    param0: crate::Type0,
-    param1: crate::Type1,
-) {}
-"#,
+            &[
+                expected_attribute_str(),
+                "pub fn rpc_name(",
+                &indent("    ", expected_attribute_str()),
+                "    param0: crate::Type0,",
+                &indent("    ", expected_attribute_str()),
+                "    param1: crate::Type1,",
+                ") {}\n",
+            ],
         )
     }
 
@@ -478,14 +582,14 @@ pub mod ns0 {
 
     #[test]
     fn field() -> Result<()> {
-        assert_output(
+        assert_output_slice(
             |o| {
                 write_field(
                     view::Field::new(
                         &model::Field {
                             name: "asdf",
                             ty: model::Type::new_api("Type")?,
-                            attributes: Default::default(),
+                            attributes: test_attributes(),
                         },
                         &vec![],
                         &vec![],
@@ -494,13 +598,13 @@ pub mod ns0 {
                     o,
                 )
             },
-            "asdf: crate::Type,",
+            &[expected_attribute_str(), "asdf: crate::Type,"],
         )
     }
 
     #[test]
     fn en() -> Result<()> {
-        assert_output(
+        assert_output_slice(
             |o| {
                 write_enum(
                     view::Enum::new(
@@ -510,33 +614,65 @@ pub mod ns0 {
                                 model::EnumValue {
                                     name: "value0",
                                     number: 10,
-                                    attributes: Default::default(),
+                                    attributes: test_attributes(),
                                 },
                                 model::EnumValue {
                                     name: "value1",
                                     number: 20,
-                                    attributes: Default::default(),
+                                    attributes: test_attributes(),
                                 },
                             ],
-                            attributes: Default::default(),
+                            attributes: test_attributes(),
                         },
                         &Transforms::default(),
                     ),
                     &mut Indented::new(o, INDENT),
                 )
             },
-            r#"enum en {
-    value0 = 10,
-    value1 = 20,
-}
-"#,
+            &[
+                expected_attribute_str(),
+                "enum en {",
+                &indent("    ", expected_attribute_str()),
+                "    value0 = 10,",
+                &indent("    ", expected_attribute_str()),
+                "    value1 = 20,",
+                "}\n",
+            ],
         )
     }
 
+    fn test_attributes<'a>() -> Attributes<'a> {
+        Attributes {
+            user: vec![
+                attribute::User::new_flag("flag"),
+                attribute::User::new(
+                    "list",
+                    vec![
+                        attribute::UserData::new(None, "Abc"),
+                        attribute::UserData::new(None, "Def"),
+                    ],
+                ),
+                attribute::User::new(
+                    "map",
+                    vec![
+                        attribute::UserData::new(Some("a"), "1"),
+                        attribute::UserData::new(Some("b"), "2"),
+                    ],
+                ),
+            ],
+            ..Default::default()
+        }
+    }
+
+    fn expected_attribute_str() -> &'static str {
+        "#[flag, list(Abc, Def), map(a = 1, b = 2)]"
+    }
+
     mod imports {
+        use anyhow::Result;
+
         use crate::generator::rust::tests::assert_output;
         use crate::generator::rust::write_imports;
-        use anyhow::Result;
 
         #[test]
         fn with_extension() -> Result<()> {
@@ -673,5 +809,16 @@ pub mod ns0 {
         write(&mut output)?;
         assert_eq!(&output.to_string(), expected);
         Ok(())
+    }
+
+    fn assert_output_slice<F: FnOnce(&mut output::Buffer) -> Result<()>>(
+        write: F,
+        expected: &[&str],
+    ) -> Result<()> {
+        assert_output(write, &expected.join("\n"))
+    }
+
+    fn indent(indent: &str, s: &str) -> String {
+        [indent, s].join("")
     }
 }

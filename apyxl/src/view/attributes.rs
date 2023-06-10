@@ -28,6 +28,10 @@ impl<'v, 'a> Attributes<'v, 'a> {
         }
         comments
     }
+
+    pub fn user(&self) -> &Vec<model::attribute::User<'a>> {
+        &self.target.user
+    }
 }
 
 pub trait AttributeTransform: Debug + DynClone {
