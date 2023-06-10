@@ -100,25 +100,107 @@ impl<'a> User<'a> {
 
 impl<'a> UserData<'a> {
     pub fn new(key: Option<&'a str>, value: &'a str) -> Self {
-        Self { key: None, value }
+        Self { key, value }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::model::Attributes;
+    use crate::model::attribute::User;
+    use crate::model::{Attributes, Comment};
+
+    mod merge_chunks {
+        use crate::model::{chunk, Attributes};
+        use std::path::PathBuf;
+
+        #[test]
+        fn none_plus_some() {
+            let expected = chunk::Attribute {
+                relative_file_paths: vec![PathBuf::from("asdf")],
+            };
+            let mut attr = Attributes {
+                chunk: None,
+                ..Default::default()
+            };
+            let other = Attributes {
+                chunk: Some(expected.clone()),
+                ..Default::default()
+            };
+            attr.merge(other);
+            assert_eq!(attr.chunk, Some(expected));
+        }
+
+        #[test]
+        fn some_plus_none() {
+            let expected = chunk::Attribute {
+                relative_file_paths: vec![PathBuf::from("asdf")],
+            };
+            let mut attr = Attributes {
+                chunk: Some(expected.clone()),
+                ..Default::default()
+            };
+            let other = Attributes {
+                chunk: None,
+                ..Default::default()
+            };
+            attr.merge(other);
+            assert_eq!(attr.chunk, Some(expected));
+        }
+
+        #[test]
+        fn some_plus_some() {
+            let expected = chunk::Attribute {
+                relative_file_paths: vec![PathBuf::from("asdf")],
+            };
+            let mut attr = Attributes {
+                chunk: Some(expected.clone()),
+                ..Default::default()
+            };
+            let other = Attributes {
+                chunk: Some(expected.clone()),
+                ..Default::default()
+            };
+            attr.merge(other);
+            assert_eq!(
+                attr.chunk,
+                Some(chunk::Attribute {
+                    relative_file_paths: vec![PathBuf::from("asdf"), PathBuf::from("asdf")]
+                })
+            );
+        }
+    }
 
     #[test]
-    fn merge_chunks() {
-        let attr = Attributes {
-            chunk: None,
+    fn merge_comments() {
+        let mut attr = Attributes {
+            comments: vec![Comment::unowned(&["hi"])],
             ..Default::default()
         };
-
         let other = Attributes {
-            chunk: None,
+            comments: vec![Comment::unowned(&["there"])],
             ..Default::default()
         };
-        todo!()
+        attr.merge(other);
+        assert_eq!(
+            attr.comments,
+            vec![Comment::unowned(&["hi"]), Comment::unowned(&["there"])],
+        );
+    }
+
+    #[test]
+    fn merge_user() {
+        let mut attr = Attributes {
+            user: vec![User::new_flag("hi")],
+            ..Default::default()
+        };
+        let other = Attributes {
+            user: vec![User::new_flag("there")],
+            ..Default::default()
+        };
+        attr.merge(other);
+        assert_eq!(
+            attr.user,
+            vec![User::new_flag("hi"), User::new_flag("there")],
+        );
     }
 }
