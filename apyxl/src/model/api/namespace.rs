@@ -258,8 +258,15 @@ impl<'a> Namespace<'a> {
 
     /// Removes all [Namespaces] from this [Namespace] and returns them in a [Vec].
     pub fn take_namespaces(&mut self) -> Vec<Namespace<'a>> {
-        self.children
-            .drain_filter(|child| matches!(child, NamespaceChild::Namespace(_)))
+        // todo use drain_filter when stabilized. https://doc.rust-lang.org/std/vec/struct.DrainFilter.html
+        let (take, keep) = self
+            .children
+            .drain(..)
+            .partition(|child| matches!(child, NamespaceChild::Namespace(_)));
+
+        self.children = keep;
+
+        take.into_iter()
             .map(|child| {
                 if let NamespaceChild::Namespace(ns) = child {
                     ns
