@@ -1,0 +1,8 @@
+{
+  "user_types": [
+    {
+      "parse": "SpecialId",
+      "name": "UserType<SpecialId>"
+    }
+  ]
+}

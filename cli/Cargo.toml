@@ -6,3 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+apyxl = { path = "../apyxl" }
+clap = { version = "4.3", features = ["derive"] }
+env_logger = "0.10"
+anyhow = "1.0"
+itertools = "0.10"
+serde_json = "1.0"
+
+[[bin]]
+name = "apyxl"
+path = "src/main.rs"

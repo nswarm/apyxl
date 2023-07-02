@@ -1,6 +1,9 @@
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use log::{debug, info, log_enabled};
+use std::cell::RefCell;
+use std::ops::DerefMut;
+use std::rc::Rc;
 
 use crate::generator::Generator;
 use crate::input::Input;
@@ -9,28 +12,28 @@ use crate::output::Output;
 use crate::parser::Parser;
 use crate::{model, parser};
 
-#[derive(Default)]
-pub struct Executor<'a, I: Input, P: Parser> {
-    input: Option<&'a mut I>,
-    parser: Option<&'a P>,
+type OutputPtr = Rc<RefCell<dyn Output>>;
+
+pub struct Executor<I: Input, P: Parser> {
+    input: I,
+    parser: P,
     parser_config: Option<parser::Config>,
-    generator_infos: Vec<GeneratorInfo<'a>>,
+    generator_infos: Vec<GeneratorInfo>,
 }
 
-pub struct GeneratorInfo<'a> {
-    generator: &'a mut dyn Generator,
-    outputs: Vec<&'a mut dyn Output>,
+pub struct GeneratorInfo {
+    generator: Box<dyn Generator>,
+    outputs: Vec<OutputPtr>,
 }
 
-impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
-    pub fn input(mut self, input: &'a mut I) -> Self {
-        self.input = Some(input);
-        self
-    }
-
-    pub fn parser(mut self, parser: &'a P) -> Self {
-        self.parser = Some(parser);
-        self
+impl<I: Input, P: Parser> Executor<I, P> {
+    pub fn new(input: I, parser: P) -> Self {
+        Self {
+            input,
+            parser,
+            parser_config: None,
+            generator_infos: vec![],
+        }
     }
 
     pub fn parser_config(mut self, config: parser::Config) -> Self {
@@ -38,24 +41,43 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
         self
     }
 
-    pub fn generator<G: Generator>(
-        mut self,
-        generator: &'a mut G,
-        outputs: Vec<&'a mut dyn Output>,
-    ) -> Self {
-        self.generator_infos
-            .push(GeneratorInfo { generator, outputs });
+    pub fn generator(mut self, generator: impl Generator + 'static) -> Self {
+        self.generator_infos.push(GeneratorInfo {
+            generator: Box::new(generator),
+            outputs: vec![],
+        });
         self
     }
 
-    pub fn execute(self) -> Result<()> {
-        let input = self
-            .input
-            .ok_or_else(|| anyhow!("no 'input' has been specified"))?;
-        let parser = self
-            .parser
-            .ok_or_else(|| anyhow!("no 'parser' has been specified"))?;
+    /// Add an output for the last-added [Generator].
+    ///
+    /// This method takes complete ownership of the output. If you want access to the output after
+    /// execution, use [Executor::output_ptr].
+    pub fn output(mut self, output: impl Output + 'static) -> Self {
+        self.generator_infos
+            .last_mut()
+            .expect("no generators added")
+            .outputs
+            .push(Rc::new(RefCell::new(output)));
+        self
+    }
 
+    /// Add an output for the last-added [Generator].
+    ///
+    /// Outputs are `Rc<RefCell<dyn Output>>` which allows you to keep access to the output
+    /// for usage after [Executor::execute] is called.
+    ///
+    /// The output is only borrowed mutably during [Executor::execute].
+    pub fn output_ptr(mut self, output: OutputPtr) -> Self {
+        self.generator_infos
+            .last_mut()
+            .expect("no generators added")
+            .outputs
+            .push(output);
+        self
+    }
+
+    pub fn execute(mut self) -> Result<()> {
         if self.generator_infos.is_empty() {
             return Err(anyhow!("no 'generators' have been specified"));
         }
@@ -72,7 +94,8 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
 
         info!("Parsing...");
         let mut model_builder = model::Builder::with_config(builder_config());
-        parser.parse(&parser_config, input, &mut model_builder)?;
+        self.parser
+            .parse(&parser_config, &mut self.input, &mut model_builder)?;
 
         info!("Validating model...");
         let model = match model_builder.build() {
@@ -85,13 +108,15 @@ impl<'a, I: Input, P: Parser> Executor<'a, I, P> {
             }
         };
 
-        for info in self.generator_infos {
+        for mut info in self.generator_infos {
             for output in info.outputs {
                 info!(
                     "Generating for generator '{:?}' to output '{:?}'...",
-                    info.generator, output
+                    info.generator,
+                    output.borrow()
                 );
-                info.generator.generate(model.view(), output)?;
+                info.generator
+                    .generate(model.view(), output.borrow_mut().deref_mut())?;
             }
         }
         Ok(())
@@ -130,20 +155,22 @@ mod tests {
 
     mod execute {
         use anyhow::Result;
+        use std::cell::RefCell;
+        use std::rc::Rc;
 
         use crate::executor::tests::{FakeGenerator, FakeParser};
         use crate::{input, output, Executor};
 
         #[test]
         fn happy_path() -> Result<()> {
-            let mut output = output::Buffer::default();
             let parser = FakeParser::default();
-            Executor::default()
-                .input(&mut input::Buffer::new(parser.test_data(1)))
-                .parser(&parser)
-                .generator(&mut FakeGenerator::default(), vec![&mut output])
+            let input = input::Buffer::new(parser.test_data(1));
+            let output = Rc::new(RefCell::new(output::Buffer::default()));
+            Executor::new(input, parser.clone())
+                .generator(FakeGenerator::default())
+                .output_ptr(output.clone())
                 .execute()?;
-            assert_eq!(output.to_string(), parser.test_data(1));
+            assert_eq!(output.borrow().to_string(), parser.test_data(1));
             Ok(())
         }
 
@@ -151,20 +178,21 @@ mod tests {
         fn calls_all_generators_with_correct_outputs() -> Result<()> {
             let input_vec = vec![1, 2, 3];
             let parser = FakeParser::new(",");
-            let mut gen0 = FakeGenerator::new("/");
-            let mut gen1 = FakeGenerator::new(":");
-            let mut output0 = output::Buffer::default();
-            let mut output1 = output::Buffer::default();
-            let mut output2 = output::Buffer::default();
-            Executor::default()
-                .input(&mut input::Buffer::new(parser.test_data_vec(&input_vec)))
-                .parser(&parser)
-                .generator(&mut gen0, vec![&mut output0])
-                .generator(&mut gen1, vec![&mut output1, &mut output2])
+            let gen0 = FakeGenerator::new("/");
+            let gen1 = FakeGenerator::new(":");
+            let output0 = Rc::new(RefCell::new(output::Buffer::default()));
+            let output1 = Rc::new(RefCell::new(output::Buffer::default()));
+            let output2 = Rc::new(RefCell::new(output::Buffer::default()));
+            Executor::new(input::Buffer::new(parser.test_data_vec(&input_vec)), parser)
+                .generator(gen0.clone())
+                .output_ptr(output0.clone())
+                .generator(gen1.clone())
+                .output_ptr(output1.clone())
+                .output_ptr(output2.clone())
                 .execute()?;
-            assert_eq!(output0.to_string(), gen0.expected(&input_vec));
-            assert_eq!(output1.to_string(), gen1.expected(&input_vec));
-            assert_eq!(output2.to_string(), gen1.expected(&input_vec));
+            assert_eq!(output0.borrow().to_string(), gen0.expected(&input_vec));
+            assert_eq!(output1.borrow().to_string(), gen1.expected(&input_vec));
+            assert_eq!(output2.borrow().to_string(), gen1.expected(&input_vec));
             Ok(())
         }
     }
@@ -172,41 +200,12 @@ mod tests {
     mod validation {
         use crate::executor::tests::{FakeGenerator, FakeParser};
         use crate::executor::Executor;
-        use crate::{input, output};
-
-        #[test]
-        fn missing_input() {
-            let result = Executor::<input::Buffer, FakeParser>::default()
-                // no input
-                .parser(&FakeParser::default())
-                .generator(
-                    &mut FakeGenerator::default(),
-                    vec![&mut output::Buffer::default()],
-                )
-                .execute();
-            assert!(result.is_err())
-        }
-
-        #[test]
-        fn missing_parser() {
-            let parser = FakeParser::default();
-            let result = Executor::<input::Buffer, FakeParser>::default()
-                .input(&mut input::Buffer::new(parser.test_data(1)))
-                // no parser
-                .generator(
-                    &mut FakeGenerator::default(),
-                    vec![&mut output::Buffer::default()],
-                )
-                .execute();
-            assert!(result.is_err())
-        }
+        use crate::input;
 
         #[test]
         fn missing_generator() {
             let parser = FakeParser::default();
-            let result = Executor::<input::Buffer, FakeParser>::default()
-                .input(&mut input::Buffer::new(parser.test_data(1)))
-                .parser(&parser)
+            let result = Executor::new(input::Buffer::new(parser.test_data(1)), parser)
                 // no generator
                 .execute();
             assert!(result.is_err())
@@ -215,21 +214,15 @@ mod tests {
         #[test]
         fn missing_output() {
             let parser = FakeParser::default();
-            let result = Executor::<input::Buffer, FakeParser>::default()
-                .input(&mut input::Buffer::new(parser.test_data(1)))
-                .parser(&FakeParser::default())
-                .generator(
-                    &mut FakeGenerator::default(),
-                    vec![
-                        /* no outputs */
-                    ],
-                )
+            let result = Executor::new(input::Buffer::new(parser.test_data(1)), parser)
+                .generator(FakeGenerator::default())
+                // no output
                 .execute();
             assert!(result.is_err())
         }
     }
 
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct FakeParser {
         delimiter: String,
     }
@@ -288,7 +281,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Default)]
+    #[derive(Debug, Default, Clone)]
     struct FakeGenerator {
         delimiter: String,
     }

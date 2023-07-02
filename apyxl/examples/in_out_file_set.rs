@@ -14,14 +14,11 @@ fn main() -> Result<()> {
         .to_string_lossy()
         .to_string();
     let output_root = examples_dir.join(format!("output/{}", file_name));
-    let mut input = input::FileSet::new(&input_root, &["dto.rs", "rpc.rs", "namespace.rs"])?;
-    let mut output = output::FileSet::new(output_root)?;
-    Executor::default()
-        .input(&mut input)
-        .parser(&parser::Rust::default())
-        .generator(
-            &mut generator::Rust::default(),
-            vec![&mut output::StdOut::default(), &mut output],
-        )
+    let input = input::FileSet::new(&input_root, &["dto.rs", "rpc.rs", "namespace.rs"])?;
+    let output = output::FileSet::new(output_root)?;
+    Executor::new(input, parser::Rust::default())
+        .generator(generator::Rust::default())
+        .output(output::StdOut::default())
+        .output(output)
         .execute()
 }

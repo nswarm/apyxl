@@ -7,13 +7,9 @@ fn main() -> Result<()> {
     env_logger::init();
     let project_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
     let root = project_dir.join("examples/simple_input");
-    let mut input = input::FileSet::new(&root, &["dto.rs", "rpc.rs", "namespace.rs"])?;
-    Executor::default()
-        .input(&mut input)
-        .parser(&parser::Rust::default())
-        .generator(
-            &mut generator::Dbg::default(),
-            vec![&mut output::StdOut::default()],
-        )
+    let input = input::FileSet::new(&root, &["dto.rs", "rpc.rs", "namespace.rs"])?;
+    Executor::new(input, parser::Rust::default())
+        .generator(generator::Dbg::default())
+        .output(output::StdOut::default())
         .execute()
 }

@@ -4,7 +4,7 @@ use apyxl::{generator, output, parser, Executor};
 
 fn main() -> Result<()> {
     env_logger::init();
-    let mut input = input::Buffer::new(
+    let input = input::Buffer::new(
         r#"
 
         struct String {}
@@ -33,12 +33,8 @@ fn main() -> Result<()> {
         }
         "#,
     );
-    Executor::default()
-        .input(&mut input)
-        .parser(&parser::Rust::default())
-        .generator(
-            &mut generator::Dbg::default(),
-            vec![&mut output::StdOut::default()],
-        )
+    Executor::new(input, parser::Rust::default())
+        .generator(generator::Dbg::default())
+        .output(output::StdOut::default())
         .execute()
 }
