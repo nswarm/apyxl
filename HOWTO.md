@@ -1,5 +1,3 @@
-
-
 ## Parsing with `chumsky`
 
 ### `recursive`
