@@ -3,6 +3,13 @@ name: Rust
 
 on:
   push:
+    branches: [ "main" ]
+    paths-ignore:
+      - '.github/**'
+      - '.idea/**'
+      - 'examples/**'
+      - '**.md'
+      - 'LICENSE'
   pull_request:
     branches: [ "main" ]
     paths-ignore:
