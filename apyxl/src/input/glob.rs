@@ -103,7 +103,10 @@ mod tests {
         File::create(root.path().join(&path2))?;
         File::create(root.path().join(&path3))?;
         let paths = walk_glob(root.path(), "a/**/*.rs")?;
-        assert_eq!(paths, vec![path0, path1, path2,]);
+        assert_eq!(paths.len(), 3);
+        assert!(paths.contains(&path0));
+        assert!(paths.contains(&path1));
+        assert!(paths.contains(&path2));
         Ok(())
     }
 

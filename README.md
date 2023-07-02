@@ -1,5 +1,4 @@
 [![Rust](https://github.com/nswarm/apyxl/actions/workflows/rust.yml/badge.svg)](https://github.com/nswarm/apyxl/actions/workflows/rust.yml)
-
 # apyxl
 apyxl is a command line tool that uses API defined by an Interface Definition Language (IDL), and generates corresponding API code in many output languages (or other such artifacts).
 
