@@ -2,13 +2,13 @@
 set -euo pipefail
 
 scriptDir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-examplesDir=./apyxl/examples
-outDir="$examplesDir/output/cli"
+examplesDir=../apyxl/examples
+outDir="$scriptDir/output/cli"
 
 rm -rf "$outDir"
 
 # Parses `apyxl/examples/fake_platform` to various outputs.
-# See results in folder `apyxl/examples/output/cli`.
+# See results in sibling folder `output`.
 cd "$scriptDir"
 RUST_LOG=info cargo run -- \
   --input "$examplesDir/fake_platform/src/**/*.rs" \

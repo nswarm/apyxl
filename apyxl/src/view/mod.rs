@@ -32,7 +32,9 @@ mod ty;
 //   'v: view
 //   'a: api
 
-#[derive(Debug)]
+/// An immutable view into the API [model::Model] with a set of [Transforms] that modify the data
+/// read from the model.
+#[derive(Debug, Clone)]
 pub struct Model<'v, 'a> {
     target: &'v model::Model<'a>,
     xforms: Transforms,

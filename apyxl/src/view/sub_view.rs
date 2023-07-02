@@ -2,7 +2,7 @@ use crate::model;
 use crate::view::{Namespace, Transformer, Transforms};
 
 /// A view into the [Model] starting at a specific [Namespace] with additional [Transforms].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SubView<'a> {
     namespace_id: model::EntityId,
     namespace: &'a model::Namespace<'a>,
