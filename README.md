@@ -10,6 +10,15 @@ Example use cases for apyxl include:
 - converting from one IDL to another e.g. protobuf to flatbuffers
 - converting from programming language definitions to a data schema e.g. kotlin to protobuffers
 
+At a high level, you can think of apyxl like this:
+
+![Parser creates an in-memory model of the API which the Generator uses to generate stuff](images/architecture-simple.png)
+
+Where Parsers and Generators are both things that users can write without much effort. See [Customizing](#customizing)
+for more info on how to write Parsers and Generators.
+
+See [Architecture](#architecture) for more depth.
+
 ## Built-in Support
 
 Input:
@@ -36,6 +45,15 @@ apyxl parsers can be written however you want, as long as they implement the tra
 If you're parsing a programming language or IDL, the included library [chumsky](https://github.com/zesterer/chumsky) is
 a great option.
 
+### Getting Started
+
+Create a new module in `apyxl/src/parser` with a struct that implements the trait `Parser`.
+
+#### Adding to the CLI
+
+Add a new `ParserName` to the file `cli/src/config.rs` and update the `ParserName::create_impl` method to instantiate
+your Parser implementation.
+
 ### Key Points
 
 This is a list of things to keep in mind when writing a parser.
@@ -49,15 +67,15 @@ This is a list of things to keep in mind when writing a parser.
   - Comments (see [Attributes](apyxl/src/model/api/attribute.rs))
   - Types including primitives, arrays, maps, optionals
   - [User types](#user-types)
-  - [User attributes](#attributes)
-- [Chunks](#chunks)
+  - [User attributes](#user-attributes)
+- [Chunks](#api-builder)
 
 ### API Builder
 
-API sources are typically split up into multiple files. Chunks are an abstraction around that idea that leave the door
+API sources are typically split up into multiple files. **Chunks** are an abstraction around that idea that leave the door
 open to receiving chunks from a source other than files, but you can just think of them as files. :)
 
-The [api::Builder](apyxl/src/model/builder/mod.rs) is a temporary collector for chunks of your API. Each time you
+The [api::Builder](apyxl/src/model/builder/mod.rs) is a temporary collector for the chunks of your API. Each time you
 finish parsing a chunk, you merge it into the `Builder`.
 
 Once you have finished parsing the entire API, call `Builder::build()`. This method:
@@ -118,6 +136,15 @@ See the [rust generator](apyxl/src/generator/rust.rs) for a complete example.
 Generators iterate over [views](#views) into the in-memory API model and write to an [Output](#output).
 What you use the view for, and what you send to the `Output` is entirely up to you.
 
+### Getting Started
+
+Create a new module in `apyxl/src/generator` with a struct that implements the trait `Generator`.
+
+#### Adding to the CLI
+
+Add a new `GeneratorName` to the file `cli/src/config.rs` and update the `GeneratorName::create_impl` method to
+instantiate your Generator implementation.
+
 ### Views
 
 [Views](apyxl/src/view) are a set of structs that mirror the model, and provide an immutable view into the model. The
@@ -125,7 +152,7 @@ most important difference is that views can be [transformed](#transforms) to alt
 applying text casing changes, without modifying the model itself for other generators.
 
 A built-in example of views is `view::Model::api_chunked_iter`, which provides an iterator over a set of views mapped
-to each [chunk](#chunk) from the parser. This allows generating a file structure similar to the API files.
+to each [chunk](#api-builder) from the parser. This allows generating a file structure similar to the API files.
 
 ### Transforms
 
@@ -166,3 +193,26 @@ instead of a file.
 - Union/oneof types
 - Refactor out common chumsky helpers
 - Applying transforms through configuration/cli
+
+## Architecture
+
+This is a view of how apyxl looks when it runs:
+
+![Input (e.g. set of files) feeds into Parser (e.g. Rust) feeds into Model feeds into two Views, each with its own
+Transforms, each View feeds into a Generator (e.g. Protobuf or C++), which feeds into one or more Outputs
+(e.g. std out, files, serialized)](images/architecture-complex.png)
+
+Each of the major categories in this image (except for Model and View) are abstractions around a set of interchangeable
+implementations.
+
+**Input:** How apyxl reads in source data to be parsed.
+
+**Parser:** How apyxl parses the source data into the in-memory model.
+
+**Model:** An in-memory model of the entire API.
+
+**View:** A view into the API that may be transformed to modify what a Generator sees (e.g. filtering).
+
+**Generator:** How apyxl creates content e.g. code, documentation, etc.
+
+**Output:** What apyxl does with generated content.
