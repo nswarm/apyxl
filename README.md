@@ -1,6 +1,6 @@
 [![Rust](https://github.com/nswarm/apyxl/actions/workflows/rust.yml/badge.svg)](https://github.com/nswarm/apyxl/actions/workflows/rust.yml)
 # apyxl
-apyxl is a command line tool that uses API defined by an Interface Definition Language (IDL), and generates corresponding API code in many output languages (or other such artifacts).
+apyxl is a command line tool that uses an API defined by an Interface Definition Language (IDL), and generates corresponding API code in many output languages (or other such artifacts).
 
 Example use cases for apyxl include:
 - generating API bindings for SDKs in different languages with the same target API
