@@ -77,6 +77,14 @@ impl<I: Input, P: Parser> Executor<I, P> {
         self
     }
 
+    /// Number of outputs added to the last-added [Generator].
+    pub fn output_count(&self) -> usize {
+        self.generator_infos
+            .last()
+            .map(|info| info.outputs.len())
+            .unwrap_or(0)
+    }
+
     pub fn execute(mut self) -> Result<()> {
         if self.generator_infos.is_empty() {
             return Err(anyhow!("no 'generators' have been specified"));

@@ -8,6 +8,9 @@ use std::path::PathBuf;
 pub struct Config {
     /// Unix-style glob of files to be parsed as API source files.
     ///
+    /// If running in a unix-style shell, you'll need to enclose inside '' or it will be expanded
+    /// by the shell itself.
+    ///
     /// If the glob is relative, it will be relative to the current working directory.
     #[arg(short, long, value_name = "GLOB")]
     pub input: String,
@@ -31,14 +34,16 @@ pub struct Config {
     /// Each argument should be a key=value pair where the key is a [GeneratorName] and the value
     /// is path to an empty (or nonexistent) directory.
     ///
-    /// See also --output_root to set the relative root directory.
+    /// See also --output-root to set the relative root directory.
+    ///
+    /// If not supplied, the name of the generator is used as the directory name.
     ///
     /// Example:
-    ///     -o ./root/dir rust=rrr cpp=ccc
+    ///     --output-root ./root/dir -o rust=rrr cpp=ccc
     /// would result in a file structure like
     ///     ./root/dir/rrr (generated rust files)
     ///     ./root/dir/ccc (generated cpp files)
-    #[arg(short, long, required=true, value_parser=parse_output)]
+    #[arg(short, long, value_parser=parse_output)]
     pub output: Vec<Output>,
 }
 
