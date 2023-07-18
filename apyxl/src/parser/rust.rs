@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 
 use anyhow::{anyhow, Result};
+use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error;
 use chumsky::prelude::*;
 use log::debug;
 
 use crate::model::{
-    attribute, Api, Attributes, Comment, Dto, EntityId, Enum, EnumValue, EnumValueNumber, Field,
-    Namespace, NamespaceChild, Rpc, Type, UNDEFINED_NAMESPACE,
+    attribute, Api, Attributes, Chunk, Comment, Dto, EntityId, Enum, EnumValue, EnumValueNumber,
+    Field, Namespace, NamespaceChild, Rpc, Type, UNDEFINED_NAMESPACE,
 };
 use crate::parser::Config;
 use crate::{model, Input};
@@ -44,7 +45,10 @@ impl ApyxlParser for Rust {
                 .then_ignore(end())
                 .parse(data)
                 .into_result()
-                .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
+                .map_err(|errs| {
+                    report_errors(chunk, data, errs);
+                    anyhow!("errors encountered while parsing")
+                })?;
 
             builder.merge_from_chunk(
                 Api {
@@ -61,7 +65,7 @@ impl ApyxlParser for Rust {
     }
 }
 
-const ALLOWED_TYPE_NAME_CHARS: &str = "_&<>";
+const ALLOWED_TYPE_NAME_CHARS: &'static str = "_&<>";
 
 fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
     any()
@@ -505,6 +509,32 @@ fn keyword_ex(keyword: &str) -> impl Parser<&str, &str, Error> {
             }
         })
         .slice()
+}
+
+fn report_errors(chunk: &Chunk, src: &str, errors: Vec<Rich<'_, char>>) {
+    let filename = chunk
+        .relative_file_path
+        .as_ref()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or("unknown".to_string());
+    for error in errors {
+        Report::build(ReportKind::Error, filename.clone(), error.span().start)
+            .with_message(error.to_string())
+            .with_label(
+                Label::new((filename.clone(), error.span().into_range()))
+                    .with_message(error.reason().to_string())
+                    .with_color(Color::Red),
+            )
+            // need "label" feature
+            // .with_labels(error.contexts().map(|(label, span)| {
+            //     Label::new((filename.clone(), span.into_range()))
+            //         .with_message(format!("while parsing this {}", label))
+            //         .with_color(Color::Yellow)
+            // }))
+            .finish()
+            .print((filename.clone(), Source::from(src)))
+            .unwrap()
+    }
 }
 
 #[cfg(test)]

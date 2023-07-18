@@ -10,7 +10,7 @@ apyxl = { path = "../apyxl" }
 clap = { version = "4.3", features = ["derive"] }
 env_logger = "0.10"
 anyhow = "1.0"
-itertools = "0.10"
+itertools = "0.11"
 serde_json = "1.0"
 
 [[bin]]
