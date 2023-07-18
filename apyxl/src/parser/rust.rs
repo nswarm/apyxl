@@ -13,7 +13,7 @@ use crate::parser::Config;
 use crate::{model, Input};
 use crate::{rust_util, Parser as ApyxlParser};
 
-type Error<'a> = extra::Err<Simple<'a, char>>;
+type Error<'a> = extra::Err<Rich<'a, char>>;
 
 #[derive(Default)]
 pub struct Rust {}
@@ -40,9 +40,9 @@ impl ApyxlParser for Rust {
                 .collect::<Vec<_>>();
 
             let children = imports
-                .ignore_then(namespace_children(&config, namespace(&config)).padded())
+                .ignore_then(namespace_children(config, namespace(config)).padded())
                 .then_ignore(end())
-                .parse(&data)
+                .parse(data)
                 .into_result()
                 .map_err(|err| anyhow!("errors encountered while parsing: {:?}", err))?;
 
@@ -77,10 +77,10 @@ fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
 }
 
 fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
-    text::keyword("pub")
+    keyword_ex("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
-        .then(text::keyword("use"))
+        .then(keyword_ex("use"))
         .then(text::whitespace().at_least(1))
         .then(text::ident().separated_by(just("::")).at_least(1))
         .then(just(';'))
@@ -186,7 +186,7 @@ fn option<'a>(
         .ignore_then(ty)
         .then_ignore(text::whitespace())
         .then_ignore(just('>'))
-        .map(|inner| Type::new_optional(inner))
+        .map(Type::new_optional)
 }
 
 fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
@@ -248,10 +248,10 @@ fn dto(config: &Config) -> impl Parser<&str, Dto, Error> {
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded());
-    let name = text::keyword("pub")
+    let name = keyword_ex("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
-        .ignore_then(text::keyword("struct").padded())
+        .then(keyword_ex("struct").padded())
         .ignore_then(text::ident());
     let dto = attributes()
         .padded()
@@ -353,20 +353,22 @@ fn expr_block<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
         .repeated()
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded())
+        .recover_with(via_parser(nested_delimiters('{', '}', [], |_| vec![])))
     })
 }
 
 fn rpc(config: &Config) -> impl Parser<&str, Rpc, Error> {
-    let fn_keyword = text::keyword("pub")
+    let fn_keyword = keyword_ex("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
-        .then(text::keyword("fn"));
+        .then(keyword_ex("fn"));
     let name = fn_keyword.padded().ignore_then(text::ident());
     let params = field(config)
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('(').padded(), just(')').padded());
+    // todo .recover_with(skip_then_retry_until(any().ignored(), just(')')));
     let return_type = just("->").ignore_then(ty(config).padded());
     multi_comment()
         .then(attributes().padded())
@@ -411,10 +413,10 @@ fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
 }
 
 fn en<'a>() -> impl Parser<'a, &'a str, Enum<'a>, Error<'a>> {
-    let name = text::keyword("pub")
+    let name = keyword_ex("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
-        .ignore_then(text::keyword("enum").padded())
+        .ignore_then(keyword_ex("enum").padded())
         .ignore_then(text::ident());
     let values = en_value()
         .separated_by(just(',').padded())
@@ -459,25 +461,26 @@ fn namespace_children<'a>(
         en().map(NamespaceChild::Enum),
         namespace.map(NamespaceChild::Namespace),
     ))
+    .recover_with(skip_then_retry_until(any().ignored(), just('}').ignored()))
     .repeated()
     .collect::<Vec<_>>()
 }
 
 fn namespace(config: &Config) -> impl Parser<&str, Namespace, Error> {
     recursive(|nested| {
-        let mod_keyword = text::keyword("pub")
+        let mod_keyword = keyword_ex("pub")
             .then(text::whitespace().at_least(1))
+            // or_not to allow declaration-only in the form:
+            //      mod name;
             .or_not()
-            .then(text::keyword("mod"));
+            .then(keyword_ex("mod"));
         let body = namespace_children(config, nested)
             .boxed()
             .delimited_by(just('{').padded(), just('}').padded());
         multi_comment()
             .then(attributes().padded())
             .then(mod_keyword.padded().ignore_then(text::ident()))
-            // or_not to allow declaration-only in the form:
-            //      mod name;
-            .then(just(';').padded().map(|_| None).or(body.map(|c| Some(c))))
+            .then(just(';').padded().map(|_| None).or(body.map(Some)))
             .map(|(((comments, user), name), children)| Namespace {
                 name: Cow::Borrowed(name),
                 children: children.unwrap_or(vec![]),
@@ -491,10 +494,23 @@ fn namespace(config: &Config) -> impl Parser<&str, Namespace, Error> {
     })
 }
 
+/// Expanded [text::keyword] that has a more informative error.
+fn keyword_ex(keyword: &str) -> impl Parser<&str, &str, Error> {
+    text::ident()
+        .try_map(move |s: &str, span| {
+            if s == keyword {
+                Ok(())
+            } else {
+                Err(Rich::custom(span, format!("found unexpected token {}", s)))
+            }
+        })
+        .slice()
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::{anyhow, Result};
-    use chumsky::error::Simple;
+    use chumsky::error::Rich;
     use chumsky::Parser;
     use lazy_static::lazy_static;
 
@@ -503,7 +519,7 @@ mod tests {
     use crate::parser::{Config, UserType};
     use crate::{input, parser, Parser as ApyxlParser};
 
-    type TestError = Vec<Simple<'static, char>>;
+    type TestError = Vec<Rich<'static, char>>;
     fn wrap_test_err(err: TestError) -> anyhow::Error {
         anyhow!("errors encountered while parsing: {:?}", err)
     }
@@ -540,7 +556,7 @@ mod tests {
         pub use asdf;
         // rpc comment
         fn rpc() {}
-        struct dto {}
+        pub struct dto {}
         mod namespace {}
         "#,
         );
