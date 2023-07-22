@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error;
 use chumsky::prelude::*;
+use itertools::Itertools;
 use log::debug;
 
 use crate::model::{
@@ -46,8 +47,9 @@ impl ApyxlParser for Rust {
                 .parse(data)
                 .into_result()
                 .map_err(|errs| {
+                    let return_err = anyhow!("errors encountered while parsing: {:?}", errs);
                     report_errors(chunk, data, errs);
-                    anyhow!("errors encountered while parsing")
+                    return_err
                 })?;
 
             builder.merge_from_chunk(
@@ -65,7 +67,31 @@ impl ApyxlParser for Rust {
     }
 }
 
-const ALLOWED_TYPE_NAME_CHARS: &'static str = "_&<>";
+const ALLOWED_TYPE_NAME_CHARS: &str = "_&<>";
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum Visibility {
+    Public,
+    Private,
+}
+
+impl Visibility {
+    fn is_visible(&self, config: &Config) -> bool {
+        *self == Visibility::Public || (*self == Visibility::Private && config.enable_parse_private)
+    }
+
+    fn filter_child<'a>(
+        &self,
+        child: NamespaceChild<'a>,
+        config: &Config,
+    ) -> Option<NamespaceChild<'a>> {
+        if self.is_visible(config) {
+            Some(child)
+        } else {
+            None
+        }
+    }
+}
 
 fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
     any()
@@ -219,6 +245,14 @@ fn field<'a>(config: &'a Config) -> impl Parser<'a, &'a str, Field, Error> + 'a 
         })
 }
 
+fn fields<'a>(config: &'a Config) -> impl Parser<'a, &'a str, Vec<Field>, Error> + 'a {
+    field(config)
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('{').padded(), just('}').padded())
+}
+
 fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Error<'a>> {
     let name = text::ident();
     let data = text::ident()
@@ -242,36 +276,47 @@ fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Error<
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just("#[").padded(), just(']').padded())
+        .recover_with(skip_then_retry_until(
+            none_of(",]").ignored(),
+            just(']').ignored(),
+        ))
         .or_not()
         .map(|opt| opt.unwrap_or(vec![]))
 }
 
-fn dto(config: &Config) -> impl Parser<&str, Dto, Error> {
-    let fields = field(config)
-        .separated_by(just(',').padded())
-        .allow_trailing()
-        .collect::<Vec<_>>()
-        .delimited_by(just('{').padded(), just('}').padded());
-    let name = keyword_ex("pub")
+fn visibility<'a>() -> impl Parser<'a, &'a str, Visibility, Error<'a>> {
+    keyword_ex("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
-        .then(keyword_ex("struct").padded())
-        .ignore_then(text::ident());
-    let dto = attributes()
-        .padded()
-        .then(name)
-        .then(fields)
-        .then_ignore(multi_comment());
+        .map(|o| match o {
+            None => Visibility::Private,
+            Some(_) => Visibility::Public,
+        })
+}
+
+fn dto(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
+    let prefix = keyword_ex("struct").then(text::whitespace().at_least(1));
+    let name = text::ident();
     multi_comment()
-        .then(dto)
-        .map(|(comments, ((user, name), fields))| Dto {
-            name,
-            fields,
-            attributes: Attributes {
-                comments,
-                user,
-                ..Default::default()
-            },
+        .padded()
+        .then(attributes().padded())
+        .then(visibility())
+        .then_ignore(prefix)
+        .then(name)
+        .then(fields(config))
+        .map(|((((comments, user), visibility), name), fields)| {
+            (
+                Dto {
+                    name,
+                    fields,
+                    attributes: Attributes {
+                        comments,
+                        user,
+                        ..Default::default()
+                    },
+                },
+                visibility,
+            )
         })
 }
 
@@ -361,35 +406,43 @@ fn expr_block<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
     })
 }
 
-fn rpc(config: &Config) -> impl Parser<&str, Rpc, Error> {
-    let fn_keyword = keyword_ex("pub")
-        .then(text::whitespace().at_least(1))
-        .or_not()
-        .then(keyword_ex("fn"));
-    let name = fn_keyword.padded().ignore_then(text::ident());
+fn rpc<'a>(config: &'a Config) -> impl Parser<'a, &'a str, (Rpc, Visibility), Error<'a>> {
+    let prefix = keyword_ex("fn").then(text::whitespace().at_least(1));
+    let name = text::ident();
     let params = field(config)
-        .separated_by(just(',').padded())
+        .separated_by(just(',').padded().recover_with(skip_then_retry_until(
+            any().ignored(),
+            one_of(",)").ignored(),
+        )))
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('(').padded(), just(')').padded());
-    // todo .recover_with(skip_then_retry_until(any().ignored(), just(')')));
     let return_type = just("->").ignore_then(ty(config).padded());
     multi_comment()
         .then(attributes().padded())
+        .then(visibility())
+        .then_ignore(prefix)
         .then(name)
         .then(params)
         .then(return_type.or_not())
         .then_ignore(expr_block().padded())
-        .map(|((((comments, user), name), params), return_type)| Rpc {
-            name,
-            params,
-            return_type,
-            attributes: Attributes {
-                comments,
-                user,
-                ..Default::default()
+        .map(
+            |(((((comments, user), visibility), name), params), return_type)| {
+                (
+                    Rpc {
+                        name,
+                        params,
+                        return_type,
+                        attributes: Attributes {
+                            comments,
+                            user,
+                            ..Default::default()
+                        },
+                    },
+                    visibility,
+                )
             },
-        })
+        )
 }
 
 const INVALID_ENUM_NUMBER: EnumValueNumber = EnumValueNumber::MAX;
@@ -416,29 +469,36 @@ fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
         })
 }
 
-fn en<'a>() -> impl Parser<'a, &'a str, Enum<'a>, Error<'a>> {
-    let name = keyword_ex("pub")
-        .then(text::whitespace().at_least(1))
-        .or_not()
-        .ignore_then(keyword_ex("enum").padded())
-        .ignore_then(text::ident());
+fn en<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a>> {
+    let prefix = keyword_ex("enum").then(text::whitespace().at_least(1));
+    let name = text::ident();
     let values = en_value()
-        .separated_by(just(',').padded())
+        .separated_by(just(',').padded().recover_with(skip_then_retry_until(
+            any().ignored(),
+            one_of(",}").ignored(),
+        )))
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded());
     multi_comment()
         .then(attributes().padded())
+        .then(visibility())
+        .then_ignore(prefix)
         .then(name)
         .then(values)
-        .map(|(((comments, user), name), values)| Enum {
-            name,
-            values: apply_enum_value_number_defaults(values),
-            attributes: Attributes {
-                comments,
-                user,
-                ..Default::default()
-            },
+        .map(|((((comments, user), visibility), name), values)| {
+            (
+                Enum {
+                    name,
+                    values: apply_enum_value_number_defaults(values),
+                    attributes: Attributes {
+                        comments,
+                        user,
+                        ..Default::default()
+                    },
+                },
+                visibility,
+            )
         })
 }
 
@@ -457,42 +517,48 @@ fn apply_enum_value_number_defaults(mut values: Vec<EnumValue>) -> Vec<EnumValue
 
 fn namespace_children<'a>(
     config: &'a Config,
-    namespace: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
+    namespace: impl Parser<'a, &'a str, (Namespace<'a>, Visibility), Error<'a>>,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
-        dto(config).map(NamespaceChild::Dto),
-        rpc(config).map(NamespaceChild::Rpc),
-        en().map(NamespaceChild::Enum),
-        namespace.map(NamespaceChild::Namespace),
+        dto(config).map(|(c, v)| (NamespaceChild::Dto(c), v)),
+        rpc(config).map(|(c, v)| (NamespaceChild::Rpc(c), v)),
+        en().map(|(c, v)| (NamespaceChild::Enum(c), v)),
+        namespace.map(|(c, v)| (NamespaceChild::Namespace(c), v)),
     ))
+    .map(|(child, visibility)| visibility.filter_child(child, config))
     .recover_with(skip_then_retry_until(any().ignored(), just('}').ignored()))
     .repeated()
     .collect::<Vec<_>>()
+    .map(|v| v.into_iter().flatten().collect_vec())
 }
 
-fn namespace(config: &Config) -> impl Parser<&str, Namespace, Error> {
+fn namespace(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Error> {
     recursive(|nested| {
-        let mod_keyword = keyword_ex("pub")
-            .then(text::whitespace().at_least(1))
-            // or_not to allow declaration-only in the form:
-            //      mod name;
-            .or_not()
-            .then(keyword_ex("mod"));
+        let prefix = keyword_ex("mod").then(text::whitespace().at_least(1));
+        let name = text::ident();
         let body = namespace_children(config, nested)
             .boxed()
+            .then_ignore(multi_comment())
             .delimited_by(just('{').padded(), just('}').padded());
         multi_comment()
             .then(attributes().padded())
-            .then(mod_keyword.padded().ignore_then(text::ident()))
+            .then(visibility())
+            .then_ignore(prefix)
+            .then(name)
             .then(just(';').padded().map(|_| None).or(body.map(Some)))
-            .map(|(((comments, user), name), children)| Namespace {
-                name: Cow::Borrowed(name),
-                children: children.unwrap_or(vec![]),
-                attributes: Attributes {
-                    comments,
-                    user,
-                    ..Default::default()
-                },
+            .map(|((((comments, user), visibility), name), children)| {
+                (
+                    Namespace {
+                        name: Cow::Borrowed(name),
+                        children: children.unwrap_or(vec![]),
+                        attributes: Attributes {
+                            comments,
+                            user,
+                            ..Default::default()
+                        },
+                    },
+                    visibility,
+                )
             })
             .boxed()
     })
@@ -559,7 +625,8 @@ mod tests {
             user_types: vec![UserType {
                 parse: "user_type".to_string(),
                 name: "user".to_string()
-            }]
+            }],
+            enable_parse_private: true,
         };
     }
 
@@ -585,9 +652,14 @@ mod tests {
         // comment
         pub use asdf;
         // rpc comment
-        fn rpc() {}
+        pub fn rpc() {}
+        fn private_rpc() {}
+        pub enum en {}
+        enum private_en {}
         pub struct dto {}
-        mod namespace {}
+        struct private_dto {}
+        pub mod namespace {}
+        mod private_namespace {}
         "#,
         );
         let mut builder = Builder::default();
@@ -596,12 +668,56 @@ mod tests {
         assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
         assert!(model.api().dto("dto").is_some());
         assert!(model.api().rpc("rpc").is_some());
+        assert!(model.api().en("en").is_some());
         assert!(model.api().namespace("namespace").is_some());
-        // make sure comment after use is attributed to rpc.
+        assert!(model.api().dto("private_dto").is_some());
+        assert!(model.api().rpc("private_rpc").is_some());
+        assert!(model.api().en("private_en").is_some());
+        assert!(model.api().namespace("private_namespace").is_some());
+        // make sure comment after 'use' is attributed to rpc.
         assert_eq!(
             model.api().rpc("rpc").unwrap().attributes.comments,
             vec![Comment::unowned(&["rpc comment"])]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn disabled_parse_private() -> Result<()> {
+        let mut input = input::Buffer::new(
+            r#"
+        // comment
+        use asdf;
+        // comment
+        // comment
+        pub use asdf;
+        // rpc comment
+        pub fn rpc() {}
+        fn ignored_rpc() {}
+        pub enum en {}
+        enum ignored_en {}
+        pub struct dto {}
+        struct ignored_dto {}
+        pub mod namespace {}
+        mod ignored_namespace {}
+        "#,
+        );
+        let mut builder = Builder::default();
+        let config = Config {
+            enable_parse_private: false,
+            ..Default::default()
+        };
+        parser::Rust::default().parse(&config, &mut input, &mut builder)?;
+        let model = builder.build().unwrap();
+        assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
+        assert!(model.api().dto("dto").is_some());
+        assert!(model.api().rpc("rpc").is_some());
+        assert!(model.api().en("en").is_some());
+        assert!(model.api().namespace("namespace").is_some());
+        assert!(model.api().dto("ignored_dto").is_none());
+        assert!(model.api().rpc("ignored_rpc").is_none());
+        assert!(model.api().en("ignored_en").is_none());
+        assert!(model.api().namespace("ignored_namespace").is_none());
         Ok(())
     }
 
@@ -615,7 +731,10 @@ mod tests {
         #[test]
         fn file_path_including_name_without_ext() -> Result<()> {
             let mut input = input::ChunkBuffer::new();
-            input.add_chunk(Chunk::with_relative_file_path("a/b/c.rs"), "struct dto {}");
+            input.add_chunk(
+                Chunk::with_relative_file_path("a/b/c.rs"),
+                "pub struct dto {}",
+            );
             let mut builder = Builder::default();
             parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
             let model = builder.build().unwrap();
@@ -633,7 +752,7 @@ mod tests {
             let mut input = input::ChunkBuffer::new();
             input.add_chunk(
                 Chunk::with_relative_file_path("a/b/mod.rs"),
-                "struct dto {}",
+                "pub struct dto {}",
             );
             let mut builder = Builder::default();
             parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
@@ -652,7 +771,7 @@ mod tests {
             let mut input = input::ChunkBuffer::new();
             input.add_chunk(
                 Chunk::with_relative_file_path("a/b/lib.rs"),
-                "struct dto {}",
+                "pub struct dto {}",
             );
             let mut builder = Builder::default();
             parser::Rust::default().parse(&CONFIG, &mut input, &mut builder)?;
@@ -823,6 +942,7 @@ mod tests {
                         name: "float".to_string(),
                     },
                 ],
+                ..Default::default()
             };
             let ty = user_ty(&config).parse("i32").into_output().unwrap();
             assert_eq!(ty, "int");
@@ -875,13 +995,13 @@ mod tests {
         use chumsky::Parser;
 
         use crate::model::{attribute, Comment, NamespaceChild};
-        use crate::parser::rust::namespace;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::{namespace, Visibility};
 
         #[test]
         fn declaration() -> Result<()> {
-            let namespace = namespace(&CONFIG)
+            let (namespace, _) = namespace(&CONFIG)
                 .parse(
                     r#"
             mod empty;
@@ -895,8 +1015,38 @@ mod tests {
         }
 
         #[test]
+        fn public() -> Result<()> {
+            let (namespace, visibility) = namespace(&CONFIG)
+                .parse(
+                    r#"
+            pub mod empty;
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(namespace.name, "empty");
+            assert_eq!(visibility, Visibility::Public);
+            Ok(())
+        }
+
+        #[test]
+        fn private() -> Result<()> {
+            let (namespace, visibility) = namespace(&CONFIG)
+                .parse(
+                    r#"
+            mod empty;
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(namespace.name, "empty");
+            assert_eq!(visibility, Visibility::Private);
+            Ok(())
+        }
+
+        #[test]
         fn empty() -> Result<()> {
-            let namespace = namespace(&CONFIG)
+            let (namespace, _) = namespace(&CONFIG)
                 .parse(
                     r#"
             mod empty {}
@@ -911,11 +1061,11 @@ mod tests {
 
         #[test]
         fn with_dto() -> Result<()> {
-            let namespace = namespace(&CONFIG)
+            let (namespace, _) = namespace(&CONFIG)
                 .parse(
                     r#"
             mod ns {
-                struct DtoName {}
+                pub struct DtoName {}
             }
             "#,
                 )
@@ -932,7 +1082,7 @@ mod tests {
 
         #[test]
         fn nested() -> Result<()> {
-            let namespace = namespace(&CONFIG)
+            let (namespace, _) = namespace(&CONFIG)
                 .parse(
                     r#"
             mod ns0 {
@@ -953,12 +1103,12 @@ mod tests {
 
         #[test]
         fn nested_dto() -> Result<()> {
-            let namespace = namespace(&CONFIG)
+            let (namespace, _) = namespace(&CONFIG)
                 .parse(
                     r#"
             mod ns0 {
                 mod ns1 {
-                    struct DtoName {}
+                    pub struct DtoName {}
                 }
             }
             "#,
@@ -983,7 +1133,7 @@ mod tests {
 
         #[test]
         fn comment() -> Result<()> {
-            let ns = namespace(&CONFIG)
+            let (namespace, _) = namespace(&CONFIG)
                 .parse(
                     r#"
             // multi
@@ -995,7 +1145,7 @@ mod tests {
                 .into_result()
                 .map_err(wrap_test_err)?;
             assert_eq!(
-                ns.attributes.comments,
+                namespace.attributes.comments,
                 vec![Comment::unowned(&["multi", "line", "comment"])]
             );
             Ok(())
@@ -1003,7 +1153,7 @@ mod tests {
 
         #[test]
         fn attributes() -> Result<()> {
-            let namespace = namespace(&CONFIG)
+            let (namespace, _) = namespace(&CONFIG)
                 .parse(
                     r#"
                     #[flag1, flag2]
@@ -1028,13 +1178,44 @@ mod tests {
         use chumsky::Parser;
 
         use crate::model::{attribute, Comment};
-        use crate::parser::rust::dto;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::{dto, Visibility};
+
+        #[test]
+        fn private() -> Result<()> {
+            let (dto, visibility) = dto(&CONFIG)
+                .parse(
+                    r#"
+            struct StructName {}
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(dto.name, "StructName");
+            assert_eq!(visibility, Visibility::Private);
+            Ok(())
+        }
+
+        #[test]
+        fn public() -> Result<()> {
+            let (dto, visibility) = dto(&CONFIG)
+                .parse(
+                    r#"
+            pub struct StructName {}
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(dto.name, "StructName");
+            assert_eq!(dto.fields.len(), 0);
+            assert_eq!(visibility, Visibility::Public);
+            Ok(())
+        }
 
         #[test]
         fn empty() -> Result<()> {
-            let dto = dto(&CONFIG)
+            let (dto, _) = dto(&CONFIG)
                 .parse(
                     r#"
             struct StructName {}
@@ -1048,23 +1229,8 @@ mod tests {
         }
 
         #[test]
-        fn pub_struct() -> Result<()> {
-            let dto = dto(&CONFIG)
-                .parse(
-                    r#"
-            pub struct StructName {}
-            "#,
-                )
-                .into_result()
-                .map_err(wrap_test_err)?;
-            assert_eq!(dto.name, "StructName");
-            assert_eq!(dto.fields.len(), 0);
-            Ok(())
-        }
-
-        #[test]
         fn multiple_fields() -> Result<()> {
-            let dto = dto(&CONFIG)
+            let (dto, _) = dto(&CONFIG)
                 .parse(
                     r#"
             struct StructName {
@@ -1084,7 +1250,7 @@ mod tests {
 
         #[test]
         fn comment() -> Result<()> {
-            let dto = dto(&CONFIG)
+            let (dto, _) = dto(&CONFIG)
                 .parse(
                     r#"
             // multi
@@ -1104,7 +1270,7 @@ mod tests {
 
         #[test]
         fn fields_with_comments() -> Result<()> {
-            let dto = dto(&CONFIG)
+            let (dto, _) = dto(&CONFIG)
                 .parse(
                     r#"
             struct StructName {
@@ -1133,7 +1299,7 @@ mod tests {
 
         #[test]
         fn attributes() -> Result<()> {
-            let dto = dto(&CONFIG)
+            let (dto, _) = dto(&CONFIG)
                 .parse(
                     r#"
                 #[flag1, flag2]
@@ -1159,13 +1325,13 @@ mod tests {
         use chumsky::Parser;
 
         use crate::model::{attribute, Comment};
-        use crate::parser::rust::rpc;
         use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::tests::CONFIG;
+        use crate::parser::rust::{rpc, Visibility};
 
         #[test]
         fn empty_fn() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name() {}
@@ -1180,8 +1346,8 @@ mod tests {
         }
 
         #[test]
-        fn pub_fn() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+        fn public() -> Result<()> {
+            let (rpc, visibility) = rpc(&CONFIG)
                 .parse(
                     r#"
             pub fn rpc_name() {}
@@ -1192,6 +1358,22 @@ mod tests {
             assert_eq!(rpc.name, "rpc_name");
             assert!(rpc.params.is_empty());
             assert!(rpc.return_type.is_none());
+            assert_eq!(visibility, Visibility::Public);
+            Ok(())
+        }
+
+        #[test]
+        fn private() -> Result<()> {
+            let (rpc, visibility) = rpc(&CONFIG)
+                .parse(
+                    r#"
+            fn rpc_name() {}
+            "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(rpc.name, "rpc_name");
+            assert_eq!(visibility, Visibility::Private);
             Ok(())
         }
 
@@ -1209,7 +1391,7 @@ mod tests {
 
         #[test]
         fn comment() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
             // multi
@@ -1229,7 +1411,7 @@ mod tests {
 
         #[test]
         fn single_param() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name(param0: ParamType0) {}
@@ -1248,7 +1430,7 @@ mod tests {
 
         #[test]
         fn multiple_params() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name(param0: ParamType0, param1: ParamType1, param2: ParamType2) {}
@@ -1277,7 +1459,7 @@ mod tests {
 
         #[test]
         fn multiple_params_with_comments() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name(
@@ -1311,7 +1493,7 @@ mod tests {
 
         #[test]
         fn multiple_params_weird_spacing_trailing_comma() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name(param0: ParamType0      , param1
@@ -1343,7 +1525,7 @@ mod tests {
 
         #[test]
         fn return_type() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name() -> Asdfg {}
@@ -1362,7 +1544,7 @@ mod tests {
 
         #[test]
         fn return_type_weird_spacing() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
             fn rpc_name()           ->Asdfg{}
@@ -1381,7 +1563,7 @@ mod tests {
 
         #[test]
         fn attributes() -> Result<()> {
-            let rpc = rpc(&CONFIG)
+            let (rpc, _) = rpc(&CONFIG)
                 .parse(
                     r#"
                 #[flag1, flag2]
@@ -1447,12 +1629,42 @@ mod tests {
         use chumsky::Parser;
 
         use crate::model::{attribute, Comment, EnumValue, EnumValueNumber};
-        use crate::parser::rust::en;
         use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::rust::{en, Visibility};
+
+        #[test]
+        fn public() -> Result<()> {
+            let (en, visibility) = en()
+                .parse(
+                    r#"
+                    pub enum en {}
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(en.name, "en");
+            assert_eq!(visibility, Visibility::Public);
+            Ok(())
+        }
+
+        #[test]
+        fn private() -> Result<()> {
+            let (en, visibility) = en()
+                .parse(
+                    r#"
+                    enum en {}
+                "#,
+                )
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(en.name, "en");
+            assert_eq!(visibility, Visibility::Private);
+            Ok(())
+        }
 
         #[test]
         fn without_numbers() -> Result<()> {
-            let en = en()
+            let (en, _) = en()
                 .parse(
                     r#"
                     enum en {
@@ -1473,7 +1685,7 @@ mod tests {
 
         #[test]
         fn with_numbers() -> Result<()> {
-            let en = en()
+            let (en, _) = en()
                 .parse(
                     r#"
                     enum en {
@@ -1496,7 +1708,7 @@ mod tests {
 
         #[test]
         fn with_mixed_numbers() -> Result<()> {
-            let en = en()
+            let (en, _) = en()
                 .parse(
                     r#"
                     enum en {
@@ -1519,7 +1731,7 @@ mod tests {
 
         #[test]
         fn comment() -> Result<()> {
-            let en = en()
+            let (en, _) = en()
                 .parse(
                     r#"
             // multi
@@ -1539,7 +1751,7 @@ mod tests {
 
         #[test]
         fn enum_value_comments() -> Result<()> {
-            let en = en()
+            let (en, _) = en()
                 .parse(
                     r#"
                     enum en {
@@ -1573,7 +1785,7 @@ mod tests {
 
         #[test]
         fn attributes() -> Result<()> {
-            let en = en()
+            let (en, _) = en()
                 .parse(
                     r#"
                     #[flag1, flag2]
@@ -1924,7 +2136,7 @@ mod tests {
         }
 
         fn run_test(content: &str, expected: Vec<attribute::User>) {
-            let dto = dto(&CONFIG).parse(content).into_result().unwrap();
+            let (dto, _) = dto(&CONFIG).parse(content).into_result().unwrap();
             assert_eq!(dto.attributes.user, expected);
         }
     }

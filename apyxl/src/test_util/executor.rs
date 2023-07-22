@@ -9,7 +9,11 @@ pub struct TestExecutor {
 }
 
 lazy_static! {
-    static ref CONFIG: parser::Config = parser::Config::default();
+    static ref CONFIG: parser::Config = parser::Config {
+        user_types: vec![],
+        // Parse private so tests don't have to specify `pub` on _everything_.
+        enable_parse_private: true,
+    };
 }
 
 impl TestExecutor {

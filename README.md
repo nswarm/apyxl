@@ -19,19 +19,25 @@ for more info on how to write Parsers and Generators.
 
 See [Architecture](#architecture) for more depth.
 
-## Built-in Support
-
-Input:
-- Rust
-
-Output:
-- Rust (stub methods)
-
 ## Usage
 
 apyxl can be used in two ways, and has examples for each:
 - Command line interface: [examples](examples)
 - Rust library: [examples](apyxl/examples)
+
+## Built-in Support
+
+### Parser: Rust
+
+Notes:
+- Only parses `pub` definitions unless the parser config `enable_parse_private` is set to `true`.
+- Ignores `use` declarations.
+- Ignores anything inside the body of functions.
+
+### Generator: Rust
+
+Notes:
+- Generates RPCs as functions without bodies.
 
 # Customizing
 
@@ -121,8 +127,12 @@ struct Dto {}
 
 ### Parser Config
 
-Parser config is an option set of configuration that parsers need to accept to support certain built-in features.
-Parser config can be supplied to the CLI as a json file.
+Parser config is optional configuration that parsers need to accept to support certain built-in features.
+Parser config needs to be implemented individually in each Parser.
+
+Parser config can be supplied to the CLI as a json file. 
+
+See the struct `parser::Config` for more info.
 
 ### Debugging Validation Errors
 

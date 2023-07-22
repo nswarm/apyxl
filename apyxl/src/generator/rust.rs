@@ -162,7 +162,7 @@ fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {
 fn write_enum(en: Enum, o: &mut Indented) -> Result<()> {
     write_attributes(&en.attributes(), o)?;
 
-    o.write_str("enum ")?;
+    o.write_str("pub enum ")?;
     o.write_str(&en.name())?;
     o.write(' ')?;
     write_block_start(o)?;
@@ -185,7 +185,7 @@ fn write_enum_value(value: EnumValue, o: &mut dyn Output) -> Result<()> {
 }
 
 fn write_dto_start(dto: Dto, o: &mut Indented) -> Result<()> {
-    o.write_str("struct ")?;
+    o.write_str("pub struct ")?;
     o.write_str(&dto.name())?;
     o.write(' ')?;
     write_block_start(o)
@@ -441,12 +441,12 @@ pub fn rpc_name(
     dto2: ns0::DtoName,
 ) -> DtoName {}
 
-struct DtoName {
+pub struct DtoName {
     i: i32,
 }
 
 pub mod ns0 {
-    struct DtoName {
+    pub struct DtoName {
         i: i32,
     }
 }
@@ -456,18 +456,18 @@ pub mod ns0 {
     dto2: crate::ns0::DtoName,
 ) -> crate::DtoName {}
 
-enum EnumName {
+pub enum EnumName {
     One = 1,
     Two = 2,
     Three = 99,
 }
 
-struct DtoName {
+pub struct DtoName {
     i: i32,
 }
 
 pub mod ns0 {
-    struct DtoName {
+    pub struct DtoName {
         i: i32,
     }
 
@@ -509,7 +509,7 @@ pub mod ns0 {
             },
             &[
                 expected_attribute_str(),
-                "struct DtoName {",
+                "pub struct DtoName {",
                 &indent("    ", expected_attribute_str()),
                 "    field0: crate::Type0,",
                 &indent("    ", expected_attribute_str()),
@@ -631,7 +631,7 @@ pub mod ns0 {
             },
             &[
                 expected_attribute_str(),
-                "enum en {",
+                "pub enum en {",
                 &indent("    ", expected_attribute_str()),
                 "    value0 = 10,",
                 &indent("    ", expected_attribute_str()),
