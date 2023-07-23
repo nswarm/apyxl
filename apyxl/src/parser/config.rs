@@ -7,8 +7,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     /// See [UserType].
+    #[serde(default)]
     pub user_types: Vec<UserType>,
     /// If true, the parser will include private dtos, rpcs, etc. in the API.
+    #[serde(default)]
     pub enable_parse_private: bool,
 }
 

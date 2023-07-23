@@ -45,6 +45,7 @@ impl ApyxlParser for Rust {
 
             let children = imports
                 .ignore_then(namespace::children(config, namespace::parser(config)).padded())
+                .then_ignore(comment::multi_comment())
                 .then_ignore(end())
                 .parse(data)
                 .into_result()

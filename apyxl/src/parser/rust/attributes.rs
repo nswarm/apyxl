@@ -25,11 +25,13 @@ pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Er
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(just("#[").padded(), just(']').padded())
-        .recover_with(skip_then_retry_until(
-            none_of(",]").ignored(),
-            just(']').ignored(),
-        ))
+        .delimited_by(
+            just("#[").padded(),
+            just(']').padded().recover_with(skip_then_retry_until(
+                none_of("]").ignored(),
+                just(']').ignored(),
+            )),
+        )
         .or_not()
         .map(|opt| opt.unwrap_or(vec![]))
 }
