@@ -35,3 +35,5 @@ jobs:
       run: cargo build --workspace --verbose
     - name: Run tests
       run: cargo test --workspace --verbose
+    - name: Run examples
+      run: ./examples/rust_fake_platform.sh
