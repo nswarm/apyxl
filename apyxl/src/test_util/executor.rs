@@ -9,7 +9,7 @@ pub struct TestExecutor {
 }
 
 lazy_static! {
-    static ref CONFIG: parser::Config = parser::Config {
+    pub static ref TEST_CONFIG: parser::Config = parser::Config {
         user_types: vec![],
         // Parse private so tests don't have to specify `pub` on _everything_.
         enable_parse_private: true,
@@ -27,7 +27,7 @@ impl TestExecutor {
     pub fn api(&mut self) -> model::Api {
         let mut builder = Builder::default();
         self.parser
-            .parse(&CONFIG, &mut self.input, &mut builder)
+            .parse(&TEST_CONFIG, &mut self.input, &mut builder)
             .expect("failed to parse input");
         builder.into_api()
     }
@@ -40,7 +40,7 @@ impl TestExecutor {
     pub fn build(&mut self) -> model::Model {
         let mut builder = Builder::default();
         self.parser
-            .parse(&CONFIG, &mut self.input, &mut builder)
+            .parse(&TEST_CONFIG, &mut self.input, &mut builder)
             .expect("failed to parse input");
         builder.build().unwrap_or_else(|errs| {
             for err in errs {
