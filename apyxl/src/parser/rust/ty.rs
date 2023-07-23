@@ -48,7 +48,7 @@ pub fn ty(config: &Config) -> impl Parser<&str, Type, Error> {
     })
 }
 
-pub fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
     any()
         // first char
         .filter(|c: &char| c.is_ascii_alphabetic() || ALLOWED_TYPE_NAME_CHARS.contains(*c))
@@ -96,7 +96,7 @@ fn option<'a>(
         .map(Type::new_optional)
 }
 
-pub fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
+fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
     custom(move |input| {
         for (i, ty) in config.user_types.iter().enumerate() {
             let marker = input.save();
