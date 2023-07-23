@@ -121,6 +121,7 @@ mod tests {
             generator: vec![],
             output_root: Default::default(),
             output: vec![],
+            stdout: vec![],
         }
     }
 }
