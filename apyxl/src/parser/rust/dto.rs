@@ -1,12 +1,13 @@
 use crate::model::{Attributes, Dto, Field};
+use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, visibility, Error};
-use crate::parser::{comment, rust, Config};
+use crate::parser::rust::{attributes, visibility};
+use crate::parser::{comment, rust, util, Config};
 use chumsky::prelude::just;
 use chumsky::{text, IterParser, Parser};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
-    let prefix = rust::keyword_ex("struct").then(text::whitespace().at_least(1));
+    let prefix = util::keyword_ex("struct").then(text::whitespace().at_least(1));
     let name = text::ident();
     comment::multi_comment()
         .padded()

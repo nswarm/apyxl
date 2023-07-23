@@ -1,12 +1,13 @@
 use crate::model::{Attributes, Rpc};
+use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, expr_block, ty, visibility, Error};
-use crate::parser::{comment, rust, Config};
+use crate::parser::rust::{attributes, expr_block, ty, visibility};
+use crate::parser::{comment, rust, util, Config};
 use chumsky::prelude::{any, just, one_of, skip_then_retry_until};
 use chumsky::{text, IterParser, Parser};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
-    let prefix = rust::keyword_ex("fn").then(text::whitespace().at_least(1));
+    let prefix = util::keyword_ex("fn").then(text::whitespace().at_least(1));
     let name = text::ident();
     let params = rust::field(config)
         .separated_by(just(',').padded().recover_with(skip_then_retry_until(

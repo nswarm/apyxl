@@ -2,7 +2,7 @@ use chumsky::prelude::*;
 use chumsky::{error, text, IterParser, Parser};
 
 use crate::model::{EntityId, Type};
-use crate::parser::rust::Error;
+use crate::parser::error::Error;
 use crate::parser::Config;
 
 const ALLOWED_TYPE_NAME_CHARS: &str = "_&<>";

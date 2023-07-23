@@ -2,14 +2,15 @@ use chumsky::prelude::*;
 use chumsky::{error, text, IterParser, Parser};
 
 use crate::model::{Attributes, Enum, EnumValue, EnumValueNumber};
+use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, visibility, Error};
-use crate::parser::{comment, rust};
+use crate::parser::rust::{attributes, visibility};
+use crate::parser::{comment, util};
 
 const INVALID_ENUM_NUMBER: EnumValueNumber = EnumValueNumber::MAX;
 
 pub fn parser<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a>> {
-    let prefix = rust::keyword_ex("enum").then(text::whitespace().at_least(1));
+    let prefix = util::keyword_ex("enum").then(text::whitespace().at_least(1));
     let name = text::ident();
     let values = en_value()
         .separated_by(just(',').padded().recover_with(skip_then_retry_until(

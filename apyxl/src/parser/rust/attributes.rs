@@ -1,5 +1,5 @@
 use crate::model::attribute;
-use crate::parser::rust::Error;
+use crate::parser::error::Error;
 use chumsky::prelude::{just, none_of, skip_then_retry_until};
 use chumsky::{text, IterParser, Parser};
 
@@ -128,7 +128,10 @@ mod tests {
     }
 
     fn run_test(content: &str, expected: Vec<attribute::User>) {
-        let (dto, _) = dto::parser(&TEST_CONFIG).parse(content).into_result().unwrap();
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(content)
+            .into_result()
+            .unwrap();
         assert_eq!(dto.attributes.user, expected);
     }
 }

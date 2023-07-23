@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
 use anyhow::{anyhow, Result};
-use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::prelude::*;
 use log::debug;
 
-use crate::model::{Api, Attributes, Chunk, Field, UNDEFINED_NAMESPACE};
-use crate::parser::{comment, Config};
+use crate::model::{Api, Attributes, Field, UNDEFINED_NAMESPACE};
+use crate::parser::error::Error;
+use crate::parser::{comment, error, util, Config};
 use crate::{model, Input};
 use crate::{rust_util, Parser as ApyxlParser};
 
@@ -18,8 +18,6 @@ mod namespace;
 mod rpc;
 mod ty;
 mod visibility;
-
-type Error<'a> = extra::Err<Rich<'a, char>>;
 
 #[derive(Default)]
 pub struct Rust {}
@@ -52,7 +50,7 @@ impl ApyxlParser for Rust {
                 .into_result()
                 .map_err(|errs| {
                     let return_err = anyhow!("errors encountered while parsing: {:?}", &errs);
-                    report_errors(chunk, data, errs);
+                    error::report_errors(chunk, data, errs);
                     return_err
                 })?;
 
@@ -72,10 +70,10 @@ impl ApyxlParser for Rust {
 }
 
 fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
-    keyword_ex("pub")
+    util::keyword_ex("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
-        .then(keyword_ex("use"))
+        .then(util::keyword_ex("use"))
         .then(text::whitespace().at_least(1))
         .then(text::ident().separated_by(just("::")).at_least(1))
         .then(just(';'))
@@ -98,45 +96,6 @@ fn field(config: &Config) -> impl Parser<&str, Field, Error> {
                 ..Default::default()
             },
         })
-}
-
-/// Expanded [text::keyword] that has a more informative error.
-fn keyword_ex(keyword: &str) -> impl Parser<&str, &str, Error> {
-    text::ident()
-        .try_map(move |s: &str, span| {
-            if s == keyword {
-                Ok(())
-            } else {
-                Err(Rich::custom(span, format!("found unexpected token {}", s)))
-            }
-        })
-        .slice()
-}
-
-fn report_errors(chunk: &Chunk, src: &str, errors: Vec<Rich<'_, char>>) {
-    let filename = chunk
-        .relative_file_path
-        .as_ref()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or("unknown".to_string());
-    for error in errors {
-        Report::build(ReportKind::Error, filename.clone(), error.span().start)
-            .with_message(error.to_string())
-            .with_label(
-                Label::new((filename.clone(), error.span().into_range()))
-                    .with_message(error.reason().to_string())
-                    .with_color(Color::Red),
-            )
-            // need "label" feature
-            // .with_labels(error.contexts().map(|(label, span)| {
-            //     Label::new((filename.clone(), span.into_range()))
-            //         .with_message(format!("while parsing this {}", label))
-            //         .with_color(Color::Yellow)
-            // }))
-            .finish()
-            .print((filename.clone(), Source::from(src)))
-            .unwrap()
-    }
 }
 
 #[cfg(test)]

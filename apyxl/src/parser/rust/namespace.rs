@@ -5,13 +5,14 @@ use chumsky::{text, IterParser, Parser};
 use itertools::Itertools;
 
 use crate::model::{Attributes, Namespace, NamespaceChild};
+use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, dto, en, rpc, visibility, Error};
-use crate::parser::{comment, rust, Config};
+use crate::parser::rust::{attributes, dto, en, rpc, visibility};
+use crate::parser::{comment, util, Config};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Error> {
     recursive(|nested| {
-        let prefix = rust::keyword_ex("mod").then(text::whitespace().at_least(1));
+        let prefix = util::keyword_ex("mod").then(text::whitespace().at_least(1));
         let name = text::ident();
         let body = children(config, nested)
             .boxed()

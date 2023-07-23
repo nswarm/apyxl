@@ -11,7 +11,9 @@ mod test_util;
 
 mod comment;
 mod config;
+mod error;
 mod rust;
+mod util;
 
 pub trait Parser {
     fn parse<'a, I: Input + 'a>(

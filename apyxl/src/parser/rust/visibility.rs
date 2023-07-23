@@ -1,6 +1,6 @@
 use crate::model::NamespaceChild;
-use crate::parser::rust::Error;
-use crate::parser::{rust, Config};
+use crate::parser::error::Error;
+use crate::parser::{util, Config};
 use chumsky::{text, Parser};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -28,7 +28,7 @@ impl Visibility {
 }
 
 pub fn parser<'a>() -> impl Parser<'a, &'a str, Visibility, Error<'a>> {
-    rust::keyword_ex("pub")
+    util::keyword_ex("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
         .map(|o| match o {

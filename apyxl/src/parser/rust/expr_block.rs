@@ -1,6 +1,6 @@
 use crate::model::Comment;
 use crate::parser::comment;
-use crate::parser::rust::Error;
+use crate::parser::error::Error;
 use chumsky::prelude::*;
 use chumsky::Parser;
 
@@ -28,7 +28,7 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
 
 #[cfg(test)]
 mod tests {
-    use chumsky::{Parser, text};
+    use chumsky::{text, Parser};
 
     use crate::model::Comment;
     use crate::parser::rust::expr_block;
