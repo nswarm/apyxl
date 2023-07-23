@@ -15,5 +15,12 @@ RUST_LOG=info cargo run -- \
   --parser rust \
   --parser-config "$examplesDir/fake_platform/parser_config.json" \
   --generator rust \
+  --stdout rust \
   --output-root "$outDir" \
   --output rust=rust_out
+
+echo "----------------------------------------"
+echo "Above is the full rust output."
+echo
+echo "Also generated to a proper file structure in:"
+echo "  $scriptDir/output/cli/rust_out"

@@ -45,6 +45,10 @@ pub struct Config {
     ///     ./root/dir/ccc (generated cpp files)
     #[arg(short, long, value_parser=parse_output)]
     pub output: Vec<Output>,
+
+    /// Every generator name in the list will generate to stdout in addition to other outputs.
+    #[arg(long)]
+    pub stdout: Vec<GeneratorName>,
 }
 
 #[derive(ValueEnum, Copy, Clone, Debug)]

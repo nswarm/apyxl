@@ -61,6 +61,9 @@ fn add_generator<I: apyxl::Input, P: apyxl::Parser>(
         let output = output(path)?;
         exe = exe.output_ptr(output);
     }
+    if config.stdout.contains(&generator_name) {
+        exe = exe.output(apyxl::output::StdOut::default());
+    }
     Ok(exe)
 }
 
