@@ -11,7 +11,7 @@ pub struct User {
     friends: HashMap<Id, social::Friend>,
 
     // feature: complex nested types
-    equipment_slots: HashMap<String, Option<Vec<Item>>>,
+    equipment_slots: HashMap<String, Option<Vec<inventory::Item>>>,
 
     // feature: user type in parser config
     special_id: SpecialId,
@@ -32,12 +32,6 @@ pub struct Display {
     motd: Option<String>,
 }
 
-#[derive(Default)]
-pub struct Item {
-    id: String,
-    data: String,
-}
-
 // pub type Id = u128; todo aliases?
 #[derive(Default)]
 pub struct Id {
@@ -48,3 +42,12 @@ pub struct Id {
 // impl User {
 //
 // }
+
+// feature: nested namespace in file
+pub mod inventory {
+    #[derive(Default)]
+    pub struct Item {
+        id: String,
+        data: String,
+    }
+}

@@ -45,7 +45,6 @@ impl ApyxlParser for Rust {
 
             let children = imports
                 .ignore_then(namespace::children(config, namespace::parser(config)).padded())
-                .then_ignore(comment::multi_comment())
                 .then_ignore(end())
                 .parse(data)
                 .into_result()
@@ -141,6 +140,7 @@ mod tests {
         struct private_dto {}
         pub mod namespace {}
         mod private_namespace {}
+        // end comment ignored
         "#,
         );
         let mut builder = Builder::default();
@@ -199,45 +199,6 @@ mod tests {
         assert!(model.api().rpc("ignored_rpc").is_none());
         assert!(model.api().en("ignored_en").is_none());
         assert!(model.api().namespace("ignored_namespace").is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn line_comments_inside_namespace() -> Result<()> {
-        namespace::parser(&TEST_CONFIG)
-            .parse(
-                r#"
-                    mod ns { // comment
-                        // comment
-
-                        // comment
-                        // comment
-                        // comment
-                        struct dto {} // comment
-                        // comment
-                    }
-                    "#,
-            )
-            .into_result()
-            .map_err(wrap_test_err)?;
-        Ok(())
-    }
-
-    #[test]
-    fn block_comment_inside_namespace() -> Result<()> {
-        namespace::parser(&TEST_CONFIG)
-            .parse(
-                r#"
-                    mod ns { /* comment */
-                        /* comment */
-                        /* comment */
-                        struct dto {} /* comment */
-                        /* comment */
-                    }
-                    "#,
-            )
-            .into_result()
-            .map_err(wrap_test_err)?;
         Ok(())
     }
 

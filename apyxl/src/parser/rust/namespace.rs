@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use chumsky::prelude::{any, choice, just, recursive, skip_then_retry_until};
+use chumsky::prelude::{choice, just, recursive};
 use chumsky::{text, IterParser, Parser};
 use itertools::Itertools;
 
@@ -14,10 +14,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Err
     recursive(|nested| {
         let prefix = util::keyword_ex("mod").then(text::whitespace().at_least(1));
         let name = text::ident();
-        let body = children(config, nested)
-            .boxed()
-            .then_ignore(comment::multi_comment())
-            .delimited_by(just('{').padded(), just('}').padded());
+        let body = children(config, nested).delimited_by(just('{').padded(), just('}').padded());
         comment::multi_comment()
             .then(attributes::attributes().padded())
             .then(visibility::parser())
@@ -53,10 +50,10 @@ pub fn children<'a>(
         namespace.map(|(c, v)| (NamespaceChild::Namespace(c), v)),
     ))
     .map(|(child, visibility)| visibility.filter_child(child, config))
-    .recover_with(skip_then_retry_until(any().ignored(), just('}').ignored()))
     .repeated()
     .collect::<Vec<_>>()
     .map(|v| v.into_iter().flatten().collect_vec())
+    .then_ignore(comment::multi_comment())
 }
 
 #[cfg(test)]
@@ -219,6 +216,45 @@ mod tests {
             namespace.attributes.comments,
             vec![Comment::unowned(&["multi", "line", "comment"])]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn line_comments_inside_namespace() -> Result<()> {
+        namespace::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                    mod ns { // comment
+                        // comment
+
+                        // comment
+                        // comment
+                        // comment
+                        struct dto {} // comment
+                        // comment
+                    }
+                    "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        Ok(())
+    }
+
+    #[test]
+    fn block_comment_inside_namespace() -> Result<()> {
+        namespace::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                    mod ns { /* comment */
+                        /* comment */
+                        /* comment */
+                        struct dto {} /* comment */
+                        /* comment */
+                    }
+                    "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
         Ok(())
     }
 
