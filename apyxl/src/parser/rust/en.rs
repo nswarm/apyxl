@@ -13,10 +13,7 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a
     let prefix = util::keyword_ex("enum").then(text::whitespace().at_least(1));
     let name = text::ident();
     let values = en_value()
-        .separated_by(just(',').padded().recover_with(skip_then_retry_until(
-            any().ignored(),
-            one_of(",}").ignored(),
-        )))
+        .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded());

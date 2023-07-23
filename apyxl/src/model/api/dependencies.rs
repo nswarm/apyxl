@@ -285,7 +285,7 @@ mod tests {
                 r#"
             mod ns0 {
                 struct dto0 {
-                    field: ns1::dto1
+                    field: ns1::dto1,
                 }
                 mod ns1 {
                     struct dto1 {

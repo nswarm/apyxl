@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use chumsky::prelude::{choice, just, recursive};
+use chumsky::prelude::*;
 use chumsky::{text, IterParser, Parser};
 use itertools::Itertools;
 
@@ -14,7 +14,8 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Err
     recursive(|nested| {
         let prefix = util::keyword_ex("mod").then(text::whitespace().at_least(1));
         let name = text::ident();
-        let body = children(config, nested).delimited_by(just('{').padded(), just('}').padded());
+        let body = children(config, nested, just('}').ignored())
+            .delimited_by(just('{').padded(), just('}').padded());
         comment::multi_comment()
             .then(attributes::attributes().padded())
             .then(visibility::parser())
@@ -42,12 +43,17 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Err
 pub fn children<'a>(
     config: &'a Config,
     namespace: impl Parser<'a, &'a str, (Namespace<'a>, Visibility), Error<'a>>,
+    end_delimiter: impl Parser<'a, &'a str, (), Error<'a>>,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
         dto::parser(config).map(|(c, v)| (NamespaceChild::Dto(c), v)),
         rpc::parser(config).map(|(c, v)| (NamespaceChild::Rpc(c), v)),
         en::parser().map(|(c, v)| (NamespaceChild::Enum(c), v)),
         namespace.map(|(c, v)| (NamespaceChild::Namespace(c), v)),
+    ))
+    .recover_with(skip_then_retry_until(
+        any().ignored(),
+        end_delimiter.ignored(),
     ))
     .map(|(child, visibility)| visibility.filter_child(child, config))
     .repeated()

@@ -44,7 +44,10 @@ impl ApyxlParser for Rust {
                 .collect::<Vec<_>>();
 
             let children = imports
-                .ignore_then(namespace::children(config, namespace::parser(config)).padded())
+                .ignore_then(
+                    namespace::children(config, namespace::parser(config), end().ignored())
+                        .padded(),
+                )
                 .then_ignore(end())
                 .parse(data)
                 .into_result()
@@ -98,13 +101,20 @@ fn field(config: &Config) -> impl Parser<&str, Field, Error> {
         })
 }
 
+fn fields(config: &Config) -> impl Parser<&str, Vec<Field>, Error> {
+    field(config)
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<Vec<_>>()
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
     use crate::model::{Builder, Comment, UNDEFINED_NAMESPACE};
-    use crate::parser::rust::{field, namespace};
+    use crate::parser::rust::field;
     use crate::parser::test_util::wrap_test_err;
     use crate::parser::Config;
     use crate::test_util::executor::TEST_CONFIG;

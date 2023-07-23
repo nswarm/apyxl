@@ -1,6 +1,6 @@
 use crate::model::attribute;
 use crate::parser::error::Error;
-use chumsky::prelude::{just, none_of, skip_then_retry_until};
+use chumsky::prelude::*;
 use chumsky::{text, IterParser, Parser};
 
 pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Error<'a>> {

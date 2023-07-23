@@ -1,21 +1,29 @@
-use crate::model::{Attributes, Dto, Field};
+use chumsky::prelude::*;
+use chumsky::{text, Parser};
+
+use crate::model::{Attributes, Dto};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, visibility};
-use crate::parser::{comment, rust, util, Config};
-use chumsky::prelude::just;
-use chumsky::{text, IterParser, Parser};
+use crate::parser::rust::{attributes, fields, visibility};
+use crate::parser::{comment, util, Config};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
     let prefix = util::keyword_ex("struct").then(text::whitespace().at_least(1));
     let name = text::ident();
+    let fields = fields(config).delimited_by(
+        just('{').padded(),
+        just('}').padded().recover_with(skip_then_retry_until(
+            none_of("}").ignored(),
+            just('}').ignored(),
+        )),
+    );
     comment::multi_comment()
         .padded()
         .then(attributes::attributes().padded())
         .then(visibility::parser())
         .then_ignore(prefix)
         .then(name)
-        .then(fields(config))
+        .then(fields)
         .map(|((((comments, user), visibility), name), fields)| {
             (
                 Dto {
@@ -30,14 +38,6 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
                 visibility,
             )
         })
-}
-
-fn fields(config: &Config) -> impl Parser<&str, Vec<Field>, Error> {
-    rust::field(config)
-        .separated_by(just(',').padded())
-        .allow_trailing()
-        .collect::<Vec<_>>()
-        .delimited_by(just('{').padded(), just('}').padded())
 }
 
 #[cfg(test)]
