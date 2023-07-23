@@ -139,8 +139,8 @@ mod tests {
 
         use crate::model::EntityId;
         use crate::model::Type;
-        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::ty;
+        use crate::parser::test_util::wrap_test_err;
         use crate::parser::{Config, UserType};
 
         lazy_static! {
@@ -309,8 +309,8 @@ mod tests {
     }
 
     mod entity_id {
-        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::ty::entity_id;
+        use crate::parser::test_util::wrap_test_err;
         use anyhow::Result;
         use chumsky::Parser;
         use itertools::Itertools;

@@ -6,6 +6,10 @@ pub use rust::Rust;
 use crate::input::Input;
 use crate::model;
 
+#[cfg(test)]
+mod test_util;
+
+mod comment;
 mod config;
 mod rust;
 

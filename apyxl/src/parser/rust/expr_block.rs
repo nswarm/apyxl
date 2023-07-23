@@ -1,5 +1,5 @@
 use crate::model::Comment;
-use crate::parser::rust;
+use crate::parser::comment;
 use crate::parser::rust::Error;
 use chumsky::prelude::*;
 use chumsky::Parser;
@@ -15,7 +15,7 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
     let body = none_of("{}").repeated().at_least(1).slice().map(&str::trim);
     recursive(|nested| {
         choice((
-            rust::comment().boxed().padded().map(ExprBlock::Comment),
+            comment::comment().boxed().padded().map(ExprBlock::Comment),
             nested.map(ExprBlock::Nested),
             body.map(ExprBlock::Body),
         ))
@@ -28,7 +28,7 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
 
 #[cfg(test)]
 mod tests {
-    use chumsky::{text, Parser};
+    use chumsky::{Parser, text};
 
     use crate::model::Comment;
     use crate::parser::rust::expr_block;

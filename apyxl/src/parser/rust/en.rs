@@ -2,32 +2,11 @@ use chumsky::prelude::*;
 use chumsky::{error, text, IterParser, Parser};
 
 use crate::model::{Attributes, Enum, EnumValue, EnumValueNumber};
-use crate::parser::rust;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{visibility, Error, INVALID_ENUM_NUMBER};
+use crate::parser::rust::{attributes, visibility, Error};
+use crate::parser::{comment, rust};
 
-fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
-    let number = just('=')
-        .padded()
-        .ignore_then(text::int(10).try_map(|s, span| {
-            str::parse::<EnumValueNumber>(s)
-                .map_err(|_| error::Error::<&'a str>::expected_found(None, None, span))
-        }));
-    rust::multi_comment()
-        .then(rust::attributes().padded())
-        .then(text::ident())
-        .then(number.or_not())
-        .padded()
-        .map(|(((comments, user), name), number)| EnumValue {
-            name,
-            number: number.unwrap_or(INVALID_ENUM_NUMBER),
-            attributes: Attributes {
-                comments,
-                user,
-                ..Default::default()
-            },
-        })
-}
+const INVALID_ENUM_NUMBER: EnumValueNumber = EnumValueNumber::MAX;
 
 pub fn parser<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a>> {
     let prefix = rust::keyword_ex("enum").then(text::whitespace().at_least(1));
@@ -40,8 +19,8 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded());
-    rust::multi_comment()
-        .then(rust::attributes().padded())
+    comment::multi_comment()
+        .then(attributes::attributes().padded())
         .then(visibility::parser())
         .then_ignore(prefix)
         .then(name)
@@ -59,6 +38,29 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a
                 },
                 visibility,
             )
+        })
+}
+
+fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
+    let number = just('=')
+        .padded()
+        .ignore_then(text::int(10).try_map(|s, span| {
+            str::parse::<EnumValueNumber>(s)
+                .map_err(|_| error::Error::<&'a str>::expected_found(None, None, span))
+        }));
+    comment::multi_comment()
+        .then(attributes::attributes().padded())
+        .then(text::ident())
+        .then(number.or_not())
+        .padded()
+        .map(|(((comments, user), name), number)| EnumValue {
+            name,
+            number: number.unwrap_or(INVALID_ENUM_NUMBER),
+            attributes: Attributes {
+                comments,
+                user,
+                ..Default::default()
+            },
         })
 }
 
@@ -84,7 +86,7 @@ mod tests {
 
         use crate::model::attribute;
         use crate::parser::rust::en::en_value;
-        use crate::parser::rust::tests::wrap_test_err;
+        use crate::parser::test_util::wrap_test_err;
 
         #[test]
         fn test() -> Result<()> {
@@ -125,8 +127,8 @@ mod tests {
 
         use crate::model::{attribute, Comment, EnumValue, EnumValueNumber};
         use crate::parser::rust::en;
-        use crate::parser::rust::tests::wrap_test_err;
         use crate::parser::rust::visibility::Visibility;
+        use crate::parser::test_util::wrap_test_err;
 
         #[test]
         fn public() -> Result<()> {
