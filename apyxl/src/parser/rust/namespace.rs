@@ -8,14 +8,20 @@ use crate::model::{Attributes, Namespace, NamespaceChild};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, dto, en, rpc, visibility};
-use crate::parser::{comment, util, Config};
+use crate::parser::util::keyword_ex;
+use crate::parser::{comment, Config};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Error> {
     recursive(|nested| {
-        let prefix = util::keyword_ex("mod").then(text::whitespace().at_least(1));
+        let prefix = keyword_ex("mod").then(text::whitespace().at_least(1));
         let name = text::ident();
-        let body = children(config, nested, just('}').ignored())
-            .delimited_by(just('{').padded(), just('}').padded());
+        let body = children(
+            config,
+            nested.clone(),
+            impl_block(config, nested),
+            just('}').ignored(),
+        )
+        .delimited_by(just('{').padded(), just('}').padded());
         comment::multi_comment()
             .then(attributes::attributes().padded())
             .then(visibility::parser())
@@ -32,6 +38,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Err
                             user,
                             ..Default::default()
                         },
+                        is_virtual: false,
                     },
                     visibility,
                 )
@@ -43,6 +50,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Err
 pub fn children<'a>(
     config: &'a Config,
     namespace: impl Parser<'a, &'a str, (Namespace<'a>, Visibility), Error<'a>>,
+    impl_block: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
     end_delimiter: impl Parser<'a, &'a str, (), Error<'a>>,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
@@ -50,6 +58,7 @@ pub fn children<'a>(
         rpc::parser(config).map(|(c, v)| (NamespaceChild::Rpc(c), v)),
         en::parser().map(|(c, v)| (NamespaceChild::Enum(c), v)),
         namespace.map(|(c, v)| (NamespaceChild::Namespace(c), v)),
+        impl_block.map(|c| (NamespaceChild::Namespace(c), Visibility::Public)),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
@@ -60,6 +69,31 @@ pub fn children<'a>(
     .collect::<Vec<_>>()
     .map(|v| v.into_iter().flatten().collect_vec())
     .then_ignore(comment::multi_comment())
+}
+
+// Parses to a 'virtual' namespace that will be merged into the DTO with the same name.
+pub fn impl_block<'a>(
+    config: &'a Config,
+    namespace: impl Parser<'a, &'a str, (Namespace<'a>, Visibility), Error<'a>> + 'a,
+) -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
+    recursive(|nested| {
+        comment::multi_comment()
+            .padded()
+            .ignore_then(keyword_ex("impl"))
+            .ignore_then(text::whitespace().at_least(1))
+            .ignore_then(text::ident())
+            .then(
+                children(config, namespace, nested, just('}').ignored())
+                    .delimited_by(just('{').padded(), just('}').padded()),
+            )
+            .map(|(name, children)| Namespace::<'a> {
+                name: Cow::Borrowed(name),
+                children,
+                attributes: Default::default(),
+                is_virtual: true,
+            })
+            .boxed()
+    })
 }
 
 #[cfg(test)]
@@ -282,6 +316,22 @@ mod tests {
                 attribute::User::new_flag("flag2"),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn impl_block() -> Result<()> {
+        let namespace = namespace::impl_block(&TEST_CONFIG, namespace::parser(&TEST_CONFIG))
+            .parse(
+                r#"
+                    impl dto {
+                        fn rpc() {}
+                    }
+                    "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert!(namespace.is_virtual);
         Ok(())
     }
 }

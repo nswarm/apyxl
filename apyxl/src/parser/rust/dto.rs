@@ -34,6 +34,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
                         user,
                         ..Default::default()
                     },
+                    namespace: None,
                 },
                 visibility,
             )

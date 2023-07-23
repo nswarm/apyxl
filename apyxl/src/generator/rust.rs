@@ -501,6 +501,7 @@ pub mod ns0 {
                                 },
                             ],
                             attributes: test_attributes(),
+                            namespace: None,
                         },
                         &Transforms::default(),
                     ),

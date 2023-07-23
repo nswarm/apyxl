@@ -284,6 +284,7 @@ mod tests {
                     .map(NamespaceChild::Dto)
                     .collect::<Vec<NamespaceChild>>(),
                 attributes: Default::default(),
+                is_virtual: false,
             });
             Ok(())
         }

@@ -7,8 +7,10 @@ use log::{debug, error};
 pub use config::*;
 
 use crate::model::api::validate;
+use crate::model::validate::ValidationResult;
 use crate::model::{
-    chunk, Api, Chunk, EntityId, Metadata, Model, Namespace, ValidationError, UNDEFINED_NAMESPACE,
+    chunk, Api, Chunk, EntityId, EntityType, Metadata, Model, Namespace, ValidationError,
+    UNDEFINED_NAMESPACE,
 };
 use crate::{generator, output, Generator};
 
@@ -121,7 +123,7 @@ impl<'a> Builder<'a> {
 
         self.pre_validation_print();
 
-        let (oks, errs): (Vec<_>, Vec<_>) = [
+        let (oks, mut errs): (Vec<_>, Vec<_>) = [
             validate::recurse_api(&self.api, validate::namespace_names),
             validate::recurse_api(&self.api, validate::dto_names),
             validate::recurse_api(&self.api, validate::dto_field_names),
@@ -141,6 +143,11 @@ impl<'a> Builder<'a> {
         .into_iter()
         .flatten()
         .partition(|x| x.is_ok());
+
+        errs.append(&mut devirtualize_namespaces(
+            &mut self.api,
+            &EntityId::default(),
+        ));
 
         if !errs.is_empty() {
             return Err(errs.into_iter().map(Result::unwrap_err).collect_vec());
@@ -207,6 +214,34 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
             dedupe_namespace_children(&mut ns);
             namespace.add_namespace(ns)
         });
+}
+
+/// Moves any namespaces marked as 'virtual' into DTOs with the same name.
+fn devirtualize_namespaces(
+    namespace: &mut Namespace,
+    namespace_id: &EntityId,
+) -> Vec<ValidationResult> {
+    namespace
+        .take_namespaces_filtered(|namespace| namespace.is_virtual)
+        .into_iter()
+        .flat_map(|mut virtual_namespace| {
+            let virtual_ns_id = namespace_id
+                .child(EntityType::Namespace, &virtual_namespace.name)
+                .unwrap();
+            let mut results = devirtualize_namespaces(&mut virtual_namespace, &virtual_ns_id);
+            match namespace.dto_mut(&virtual_namespace.name) {
+                None => {
+                    results.push(Err(ValidationError::VirtualNamespaceMissingOwner(
+                        virtual_ns_id.clone(),
+                    )));
+                }
+                Some(dto) => {
+                    dto.namespace = Some(virtual_namespace);
+                }
+            }
+            results
+        })
+        .collect_vec()
 }
 
 fn pretty_print_api(api: &Api) {
@@ -600,6 +635,52 @@ mod tests {
                 assert!(nested.namespace("ns1").is_some());
                 assert!(nested.namespace("ns2").is_some());
                 assert!(nested.namespace("ns3").is_some());
+            }
+        }
+
+        mod devirtualize_namespaces {
+            use crate::model::builder::tests::build_from_input;
+            use crate::model::{EntityId, ValidationError};
+            use crate::test_util::executor::TestExecutor;
+
+            #[test]
+            fn moves_into_dto_namespace() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    struct dto {}
+                    impl dto {
+                        struct nested_dto {}
+                        fn nested_rpc() {}
+                    }
+                "#,
+                );
+                let model = build_from_input(&mut exe).unwrap();
+
+                let dto = model.api.dto("dto").unwrap();
+                let dto_namespace = dto.namespace.as_ref().unwrap();
+                assert!(dto_namespace.dto("nested_dto").is_some());
+                assert!(dto_namespace.rpc("nested_rpc").is_some());
+            }
+
+            #[test]
+            fn errors_if_no_owning_dto() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    struct dto {}
+                    impl wrong_name {
+                        struct nested_dto {}
+                        fn nested_rpc() {}
+                    }
+                "#,
+                );
+                let errors = build_from_input(&mut exe).unwrap_err();
+                assert_eq!(errors.len(), 1);
+                assert_eq!(
+                    errors[0],
+                    ValidationError::VirtualNamespaceMissingOwner(
+                        EntityId::try_from("wrong_name").unwrap()
+                    )
+                );
             }
         }
 

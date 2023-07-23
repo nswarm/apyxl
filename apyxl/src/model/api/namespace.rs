@@ -10,6 +10,11 @@ pub struct Namespace<'a> {
     pub name: Cow<'a, str>,
     pub children: Vec<NamespaceChild<'a>>,
     pub attributes: Attributes<'a>,
+
+    /// 'virtual' is a temporary namespace indicating it belongs to a [Dto] and should be moved
+    /// to the [Dto] at build time. Useful for handling [Rpc]s or other [Dto]s nested inside of
+    /// or that belong to a [Dto].
+    pub is_virtual: bool,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -30,10 +35,10 @@ impl<'api> FindEntity<'api> for Namespace<'api> {
     fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
-                EntityType::Namespace => self.namespace(&name).map_or(None, |x| x.find_entity(id)),
-                EntityType::Dto => self.dto(&name).map_or(None, |x| x.find_entity(id)),
-                EntityType::Rpc => self.rpc(&name).map_or(None, |x| x.find_entity(id)),
-                EntityType::Enum => self.en(&name).map_or(None, |x| x.find_entity(id)),
+                EntityType::Namespace => self.namespace(&name).and_then(|x| x.find_entity(id)),
+                EntityType::Dto => self.dto(&name).and_then(|x| x.find_entity(id)),
+                EntityType::Rpc => self.rpc(&name).and_then(|x| x.find_entity(id)),
+                EntityType::Enum => self.en(&name).and_then(|x| x.find_entity(id)),
 
                 EntityType::None | EntityType::Field | EntityType::Type => None,
             }
@@ -47,10 +52,10 @@ impl<'api> FindEntity<'api> for Namespace<'api> {
             match ty {
                 EntityType::Namespace => self
                     .namespace_mut(&name)
-                    .map_or(None, |x| x.find_entity_mut(id)),
-                EntityType::Dto => self.dto_mut(&name).map_or(None, |x| x.find_entity_mut(id)),
-                EntityType::Rpc => self.rpc_mut(&name).map_or(None, |x| x.find_entity_mut(id)),
-                EntityType::Enum => self.en_mut(&name).map_or(None, |x| x.find_entity_mut(id)),
+                    .and_then(|x| x.find_entity_mut(id)),
+                EntityType::Dto => self.dto_mut(&name).and_then(|x| x.find_entity_mut(id)),
+                EntityType::Rpc => self.rpc_mut(&name).and_then(|x| x.find_entity_mut(id)),
+                EntityType::Enum => self.en_mut(&name).and_then(|x| x.find_entity_mut(id)),
 
                 EntityType::None | EntityType::Field | EntityType::Type => None,
             }
@@ -256,13 +261,16 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Removes all [Namespaces] from this [Namespace] and returns them in a [Vec].
-    pub fn take_namespaces(&mut self) -> Vec<Namespace<'a>> {
+    /// Removes all [Namespaces] that match `include` and return them in a [Vec].
+    pub fn take_namespaces_filtered(
+        &mut self,
+        take: impl Fn(&Namespace<'a>) -> bool,
+    ) -> Vec<Namespace<'a>> {
         // todo use drain_filter when stabilized. https://doc.rust-lang.org/std/vec/struct.DrainFilter.html
-        let (take, keep) = self
-            .children
-            .drain(..)
-            .partition(|child| matches!(child, NamespaceChild::Namespace(_)));
+        let (take, keep) = self.children.drain(..).partition(|child| match child {
+            NamespaceChild::Namespace(namespace) => take(namespace),
+            _ => false,
+        });
 
         self.children = keep;
 
@@ -275,6 +283,11 @@ impl<'a> Namespace<'a> {
                 }
             })
             .collect_vec()
+    }
+
+    /// Removes all [Namespaces] from this [Namespace] and returns them in a [Vec].
+    pub fn take_namespaces(&mut self) -> Vec<Namespace<'a>> {
+        self.take_namespaces_filtered(|_| true)
     }
 
     /// Find a [NamespaceChild] by [EntityId] relative to this [Namespace].
@@ -485,6 +498,49 @@ mod tests {
         assert!(ns0.rpc("rpc1").is_some());
         assert!(ns0.namespace("nested0").is_some());
         assert!(ns0.namespace("nested1").is_some());
+    }
+
+    mod take_namespaces {
+        use crate::test_util::executor::TestExecutor;
+
+        #[test]
+        fn removes_all_namespaces() {
+            let mut exe = TestExecutor::new(
+                r#"
+            mod ns0 {}
+            struct dto {}
+            mod ns1 {}
+            fn rpc() {}
+        "#,
+            );
+            let mut ns = exe.api();
+            let taken = ns.take_namespaces();
+            assert!(ns.dto("ns0").is_none());
+            assert!(ns.dto("ns1").is_none());
+            assert!(ns.dto("dto").is_some());
+            assert!(ns.rpc("rpc").is_some());
+            assert_eq!(taken.len(), 2);
+            assert_eq!(taken[0].name, "ns0");
+            assert_eq!(taken[1].name, "ns1");
+        }
+
+        #[test]
+        fn filtered() {
+            let mut exe = TestExecutor::new(
+                r#"
+            mod ns {}
+            mod remove_me {}
+            mod remove_me_jk {}
+        "#,
+            );
+            let mut api = exe.api();
+            let taken = api.take_namespaces_filtered(|inner_ns| inner_ns.name == "remove_me");
+            assert!(api.namespace("ns").is_some());
+            assert!(api.namespace("remove_me_jk").is_some());
+            assert!(api.namespace("remove_me").is_none());
+            assert_eq!(taken.len(), 1);
+            assert_eq!(taken[0].name, "remove_me");
+        }
     }
 
     mod add_get {

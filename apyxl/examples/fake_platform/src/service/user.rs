@@ -38,10 +38,13 @@ pub struct Id {
     value: u128,
 }
 
-// todo methods on dto types
-// impl User {
-//
-// }
+// feature: nested types. In this rust case, this is rpcs in a relative to a dto.
+impl User {
+    // `&self` is ignored in this context since the rpc is stored as a namespace under the dto.
+    pub fn name(&self) -> &Display {
+        &self.display
+    }
+}
 
 // feature: nested namespace in file
 pub mod inventory {

@@ -6,6 +6,7 @@ use log::debug;
 
 use crate::model::{Api, Attributes, Field, UNDEFINED_NAMESPACE};
 use crate::parser::error::Error;
+use crate::parser::rust::namespace::impl_block;
 use crate::parser::{comment, error, util, Config};
 use crate::{model, Input};
 use crate::{rust_util, Parser as ApyxlParser};
@@ -45,8 +46,13 @@ impl ApyxlParser for Rust {
 
             let children = imports
                 .ignore_then(
-                    namespace::children(config, namespace::parser(config), end().ignored())
-                        .padded(),
+                    namespace::children(
+                        config,
+                        namespace::parser(config),
+                        impl_block(config, namespace::parser(config)),
+                        end().ignored(),
+                    )
+                    .padded(),
                 )
                 .then_ignore(end())
                 .parse(data)
@@ -62,6 +68,7 @@ impl ApyxlParser for Rust {
                     name: Cow::Borrowed(UNDEFINED_NAMESPACE),
                     children,
                     attributes: Default::default(),
+                    is_virtual: false,
                 },
                 chunk,
             );

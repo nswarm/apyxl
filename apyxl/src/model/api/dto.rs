@@ -1,6 +1,6 @@
 use crate::model::api::entity::ToEntity;
 use crate::model::entity::{EntityMut, FindEntity};
-use crate::model::{Attributes, Entity, EntityId, EntityType, Field};
+use crate::model::{Attributes, Entity, EntityId, EntityType, Field, Namespace};
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -8,6 +8,9 @@ pub struct Dto<'a> {
     pub name: &'a str,
     pub fields: Vec<Field<'a>>,
     pub attributes: Attributes<'a>,
+
+    /// Namespace that holds e.g. nested [Dtos] and [Rpcs].
+    pub namespace: Option<Namespace<'a>>,
 }
 
 impl<'a> Dto<'a> {
