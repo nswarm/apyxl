@@ -1,9 +1,10 @@
-use chumsky::prelude::{any, just, one_of, skip_then_retry_until};
+use chumsky::prelude::*;
 use chumsky::{error, text, IterParser, Parser};
 
 use crate::model::{Attributes, Enum, EnumValue, EnumValueNumber};
 use crate::parser::rust;
-use crate::parser::rust::{Error, Visibility, INVALID_ENUM_NUMBER};
+use crate::parser::rust::visibility::Visibility;
+use crate::parser::rust::{visibility, Error, INVALID_ENUM_NUMBER};
 
 fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
     let number = just('=')
@@ -28,7 +29,7 @@ fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
         })
 }
 
-pub fn en<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a>> {
+pub fn parser<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a>> {
     let prefix = rust::keyword_ex("enum").then(text::whitespace().at_least(1));
     let name = text::ident();
     let values = en_value()
@@ -41,7 +42,7 @@ pub fn en<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a>> {
         .delimited_by(just('{').padded(), just('}').padded());
     rust::multi_comment()
         .then(rust::attributes().padded())
-        .then(rust::visibility())
+        .then(visibility::parser())
         .then_ignore(prefix)
         .then(name)
         .then(values)
@@ -123,12 +124,13 @@ mod tests {
         use chumsky::Parser;
 
         use crate::model::{attribute, Comment, EnumValue, EnumValueNumber};
+        use crate::parser::rust::en;
         use crate::parser::rust::tests::wrap_test_err;
-        use crate::parser::rust::{en, Visibility};
+        use crate::parser::rust::visibility::Visibility;
 
         #[test]
         fn public() -> Result<()> {
-            let (en, visibility) = en::en()
+            let (en, visibility) = en::parser()
                 .parse(
                     r#"
                     pub enum en {}
@@ -143,7 +145,7 @@ mod tests {
 
         #[test]
         fn private() -> Result<()> {
-            let (en, visibility) = en::en()
+            let (en, visibility) = en::parser()
                 .parse(
                     r#"
                     enum en {}
@@ -158,7 +160,7 @@ mod tests {
 
         #[test]
         fn without_numbers() -> Result<()> {
-            let (en, _) = en::en()
+            let (en, _) = en::parser()
                 .parse(
                     r#"
                     enum en {
@@ -179,7 +181,7 @@ mod tests {
 
         #[test]
         fn with_numbers() -> Result<()> {
-            let (en, _) = en::en()
+            let (en, _) = en::parser()
                 .parse(
                     r#"
                     enum en {
@@ -202,7 +204,7 @@ mod tests {
 
         #[test]
         fn with_mixed_numbers() -> Result<()> {
-            let (en, _) = en::en()
+            let (en, _) = en::parser()
                 .parse(
                     r#"
                     enum en {
@@ -225,7 +227,7 @@ mod tests {
 
         #[test]
         fn comment() -> Result<()> {
-            let (en, _) = en::en()
+            let (en, _) = en::parser()
                 .parse(
                     r#"
             // multi
@@ -245,7 +247,7 @@ mod tests {
 
         #[test]
         fn enum_value_comments() -> Result<()> {
-            let (en, _) = en::en()
+            let (en, _) = en::parser()
                 .parse(
                     r#"
                     enum en {
@@ -279,7 +281,7 @@ mod tests {
 
         #[test]
         fn attributes() -> Result<()> {
-            let (en, _) = en::en()
+            let (en, _) = en::parser()
                 .parse(
                     r#"
                     #[flag1, flag2]

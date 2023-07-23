@@ -1,4 +1,4 @@
-use chumsky::prelude::{any, choice, custom, just, recursive};
+use chumsky::prelude::*;
 use chumsky::{error, text, IterParser, Parser};
 
 use crate::model::{EntityId, Type};
@@ -15,7 +15,7 @@ macro_rules! ty_or_ref {
     };
 }
 
-pub fn ty(config: &Config) -> impl Parser<&str, Type, Error> {
+pub fn parser(config: &Config) -> impl Parser<&str, Type, Error> {
     recursive(|nested| {
         choice((
             just("bool").map(|_| Type::Bool),
@@ -271,7 +271,7 @@ mod tests {
         test!(user, "user_type", Type::User("user".to_string()));
 
         fn run_test(data: &'static str, expected: Type) -> Result<()> {
-            let ty = ty::ty(&TY_TEST_CONFIG)
+            let ty = ty::parser(&TY_TEST_CONFIG)
                 .parse(data)
                 .into_result()
                 .map_err(wrap_test_err)?;

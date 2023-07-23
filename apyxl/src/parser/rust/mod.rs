@@ -5,6 +5,7 @@ use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::prelude::*;
 use itertools::Itertools;
 use log::debug;
+use visibility::Visibility;
 
 use crate::model::{
     attribute, Api, Attributes, Chunk, Comment, Dto, EnumValueNumber, Field, Namespace,
@@ -15,7 +16,9 @@ use crate::{model, Input};
 use crate::{rust_util, Parser as ApyxlParser};
 
 mod en;
+mod expr_block;
 mod ty;
+mod visibility;
 
 type Error<'a> = extra::Err<Rich<'a, char>>;
 
@@ -69,30 +72,6 @@ impl ApyxlParser for Rust {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Visibility {
-    Public,
-    Private,
-}
-
-impl Visibility {
-    fn is_visible(&self, config: &Config) -> bool {
-        *self == Visibility::Public || (*self == Visibility::Private && config.enable_parse_private)
-    }
-
-    fn filter_child<'a>(
-        &self,
-        child: NamespaceChild<'a>,
-        config: &Config,
-    ) -> Option<NamespaceChild<'a>> {
-        if self.is_visible(config) {
-            Some(child)
-        } else {
-            None
-        }
-    }
-}
-
 fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
     keyword_ex("pub")
         .then(text::whitespace().at_least(1))
@@ -107,7 +86,7 @@ fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
 fn field(config: &Config) -> impl Parser<&str, Field, Error> {
     let field = text::ident()
         .then_ignore(just(':').padded())
-        .then(ty::ty(config));
+        .then(ty::parser(config));
     multi_comment()
         .then(attributes().padded())
         .then(field)
@@ -161,23 +140,13 @@ fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Error<
         .map(|opt| opt.unwrap_or(vec![]))
 }
 
-fn visibility<'a>() -> impl Parser<'a, &'a str, Visibility, Error<'a>> {
-    keyword_ex("pub")
-        .then(text::whitespace().at_least(1))
-        .or_not()
-        .map(|o| match o {
-            None => Visibility::Private,
-            Some(_) => Visibility::Public,
-        })
-}
-
 fn dto(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
     let prefix = keyword_ex("struct").then(text::whitespace().at_least(1));
     let name = text::ident();
     multi_comment()
         .padded()
         .then(attributes().padded())
-        .then(visibility())
+        .then(visibility::parser())
         .then_ignore(prefix)
         .then(name)
         .then(fields(config))
@@ -195,13 +164,6 @@ fn dto(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
                 visibility,
             )
         })
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum ExprBlock<'a> {
-    Comment(Comment<'a>),
-    Body(&'a str),
-    Nested(Vec<ExprBlock<'a>>),
 }
 
 /// Parses a block comment starting with `/*` and ending with `*/`. The entire contents will be
@@ -268,21 +230,6 @@ fn multi_comment<'a>() -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> 
     comment().padded().repeated().collect::<Vec<_>>()
 }
 
-fn expr_block<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
-    let body = none_of("{}").repeated().at_least(1).slice().map(&str::trim);
-    recursive(|nested| {
-        choice((
-            comment().boxed().padded().map(ExprBlock::Comment),
-            nested.map(ExprBlock::Nested),
-            body.map(ExprBlock::Body),
-        ))
-        .repeated()
-        .collect::<Vec<_>>()
-        .delimited_by(just('{').padded(), just('}').padded())
-        .recover_with(via_parser(nested_delimiters('{', '}', [], |_| vec![])))
-    })
-}
-
 fn rpc(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
     let prefix = keyword_ex("fn").then(text::whitespace().at_least(1));
     let name = text::ident();
@@ -294,15 +241,15 @@ fn rpc(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('(').padded(), just(')').padded());
-    let return_type = just("->").ignore_then(ty::ty(config).padded());
+    let return_type = just("->").ignore_then(ty::parser(config).padded());
     multi_comment()
         .then(attributes().padded())
-        .then(visibility())
+        .then(visibility::parser())
         .then_ignore(prefix)
         .then(name)
         .then(params)
         .then(return_type.or_not())
-        .then_ignore(expr_block().padded())
+        .then_ignore(expr_block::parser().padded())
         .map(
             |(((((comments, user), visibility), name), params), return_type)| {
                 (
@@ -331,7 +278,7 @@ fn namespace_children<'a>(
     choice((
         dto(config).map(|(c, v)| (NamespaceChild::Dto(c), v)),
         rpc(config).map(|(c, v)| (NamespaceChild::Rpc(c), v)),
-        en::en().map(|(c, v)| (NamespaceChild::Enum(c), v)),
+        en::parser().map(|(c, v)| (NamespaceChild::Enum(c), v)),
         namespace.map(|(c, v)| (NamespaceChild::Namespace(c), v)),
     ))
     .map(|(child, visibility)| visibility.filter_child(child, config))
@@ -351,7 +298,7 @@ fn namespace(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Erro
             .delimited_by(just('{').padded(), just('}').padded());
         multi_comment()
             .then(attributes().padded())
-            .then(visibility())
+            .then(visibility::parser())
             .then_ignore(prefix)
             .then(name)
             .then(just(';').padded().map(|_| None).or(body.map(Some)))
@@ -590,8 +537,9 @@ mod tests {
         use chumsky::Parser;
 
         use crate::model::{attribute, Comment, NamespaceChild};
+        use crate::parser::rust::namespace;
         use crate::parser::rust::tests::wrap_test_err;
-        use crate::parser::rust::{namespace, Visibility};
+        use crate::parser::rust::visibility::Visibility;
         use crate::test_util::executor::TEST_CONFIG;
 
         #[test]
@@ -773,8 +721,9 @@ mod tests {
         use chumsky::Parser;
 
         use crate::model::{attribute, Comment};
+        use crate::parser::rust::dto;
         use crate::parser::rust::tests::wrap_test_err;
-        use crate::parser::rust::{dto, Visibility};
+        use crate::parser::rust::visibility::Visibility;
         use crate::test_util::executor::TEST_CONFIG;
 
         #[test]
@@ -920,8 +869,9 @@ mod tests {
         use chumsky::Parser;
 
         use crate::model::{attribute, Comment};
+        use crate::parser::rust::rpc;
         use crate::parser::rust::tests::wrap_test_err;
-        use crate::parser::rust::{rpc, Visibility};
+        use crate::parser::rust::visibility::Visibility;
         use crate::test_util::executor::TEST_CONFIG;
 
         #[test]
@@ -1298,106 +1248,6 @@ mod tests {
                 .into_result()
                 .map_err(wrap_test_err)?;
             Ok(())
-        }
-    }
-
-    mod expr_block {
-        use chumsky::{text, Parser};
-
-        use crate::model::Comment;
-        use crate::parser::rust::{expr_block, ExprBlock};
-
-        #[test]
-        fn complex() {
-            let result = expr_block()
-                .parse("{left{inner1_left{inner1}inner1_right}middle{inner2}{inner3}right}")
-                .into_result();
-            assert_eq!(
-                result.unwrap(),
-                vec![
-                    ExprBlock::Body("left"),
-                    ExprBlock::Nested(vec![
-                        ExprBlock::Body("inner1_left"),
-                        ExprBlock::Nested(vec![ExprBlock::Body("inner1"),]),
-                        ExprBlock::Body("inner1_right"),
-                    ]),
-                    ExprBlock::Body("middle"),
-                    ExprBlock::Nested(vec![ExprBlock::Body("inner2"),]),
-                    ExprBlock::Nested(vec![ExprBlock::Body("inner3"),]),
-                    ExprBlock::Body("right"),
-                ]
-            );
-        }
-
-        #[test]
-        fn empty() {
-            let result = expr_block().parse("{}").into_result();
-            assert_eq!(result.unwrap(), vec![]);
-        }
-
-        #[test]
-        fn arbitrary_content() {
-            let result = expr_block()
-                .parse(
-                    r#"{
-                1234 !@#$%^&*()_+-= asdf
-            }"#,
-                )
-                .into_result();
-            assert_eq!(
-                result.unwrap(),
-                vec![ExprBlock::Body("1234 !@#$%^&*()_+-= asdf")]
-            );
-        }
-
-        #[test]
-        fn line_comment() {
-            let result = expr_block()
-                .parse(
-                    r#"
-                    { // don't break! }
-                    }"#,
-                )
-                .into_result();
-            assert_eq!(
-                result.unwrap(),
-                vec![ExprBlock::Comment(Comment::unowned(&["don't break! }"]))],
-            );
-        }
-
-        #[test]
-        fn block_comment() {
-            let result = expr_block()
-                .parse(
-                    r#"{
-                    { /* don't break! {{{ */ }
-                    }"#,
-                )
-                .into_result();
-            assert_eq!(
-                result.unwrap(),
-                vec![ExprBlock::Nested(vec![ExprBlock::Comment(
-                    Comment::unowned(&["don't break! {{{"])
-                )])]
-            );
-        }
-
-        #[test]
-        fn continues_parsing_after() {
-            let result = expr_block()
-                .padded()
-                .ignore_then(text::ident().padded())
-                .parse(
-                    r#"
-                {
-                  ignored stuff
-                }
-                not_ignored
-                "#,
-                )
-                .into_result();
-            assert!(result.is_ok(), "parse should not fail");
-            assert_eq!(result.unwrap(), "not_ignored");
         }
     }
 
