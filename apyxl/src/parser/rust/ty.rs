@@ -69,7 +69,7 @@ fn vec<'a>(
         .ignore_then(ty)
         .then_ignore(text::whitespace())
         .then_ignore(just('>'))
-        .map(|inner| Type::new_array(inner))
+        .map(Type::new_array)
 }
 
 fn map<'a>(
@@ -123,11 +123,16 @@ fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
 }
 
 fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
-    type_name()
+    let ref_type = choice((
+        just("&mut").then(text::whitespace().at_least(1)).ignored(),
+        just("&").ignored(),
+    ));
+    let entity_id = type_name()
         .separated_by(just("::"))
         .at_least(1)
         .collect::<Vec<_>>()
-        .map(|components| EntityId::new_unqualified_vec(components.into_iter()))
+        .map(|components| EntityId::new_unqualified_vec(components.into_iter()));
+    ref_type.or_not().ignore_then(entity_id)
 }
 
 #[cfg(test)]
@@ -341,7 +346,17 @@ mod tests {
                 .parse("&Type")
                 .into_result()
                 .map_err(wrap_test_err)?;
-            assert_eq!(id.component_names().collect_vec(), vec!["&Type"]);
+            assert_eq!(id.component_names().collect_vec(), vec!["Type"]);
+            Ok(())
+        }
+
+        #[test]
+        fn mut_reference() -> Result<()> {
+            let id = entity_id()
+                .parse("&mut Type")
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(id.component_names().collect_vec(), vec!["Type"]);
             Ok(())
         }
     }

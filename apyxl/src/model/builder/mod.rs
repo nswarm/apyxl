@@ -153,7 +153,7 @@ impl<'a> Builder<'a> {
             return Err(errs.into_iter().map(Result::unwrap_err).collect_vec());
         }
 
-        for mutation in oks.into_iter().map(Result::unwrap).filter_map(|m| m) {
+        for mutation in oks.into_iter().filter_map(Result::unwrap) {
             mutation.execute(&mut self.api).unwrap();
         }
 
