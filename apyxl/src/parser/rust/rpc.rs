@@ -72,6 +72,22 @@ mod tests {
     }
 
     #[test]
+    fn ignore_self_param() -> Result<()> {
+        let (rpc, _) = rpc::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            fn rpc_name(self) {}
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(rpc.name, "rpc_name");
+        assert!(rpc.params.is_empty());
+        assert!(rpc.return_type.is_none());
+        Ok(())
+    }
+
+    #[test]
     fn public() -> Result<()> {
         let (rpc, visibility) = rpc::parser(&TEST_CONFIG)
             .parse(
