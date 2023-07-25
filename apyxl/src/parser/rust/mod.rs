@@ -85,7 +85,12 @@ fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
         .or_not()
         .then(util::keyword_ex("use"))
         .then(text::whitespace().at_least(1))
-        .then(text::ident().separated_by(just("::")).at_least(1))
+        .then(
+            text::ident()
+                .or(just("*"))
+                .separated_by(just("::"))
+                .at_least(1),
+        )
         .then(just(';'))
         .ignored()
 }
@@ -362,6 +367,39 @@ mod tests {
             assert!(namespace.is_some());
             assert!(namespace.unwrap().dto("dto").is_some());
             Ok(())
+        }
+    }
+
+    mod use_decl {
+        use crate::model::Builder;
+        use crate::test_util::executor::TEST_CONFIG;
+        use crate::{input, parser, Parser};
+        use anyhow::Result;
+
+        #[test]
+        fn private() -> Result<()> {
+            run_test("use asd;")
+        }
+
+        #[test]
+        fn public() -> Result<()> {
+            run_test("pub use asd;")
+        }
+
+        #[test]
+        fn namespaced() -> Result<()> {
+            run_test("use a::b::c::d;")
+        }
+
+        #[test]
+        fn wildcard() -> Result<()> {
+            run_test("use a::b::c::*;")
+        }
+
+        fn run_test(input: &str) -> Result<()> {
+            let mut input = input::Buffer::new(input);
+            let mut builder = Builder::default();
+            parser::Rust::default().parse(&TEST_CONFIG, &mut input, &mut builder)
         }
     }
 }
