@@ -32,7 +32,12 @@ pub struct Display {
     motd: Option<String>,
 }
 
-// pub type Id = u128; todo aliases?
+// feature: these are ignored
+pub type PubTypeAlias = u128;
+type TypeAlias = u128;
+pub const PUB_CONST_NAME: &str = "name";
+const CONST_NAME: &str = "name";
+
 #[derive(Default)]
 pub struct Id {
     value: u128,

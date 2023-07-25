@@ -54,21 +54,35 @@ pub fn children<'a>(
     end_delimiter: impl Parser<'a, &'a str, (), Error<'a>>,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
-        dto::parser(config).map(|(c, v)| (NamespaceChild::Dto(c), v)),
-        rpc::parser(config).map(|(c, v)| (NamespaceChild::Rpc(c), v)),
-        en::parser().map(|(c, v)| (NamespaceChild::Enum(c), v)),
-        namespace.map(|(c, v)| (NamespaceChild::Namespace(c), v)),
-        impl_block.map(|c| (NamespaceChild::Namespace(c), Visibility::Public)),
+        dto::parser(config).map(|(c, v)| Some((NamespaceChild::Dto(c), v))),
+        rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
+        en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
+        namespace.map(|(c, v)| Some((NamespaceChild::Namespace(c), v))),
+        impl_block.map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
+        const_or_alias().map(|_| None),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
         end_delimiter.ignored(),
     ))
-    .map(|(child, visibility)| visibility.filter_child(child, config))
+    .map(|opt| match opt {
+        Some((child, visibility)) => visibility.filter_child(child, config),
+        None => None,
+    })
     .repeated()
     .collect::<Vec<_>>()
     .map(|v| v.into_iter().flatten().collect_vec())
     .then_ignore(comment::multi_comment())
+}
+
+pub fn const_or_alias<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
+    comment::multi_comment()
+        .then(visibility::parser())
+        .then(just("const").or(just("type")))
+        .then(any().and_is(none_of(";")).repeated().slice())
+        .then(just(';'))
+        .padded()
+        .ignored()
 }
 
 // Parses to a 'virtual' namespace that will be merged into the DTO with the same name.
@@ -333,5 +347,39 @@ mod tests {
             .map_err(wrap_test_err)?;
         assert!(namespace.is_virtual);
         Ok(())
+    }
+
+    mod const_or_alias {
+        use crate::parser::rust::namespace;
+        use crate::parser::test_util::wrap_test_err;
+        use anyhow::Result;
+        use chumsky::Parser;
+
+        #[test]
+        fn public_const() -> Result<()> {
+            run_test("pub const ASDF: &[&str] = &[\"zz\", \"xx\"];")
+        }
+
+        #[test]
+        fn private_const() -> Result<()> {
+            run_test("const ASDF: &[&str] = &[\"zz\", \"xx\"];")
+        }
+
+        #[test]
+        fn public_alias() -> Result<()> {
+            run_test("pub type zzz = u128;")
+        }
+
+        #[test]
+        fn private_alias() -> Result<()> {
+            run_test("type zzz = u128;")
+        }
+
+        fn run_test(input: &'static str) -> Result<()> {
+            namespace::const_or_alias()
+                .parse(input)
+                .into_result()
+                .map_err(wrap_test_err)
+        }
     }
 }

@@ -144,6 +144,10 @@ mod tests {
         pub use asdf;
         // rpc comment
         pub fn rpc() {}
+        // zzz
+        const ignored: &[&str] = &["zz", "xx"];
+        type asdf;
+        pub type fdsa;
         fn private_rpc() {}
         pub enum en {}
         enum private_en {}
@@ -151,6 +155,7 @@ mod tests {
         struct private_dto {}
         pub mod namespace {}
         mod private_namespace {}
+        pub const asjkdhflakjshdg ignored var;
         // end comment ignored
         "#,
         );
