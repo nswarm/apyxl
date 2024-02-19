@@ -89,9 +89,9 @@ impl ParserName {
 }
 
 impl GeneratorName {
-    pub fn create_impl(&self) -> impl apyxl::Generator {
+    pub fn create_impl(&self) -> Box<dyn apyxl::Generator> {
         match self {
-            GeneratorName::Rust => apyxl::generator::Rust::default(),
+            GeneratorName::Rust => Box::new(apyxl::generator::Rust::default()),
         }
     }
 }
