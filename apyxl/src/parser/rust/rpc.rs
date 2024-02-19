@@ -4,7 +4,6 @@ use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, expr_block, fields, ty, visibility};
 use crate::parser::{comment, util, Config};
 use chumsky::prelude::*;
-use chumsky::{text, Parser};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
     let prefix = util::keyword_ex("fn").then(text::whitespace().at_least(1));

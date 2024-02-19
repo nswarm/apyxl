@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use chumsky::prelude::*;
-use chumsky::{text, IterParser, Parser};
 use itertools::Itertools;
 
 use crate::model::{Attributes, Namespace, NamespaceChild};

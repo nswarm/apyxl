@@ -44,7 +44,7 @@ impl TestExecutor {
             .expect("failed to parse input");
         builder.build().unwrap_or_else(|errs| {
             for err in errs {
-                println!("Error: {}", err)
+                println!("Error: {:?}", err)
             }
             panic!("^ Validation errors building api ^");
         })

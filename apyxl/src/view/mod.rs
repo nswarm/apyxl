@@ -114,6 +114,7 @@ impl Transformer for Model<'_, '_> {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) trait Transformer: Sized {
     fn xforms(&mut self) -> &mut Transforms;
 

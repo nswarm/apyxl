@@ -2,7 +2,6 @@ use crate::model::Comment;
 use crate::parser::comment;
 use crate::parser::error::Error;
 use chumsky::prelude::*;
-use chumsky::Parser;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExprBlock<'a> {

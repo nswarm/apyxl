@@ -1,7 +1,7 @@
+use chumsky::prelude::*;
+
 use crate::model::attribute;
 use crate::parser::error::Error;
-use chumsky::prelude::*;
-use chumsky::{text, IterParser, Parser};
 
 pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Error<'a>> {
     let name = text::ident();

@@ -1,5 +1,4 @@
 use chumsky::prelude::*;
-use chumsky::{text, Parser};
 
 use crate::model::{Attributes, Dto};
 use crate::parser::error::Error;

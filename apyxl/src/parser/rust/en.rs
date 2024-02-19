@@ -1,5 +1,4 @@
 use chumsky::prelude::*;
-use chumsky::{error, text, IterParser, Parser};
 
 use crate::model::{Attributes, Enum, EnumValue, EnumValueNumber};
 use crate::parser::error::Error;
@@ -44,7 +43,7 @@ fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
         .padded()
         .ignore_then(text::int(10).try_map(|s, span| {
             str::parse::<EnumValueNumber>(s)
-                .map_err(|_| error::Error::<&'a str>::expected_found(None, None, span))
+                .map_err(|_| chumsky::error::Error::<&'a str>::expected_found(None, None, span))
         }));
     comment::multi_comment()
         .then(attributes::attributes().padded())

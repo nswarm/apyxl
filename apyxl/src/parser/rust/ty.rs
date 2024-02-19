@@ -1,5 +1,4 @@
 use chumsky::prelude::*;
-use chumsky::{error, text, IterParser, Parser};
 
 use crate::model::{EntityId, Type};
 use crate::parser::error::Error;
@@ -114,7 +113,7 @@ fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
             }
         }
         // Just need _any error_.
-        Err(error::Error::<&str>::expected_found(
+        Err(chumsky::error::Error::<&str>::expected_found(
             None,
             None,
             input.span_since(input.offset()),
