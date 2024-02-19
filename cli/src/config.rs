@@ -81,6 +81,7 @@ fn parse_output(arg: &str) -> Result<Output> {
 }
 
 impl ParserName {
+    // todo this won't work, must return the same concrete type...
     pub fn create_impl(&self) -> impl apyxl::Parser {
         match self {
             ParserName::Rust => apyxl::parser::Rust::default(),
