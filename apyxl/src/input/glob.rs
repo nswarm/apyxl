@@ -39,6 +39,9 @@ impl Input for Glob {
 }
 
 fn walk_glob(root: &Path, glob: &str) -> Result<Vec<PathBuf>> {
+    if glob.is_empty() {
+        return Ok(vec![root.to_path_buf()]);
+    }
     let mut paths = Vec::new();
     let glob_path = root.join(glob);
     let glob = globset::Glob::new(
@@ -79,35 +82,46 @@ fn split_glob(glob: &str) -> Option<(PathBuf, String)> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::fs::File;
-    use std::path::PathBuf;
+    mod walk_glob {
+        use std::fs;
+        use std::fs::File;
+        use std::path::PathBuf;
 
-    use anyhow::Result;
-    use tempfile::tempdir;
+        use anyhow::Result;
+        use tempfile::tempdir;
 
-    use crate::input::glob::walk_glob;
+        use crate::input::glob::walk_glob;
 
-    #[test]
-    fn test_walk_glob() -> Result<()> {
-        let root = tempdir()?;
-        fs::create_dir_all(root.path().join("a/b"))?;
-        fs::create_dir_all(root.path().join("a/c"))?;
-        fs::create_dir_all(root.path().join("d/e"))?;
-        let path0 = PathBuf::from("a/b/file0.rs");
-        let path1 = PathBuf::from("a/b/file1.rs");
-        let path2 = PathBuf::from("a/c/file2.rs");
-        let path3 = PathBuf::from("d/e/file3.rs");
-        File::create(root.path().join(&path0))?;
-        File::create(root.path().join(&path1))?;
-        File::create(root.path().join(&path2))?;
-        File::create(root.path().join(&path3))?;
-        let paths = walk_glob(root.path(), "a/**/*.rs")?;
-        assert_eq!(paths.len(), 3);
-        assert!(paths.contains(&path0));
-        assert!(paths.contains(&path1));
-        assert!(paths.contains(&path2));
-        Ok(())
+        #[test]
+        fn with_glob() -> Result<()> {
+            let root = tempdir()?;
+            fs::create_dir_all(root.path().join("a/b"))?;
+            fs::create_dir_all(root.path().join("a/c"))?;
+            fs::create_dir_all(root.path().join("d/e"))?;
+            let path0 = PathBuf::from("a/b/file0.rs");
+            let path1 = PathBuf::from("a/b/file1.rs");
+            let path2 = PathBuf::from("a/c/file2.rs");
+            let path3 = PathBuf::from("d/e/file3.rs");
+            File::create(root.path().join(&path0))?;
+            File::create(root.path().join(&path1))?;
+            File::create(root.path().join(&path2))?;
+            File::create(root.path().join(&path3))?;
+            let paths = walk_glob(root.path(), "a/**/*.rs")?;
+            assert_eq!(paths.len(), 3);
+            assert!(paths.contains(&path0));
+            assert!(paths.contains(&path1));
+            assert!(paths.contains(&path2));
+            Ok(())
+        }
+
+        #[test]
+        fn path_only() -> Result<()> {
+            assert_eq!(
+                walk_glob(&PathBuf::from("a/b/c.rs"), "")?,
+                vec![PathBuf::from("a/b/c.rs")]
+            );
+            Ok(())
+        }
     }
 
     mod split_glob {
