@@ -17,8 +17,12 @@ pub struct Glob {
 impl Glob {
     pub fn new(glob: &str) -> Result<Self> {
         let (root, glob) = match split_glob(glob) {
-            Some((prefix, glob)) if prefix.is_relative() => {
-                (env::current_dir()?.join(prefix), glob)
+            Some((prefix, glob)) => {
+                if prefix.is_relative() {
+                    (env::current_dir()?.join(prefix), glob)
+                } else {
+                    (prefix, glob)
+                }
             }
             _ => (env::current_dir()?, glob.to_string()),
         };
@@ -26,9 +30,18 @@ impl Glob {
     }
 
     pub fn new_with_root<P: AsRef<Path>>(root_path: P, glob: &str) -> Result<Self> {
-        Ok(Self {
-            file_set: input::FileSet::new(&root_path, &walk_glob(root_path.as_ref(), glob)?)?,
-        })
+        let root_path = root_path.as_ref();
+        let file_set = if !glob.is_empty() {
+            input::FileSet::new(root_path, &walk_glob(root_path, glob)?)?
+        } else if root_path.is_dir() {
+            input::FileSet::new(root_path, &walk_glob(root_path, "**/*")?)?
+        } else {
+            input::FileSet::new(
+                root_path.parent().unwrap(),
+                &[root_path.file_name().unwrap()],
+            )?
+        };
+        Ok(Self { file_set })
     }
 }
 
@@ -39,9 +52,6 @@ impl Input for Glob {
 }
 
 fn walk_glob(root: &Path, glob: &str) -> Result<Vec<PathBuf>> {
-    if glob.is_empty() {
-        return Ok(vec![root.to_path_buf()]);
-    }
     let mut paths = Vec::new();
     let glob_path = root.join(glob);
     let glob = globset::Glob::new(
@@ -82,45 +92,76 @@ fn split_glob(glob: &str) -> Option<(PathBuf, String)> {
 
 #[cfg(test)]
 mod tests {
-    mod walk_glob {
+    mod new_with_root {
+        use crate::input::Glob;
+        use crate::Input;
+        use anyhow::Result;
+        use itertools::Itertools;
         use std::fs;
         use std::fs::File;
         use std::path::PathBuf;
-
-        use anyhow::Result;
         use tempfile::tempdir;
 
-        use crate::input::glob::walk_glob;
-
         #[test]
-        fn with_glob() -> Result<()> {
+        fn glob() -> Result<()> {
             let root = tempdir()?;
             fs::create_dir_all(root.path().join("a/b"))?;
             fs::create_dir_all(root.path().join("a/c"))?;
             fs::create_dir_all(root.path().join("d/e"))?;
-            let path0 = PathBuf::from("a/b/file0.rs");
-            let path1 = PathBuf::from("a/b/file1.rs");
-            let path2 = PathBuf::from("a/c/file2.rs");
-            let path3 = PathBuf::from("d/e/file3.rs");
-            File::create(root.path().join(&path0))?;
-            File::create(root.path().join(&path1))?;
-            File::create(root.path().join(&path2))?;
-            File::create(root.path().join(&path3))?;
-            let paths = walk_glob(root.path(), "a/**/*.rs")?;
-            assert_eq!(paths.len(), 3);
-            assert!(paths.contains(&path0));
-            assert!(paths.contains(&path1));
-            assert!(paths.contains(&path2));
+            let paths = [
+                PathBuf::from("a/b/file0.rs"),
+                PathBuf::from("a/b/file1.rs"),
+                PathBuf::from("a/c/file2.rs"),
+                PathBuf::from("d/e/file3.rs"),
+            ];
+            File::create(root.path().join(&paths[0]))?;
+            File::create(root.path().join(&paths[1]))?;
+            File::create(root.path().join(&paths[2]))?;
+            File::create(root.path().join(&paths[3]))?;
+
+            let glob = Glob::new_with_root(root.path().join("a"), "**/*.rs")?;
+            assert_files(glob, &["b/file0.rs", "b/file1.rs", "c/file2.rs"]);
             Ok(())
         }
 
         #[test]
-        fn path_only() -> Result<()> {
-            assert_eq!(
-                walk_glob(&PathBuf::from("a/b/c.rs"), "")?,
-                vec![PathBuf::from("a/b/c.rs")]
-            );
+        fn directory() -> Result<()> {
+            let root = tempdir()?;
+            fs::create_dir_all(root.path().join("a/b"))?;
+            let paths = [PathBuf::from("a/b/file0.rs"), PathBuf::from("a/b/file1.rs")];
+            File::create(root.path().join(&paths[0]))?;
+            File::create(root.path().join(&paths[1]))?;
+
+            let glob = Glob::new_with_root(root.path().join("a/b"), "")?;
+            assert_files(glob, &["file0.rs", "file1.rs"]);
             Ok(())
+        }
+
+        #[test]
+        fn single_file() -> Result<()> {
+            let root = tempdir()?;
+            fs::create_dir_all(root.path().join("a/b"))?;
+            let paths = [PathBuf::from("a/b/file0.rs")];
+            File::create(root.path().join(&paths[0]))?;
+
+            let glob = Glob::new_with_root(root.path().join("a/b/file0.rs"), "")?;
+            assert_files(glob, &["file0.rs"]);
+            Ok(())
+        }
+
+        fn assert_files(glob: Glob, expected: &[&str]) {
+            let file_names = glob
+                .chunks()
+                .iter()
+                .map(|(c, _)| {
+                    c.relative_file_path
+                        .as_ref()
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                })
+                .collect_vec();
+            assert_eq!(file_names, expected);
         }
     }
 
