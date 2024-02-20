@@ -1,9 +1,10 @@
 use chumsky::prelude::*;
+use itertools::Itertools;
 
-use crate::model::{Attributes, Dto};
+use crate::model::{Attributes, Dto, Field};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, fields, visibility};
+use crate::parser::rust::{attributes, ty, visibility};
 use crate::parser::{comment, util, Config};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
@@ -27,7 +28,10 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
             (
                 Dto {
                     name,
-                    fields,
+                    fields: fields
+                        .into_iter()
+                        .filter_map(|(field, visibility)| visibility.filter(field, config))
+                        .collect_vec(),
                     attributes: Attributes {
                         comments,
                         user,
@@ -40,6 +44,37 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
         })
 }
 
+fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
+    let field = text::ident()
+        .then_ignore(just(':').padded())
+        .then(ty::parser(config));
+    comment::multi_comment()
+        .then(attributes::attributes().padded())
+        .then(visibility::parser())
+        .then(field)
+        .map(|(((comments, user), visibility), (name, ty))| {
+            (
+                Field {
+                    name,
+                    ty,
+                    attributes: Attributes {
+                        comments,
+                        user,
+                        ..Default::default()
+                    },
+                },
+                visibility,
+            )
+        })
+}
+
+fn fields(config: &Config) -> impl Parser<&str, Vec<(Field, Visibility)>, Error> {
+    field(config)
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<Vec<_>>()
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -49,7 +84,7 @@ mod tests {
     use crate::parser::rust::dto;
     use crate::parser::rust::visibility::Visibility;
     use crate::parser::test_util::wrap_test_err;
-    use crate::test_util::executor::TEST_CONFIG;
+    use crate::test_util::executor::{TEST_CONFIG, TEST_PUB_ONLY_CONFIG};
 
     #[test]
     fn private() -> Result<()> {
@@ -104,16 +139,38 @@ mod tests {
                 r#"
             struct StructName {
                 field0: i32,
-                field1: f32,
+                pub field1: f32,
+                field2: f32,
             }
             "#,
             )
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(dto.name, "StructName");
-        assert_eq!(dto.fields.len(), 2);
+        assert_eq!(dto.fields.len(), 3);
         assert_eq!(dto.fields[0].name, "field0");
         assert_eq!(dto.fields[1].name, "field1");
+        assert_eq!(dto.fields[2].name, "field2");
+        Ok(())
+    }
+
+    #[test]
+    fn field_visibility() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_PUB_ONLY_CONFIG)
+            .parse(
+                r#"
+            struct StructName {
+                field0: i32,
+                pub field1: i32,
+                field2: i32,
+            }
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.fields.len(), 1);
+        assert_eq!(dto.fields[0].name, "field1");
         Ok(())
     }
 

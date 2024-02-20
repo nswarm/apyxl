@@ -65,7 +65,7 @@ pub fn children<'a>(
         end_delimiter.ignored(),
     ))
     .map(|opt| match opt {
-        Some((child, visibility)) => visibility.filter_child(child, config),
+        Some((child, visibility)) => visibility.filter(child, config),
         None => None,
     })
     .repeated()

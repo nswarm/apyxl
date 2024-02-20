@@ -1,14 +1,14 @@
-use crate::model::{Attributes, Rpc};
+use crate::model::{Attributes, Field, Rpc};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, expr_block, fields, ty, visibility};
+use crate::parser::rust::{attributes, expr_block, ty, visibility};
 use crate::parser::{comment, util, Config};
 use chumsky::prelude::*;
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
     let prefix = util::keyword_ex("fn").then(text::whitespace().at_least(1));
     let name = text::ident();
-    let params = fields(config).delimited_by(
+    let params = params(config).delimited_by(
         just('(').padded(),
         just(')').padded().recover_with(skip_then_retry_until(
             none_of(")").ignored(),
@@ -41,6 +41,35 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
                 )
             },
         )
+}
+
+fn param(config: &Config) -> impl Parser<&str, Field, Error> {
+    let field = text::ident()
+        .then_ignore(just(':').padded())
+        .then(ty::parser(config));
+    comment::multi_comment()
+        .then(attributes::attributes().padded())
+        .then(field)
+        .map(|((comments, user), (name, ty))| Field {
+            name,
+            ty,
+            attributes: Attributes {
+                comments,
+                user,
+                ..Default::default()
+            },
+        })
+}
+
+fn params(config: &Config) -> impl Parser<&str, Vec<Field>, Error> {
+    let ignored_param =
+        choice((just("self"), just("&self"), just("&mut self"))).then(just(',').padded().or_not());
+    ignored_param.or_not().ignore_then(
+        param(config)
+            .separated_by(just(',').padded())
+            .allow_trailing()
+            .collect::<Vec<_>>(),
+    )
 }
 
 #[cfg(test)]
@@ -321,5 +350,68 @@ mod tests {
             ]
         );
         Ok(())
+    }
+
+    mod params {
+        use anyhow::Result;
+        use chumsky::Parser;
+        use itertools::Itertools;
+
+        use crate::parser::rust::rpc::params;
+        use crate::parser::test_util::wrap_test_err;
+        use crate::test_util::executor::TEST_CONFIG;
+
+        #[test]
+        fn ignores_self_single() -> Result<()> {
+            test_ignored_empty("self")
+        }
+
+        #[test]
+        fn ignores_ref_self_single() -> Result<()> {
+            test_ignored_empty("&self")
+        }
+
+        #[test]
+        fn ignores_mut_self_single() -> Result<()> {
+            test_ignored_empty("&mut self")
+        }
+
+        #[test]
+        fn ignores_self() -> Result<()> {
+            test_ignored("self, name: Type")
+        }
+
+        #[test]
+        fn ignores_ref_self() -> Result<()> {
+            test_ignored("&self, name: Type")
+        }
+
+        #[test]
+        fn ignores_mut_self() -> Result<()> {
+            test_ignored("&mut self, name: Type")
+        }
+
+        fn test_ignored_empty(input: &'static str) -> Result<()> {
+            let output = params(&TEST_CONFIG)
+                .parse(input)
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(output.len(), 0);
+            Ok(())
+        }
+
+        fn test_ignored(input: &'static str) -> Result<()> {
+            let output = params(&TEST_CONFIG)
+                .parse(input)
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(output.len(), 1);
+            assert_eq!(output[0].name, "name");
+            assert_eq!(
+                output[0].ty.api().unwrap().component_names().collect_vec()[0],
+                "Type"
+            );
+            Ok(())
+        }
     }
 }

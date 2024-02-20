@@ -14,6 +14,11 @@ lazy_static! {
         // Parse private so tests don't have to specify `pub` on _everything_.
         enable_parse_private: true,
     };
+
+    pub static ref TEST_PUB_ONLY_CONFIG: parser::Config = parser::Config {
+        user_types: vec![],
+        enable_parse_private: false,
+    };
 }
 
 impl TestExecutor {

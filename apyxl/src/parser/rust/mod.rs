@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use log::debug;
 
-use crate::model::{Api, Attributes, Field, UNDEFINED_NAMESPACE};
+use crate::model::{Api, UNDEFINED_NAMESPACE};
 use crate::parser::error::Error;
 use crate::parser::rust::namespace::impl_block;
 use crate::parser::{comment, error, util, Config};
@@ -93,35 +93,6 @@ fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
         )
         .then(just(';'))
         .ignored()
-}
-
-fn field(config: &Config) -> impl Parser<&str, Field, Error> {
-    let field = text::ident()
-        .then_ignore(just(':').padded())
-        .then(ty::parser(config));
-    comment::multi_comment()
-        .then(attributes::attributes().padded())
-        .then(field)
-        .map(|((comments, user), (name, ty))| Field {
-            name,
-            ty,
-            attributes: Attributes {
-                comments,
-                user,
-                ..Default::default()
-            },
-        })
-}
-
-fn fields(config: &Config) -> impl Parser<&str, Vec<Field>, Error> {
-    let ignored_field =
-        choice((just("self"), just("&self"), just("&mut self"))).then(just(',').padded().or_not());
-    ignored_field.or_not().ignore_then(
-        field(config)
-            .separated_by(just(',').padded())
-            .allow_trailing()
-            .collect::<Vec<_>>(),
-    )
 }
 
 #[cfg(test)]
@@ -216,98 +187,6 @@ mod tests {
         assert!(model.api().en("ignored_en").is_none());
         assert!(model.api().namespace("ignored_namespace").is_none());
         Ok(())
-    }
-
-    mod field {
-        use anyhow::Result;
-        use chumsky::Parser;
-        use itertools::Itertools;
-
-        use crate::parser::rust::{field, fields};
-        use crate::parser::test_util::wrap_test_err;
-        use crate::test_util::executor::TEST_CONFIG;
-
-        #[test]
-        fn single() -> Result<()> {
-            let result = field(&TEST_CONFIG).parse("name: Type");
-            let output = result.into_result().map_err(wrap_test_err)?;
-            assert_eq!(output.name, "name");
-            assert_eq!(
-                output.ty.api().unwrap().component_names().last().unwrap(),
-                "Type"
-            );
-            Ok(())
-        }
-
-        #[test]
-        fn multiple() -> Result<()> {
-            let result = fields(&TEST_CONFIG).parse("name0: Type0, name1: Type1, name2: Type2");
-            let output = result.into_result().map_err(wrap_test_err)?;
-            assert_eq!(output.len(), 3);
-            let expected_names = &["name0", "name1", "name2"];
-            let expected_types = &["Type0", "Type1", "Type2"];
-            for i in 0..3 {
-                assert_eq!(output[i].name, expected_names[i]);
-                assert_eq!(
-                    output[i].ty.api().unwrap().component_names().collect_vec()[0],
-                    expected_types[i]
-                );
-            }
-            Ok(())
-        }
-
-        #[test]
-        fn ignores_self_single() -> Result<()> {
-            test_ignored_empty("self")
-        }
-
-        #[test]
-        fn ignores_ref_self_single() -> Result<()> {
-            test_ignored_empty("&self")
-        }
-
-        #[test]
-        fn ignores_mut_self_single() -> Result<()> {
-            test_ignored_empty("&mut self")
-        }
-
-        #[test]
-        fn ignores_self() -> Result<()> {
-            test_ignored("self, name: Type")
-        }
-
-        #[test]
-        fn ignores_ref_self() -> Result<()> {
-            test_ignored("&self, name: Type")
-        }
-
-        #[test]
-        fn ignores_mut_self() -> Result<()> {
-            test_ignored("&mut self, name: Type")
-        }
-
-        fn test_ignored_empty(input: &'static str) -> Result<()> {
-            let output = fields(&TEST_CONFIG)
-                .parse(input)
-                .into_result()
-                .map_err(wrap_test_err)?;
-            assert_eq!(output.len(), 0);
-            Ok(())
-        }
-
-        fn test_ignored(input: &'static str) -> Result<()> {
-            let output = fields(&TEST_CONFIG)
-                .parse(input)
-                .into_result()
-                .map_err(wrap_test_err)?;
-            assert_eq!(output.len(), 1);
-            assert_eq!(output[0].name, "name");
-            assert_eq!(
-                output[0].ty.api().unwrap().component_names().collect_vec()[0],
-                "Type"
-            );
-            Ok(())
-        }
     }
 
     mod file_path_to_mod {

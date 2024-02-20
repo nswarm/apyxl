@@ -1,4 +1,3 @@
-use crate::model::NamespaceChild;
 use crate::parser::error::Error;
 use crate::parser::{util, Config};
 use chumsky::{text, Parser};
@@ -14,13 +13,9 @@ impl Visibility {
         *self == Visibility::Public || (*self == Visibility::Private && config.enable_parse_private)
     }
 
-    pub fn filter_child<'a>(
-        &self,
-        child: NamespaceChild<'a>,
-        config: &Config,
-    ) -> Option<NamespaceChild<'a>> {
+    pub fn filter<T>(&self, value: T, config: &Config) -> Option<T> {
         if self.is_visible(config) {
-            Some(child)
+            Some(value)
         } else {
             None
         }
