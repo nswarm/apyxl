@@ -6,7 +6,6 @@ use log::debug;
 
 use crate::model::{Api, UNDEFINED_NAMESPACE};
 use crate::parser::error::Error;
-use crate::parser::rust::namespace::impl_block;
 use crate::parser::{comment, error, util, Config};
 use crate::{model, Input};
 use crate::{rust_util, Parser as ApyxlParser};
@@ -46,20 +45,15 @@ impl ApyxlParser for Rust {
 
             let children = imports
                 .ignore_then(
-                    namespace::children(
-                        config,
-                        namespace::parser(config),
-                        impl_block(config, namespace::parser(config)),
-                        end().ignored(),
-                    )
-                    .padded(),
+                    namespace::children(config, namespace::parser(config), end().ignored())
+                        .padded(),
                 )
                 .then_ignore(end())
                 .parse(data)
                 .into_result()
                 .map_err(|errs| {
                     let return_err = anyhow!("errors encountered while parsing: {:?}", &errs);
-                    error::report_errors(chunk, data, errs);
+                    error::report_errors(chunk, data, errs.clone());
                     return_err
                 })?;
 
@@ -123,6 +117,9 @@ mod tests {
         pub enum en {}
         enum private_en {}
         pub struct dto {}
+        impl dto {
+            fn method() {}
+        }
         struct private_dto {}
         pub mod namespace {}
         mod private_namespace {}
@@ -134,18 +131,37 @@ mod tests {
         parser::Rust::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
         let model = builder.build().unwrap();
         assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
-        assert!(model.api().dto("dto").is_some());
-        assert!(model.api().rpc("rpc").is_some());
-        assert!(model.api().en("en").is_some());
-        assert!(model.api().namespace("namespace").is_some());
-        assert!(model.api().dto("private_dto").is_some());
-        assert!(model.api().rpc("private_rpc").is_some());
-        assert!(model.api().en("private_en").is_some());
-        assert!(model.api().namespace("private_namespace").is_some());
-        // make sure comment after 'use' is attributed to rpc.
+        assert!(model.api().dto("dto").is_some(), "dto");
+        assert!(model.api().rpc("rpc").is_some(), "rpc");
+        assert!(model.api().en("en").is_some(), "en");
+        assert!(model.api().namespace("namespace").is_some(), "namespace");
+        assert!(model.api().dto("private_dto").is_some(), "private_dto");
+        assert!(model.api().rpc("private_rpc").is_some(), "private_rpc");
+        assert!(model.api().en("private_en").is_some(), "private_en");
+        assert!(
+            model.api().namespace("private_namespace").is_some(),
+            "private_namespace"
+        );
         assert_eq!(
             model.api().rpc("rpc").unwrap().attributes.comments,
-            vec![Comment::unowned(&["rpc comment"])]
+            vec![Comment::unowned(&["rpc comment"])],
+            "comment after 'use' attributed to rpc"
+        );
+        assert!(
+            model.api().dto("dto").unwrap().namespace.is_some(),
+            "dto impl block ns"
+        );
+        assert!(
+            model
+                .api()
+                .dto("dto")
+                .unwrap()
+                .namespace
+                .as_ref()
+                .unwrap()
+                .rpc("method")
+                .is_some(),
+            "impl block rpc"
         );
         Ok(())
     }

@@ -649,7 +649,6 @@ mod tests {
                     r#"
                     struct dto {}
                     impl dto {
-                        struct nested_dto {}
                         fn nested_rpc() {}
                     }
                 "#,
@@ -658,7 +657,6 @@ mod tests {
 
                 let dto = model.api.dto("dto").unwrap();
                 let dto_namespace = dto.namespace.as_ref().unwrap();
-                assert!(dto_namespace.dto("nested_dto").is_some());
                 assert!(dto_namespace.rpc("nested_rpc").is_some());
             }
 
@@ -668,7 +666,6 @@ mod tests {
                     r#"
                     struct dto {}
                     impl wrong_name {
-                        struct nested_dto {}
                         fn nested_rpc() {}
                     }
                 "#,

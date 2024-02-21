@@ -1,5 +1,6 @@
 use crate::model::{Api, EntityId, EntityType, Namespace, NamespaceChild, Type};
 use itertools::Itertools;
+use log::debug;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
 
@@ -174,6 +175,7 @@ impl Dependencies {
         relative_id: &EntityId,
     ) {
         // We unwrap nodes here because we assume the api is validated, and all nodes are added first.
+        debug!("add_edge_relative: {} -> {}", namespace_id, relative_id);
         let to = self.node_relative(namespace_id, relative_id).unwrap();
         self.graph.add_edge(from, *to, ());
     }

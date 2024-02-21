@@ -14,13 +14,8 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Err
     recursive(|nested| {
         let prefix = keyword_ex("mod").then(text::whitespace().at_least(1));
         let name = text::ident();
-        let body = children(
-            config,
-            nested.clone(),
-            impl_block(config, nested),
-            just('}').ignored(),
-        )
-        .delimited_by(just('{').padded(), just('}').padded());
+        let body = children(config, nested.clone(), just('}').ignored())
+            .delimited_by(just('{').padded(), just('}').padded());
         comment::multi_comment()
             .then(attributes::attributes().padded())
             .then(visibility::parser())
@@ -49,7 +44,6 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Err
 pub fn children<'a>(
     config: &'a Config,
     namespace: impl Parser<'a, &'a str, (Namespace<'a>, Visibility), Error<'a>>,
-    impl_block: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
     end_delimiter: impl Parser<'a, &'a str, (), Error<'a>>,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
@@ -57,7 +51,7 @@ pub fn children<'a>(
         rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
         en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
         namespace.map(|(c, v)| Some((NamespaceChild::Namespace(c), v))),
-        impl_block.map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
+        impl_block(config).map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
         const_or_alias().map(|_| None),
     ))
     .recover_with(skip_then_retry_until(
@@ -85,28 +79,36 @@ pub fn const_or_alias<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
 }
 
 // Parses to a 'virtual' namespace that will be merged into the DTO with the same name.
-pub fn impl_block<'a>(
-    config: &'a Config,
-    namespace: impl Parser<'a, &'a str, (Namespace<'a>, Visibility), Error<'a>> + 'a,
-) -> impl Parser<'a, &'a str, Namespace<'a>, Error<'a>> {
-    recursive(|nested| {
-        comment::multi_comment()
-            .padded()
-            .ignore_then(keyword_ex("impl"))
-            .ignore_then(text::whitespace().at_least(1))
-            .ignore_then(text::ident())
-            .then(
-                children(config, namespace, nested, just('}').ignored())
-                    .delimited_by(just('{').padded(), just('}').padded()),
-            )
-            .map(|(name, children)| Namespace::<'a> {
-                name: Cow::Borrowed(name),
-                children,
-                attributes: Default::default(),
-                is_virtual: true,
-            })
-            .boxed()
+pub fn impl_block(config: &Config) -> impl Parser<&str, Namespace, Error> {
+    let prefix = keyword_ex("impl").then(text::whitespace().at_least(1));
+
+    let children = choice((
+        rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
+        const_or_alias().map(|_| None),
+    ))
+    .recover_with(skip_then_retry_until(any().ignored(), just('}').ignored()))
+    .map(|opt| match opt {
+        Some((child, visibility)) => visibility.filter(child, config),
+        None => None,
     })
+    .repeated()
+    .collect::<Vec<_>>()
+    .map(|v| v.into_iter().flatten().collect_vec());
+
+    comment::multi_comment()
+        .padded()
+        .then_ignore(prefix)
+        .then(text::ident())
+        .then(children.delimited_by(just('{').padded(), just('}').padded()))
+        .map(|((comments, name), children)| Namespace {
+            name: Cow::Borrowed(name),
+            children,
+            attributes: Attributes {
+                comments,
+                ..Default::default()
+            },
+            is_virtual: true,
+        })
 }
 
 #[cfg(test)]
@@ -334,10 +336,12 @@ mod tests {
 
     #[test]
     fn impl_block() -> Result<()> {
-        let namespace = namespace::impl_block(&TEST_CONFIG, namespace::parser(&TEST_CONFIG))
+        let namespace = namespace::impl_block(&TEST_CONFIG)
             .parse(
                 r#"
                     impl dto {
+                        const x: Type = 5;
+                        type T = V;
                         fn rpc() {}
                     }
                     "#,
@@ -345,6 +349,30 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert!(namespace.is_virtual);
+        assert!(namespace.rpc("rpc").is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn impl_block_nested() -> Result<()> {
+        let (namespace, _) = namespace::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                    mod ns {
+                        impl dto {
+                            fn rpc() {}
+                        }
+                    }
+                    "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert!(!namespace.is_virtual);
+        let dto_ns = namespace.namespace("dto");
+        assert!(dto_ns.is_some());
+        let dto_ns = dto_ns.unwrap();
+        assert!(dto_ns.is_virtual);
+        assert!(dto_ns.rpc("rpc").is_some());
         Ok(())
     }
 
