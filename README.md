@@ -177,6 +177,14 @@ Views are trivially cloneable, so you can create as many views with different tr
 
 See also [Subview](apyxl/src/view/sub_view.rs) for another way of using views & transforms.
 
+### Type Aliases
+
+Type aliases are treated as a top-level namespace child, which works great for generator targets that support them.
+
+For generator targets that do _not_ support type aliases, or that you want to write the resolved type anyway, there's
+an extra step. You'll need to manually check the model's api using `find_ty_alias` to see if it is actually an alias
+anytime you write type, and if it is an alias, write the `TypeAlias::target_ty()` instead.
+
 ### Output
 
 Output is how the generated content is written to a file or other destination. Typically, you'll be outputting to
@@ -201,6 +209,7 @@ instead of a file.
 ## Planned Feature Support
 
 - Union/oneof types
+- Helpers for resolving type aliases e.g. for generator targets that don't support type aliases
 - Refactor out common chumsky helpers
 - Applying transforms through configuration/cli
 
