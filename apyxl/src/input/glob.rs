@@ -120,7 +120,7 @@ mod tests {
             File::create(root.path().join(&paths[3]))?;
 
             let glob = Glob::new_with_root(root.path().join("a"), "**/*.rs")?;
-            assert_files(glob, &["b/file0.rs", "b/file1.rs", "c/file2.rs"]);
+            assert_files(glob, vec!["b/file0.rs", "b/file1.rs", "c/file2.rs"]);
             Ok(())
         }
 
@@ -133,7 +133,7 @@ mod tests {
             File::create(root.path().join(&paths[1]))?;
 
             let glob = Glob::new_with_root(root.path().join("a/b"), "")?;
-            assert_files(glob, &["file0.rs", "file1.rs"]);
+            assert_files(glob, vec!["file0.rs", "file1.rs"]);
             Ok(())
         }
 
@@ -145,11 +145,11 @@ mod tests {
             File::create(root.path().join(&paths[0]))?;
 
             let glob = Glob::new_with_root(root.path().join("a/b/file0.rs"), "")?;
-            assert_files(glob, &["file0.rs"]);
+            assert_files(glob, vec!["file0.rs"]);
             Ok(())
         }
 
-        fn assert_files(glob: Glob, expected: &[&str]) {
+        fn assert_files(glob: Glob, mut expected: Vec<&str>) {
             let file_names = glob
                 .chunks()
                 .iter()
@@ -160,7 +160,9 @@ mod tests {
                         .to_string_lossy()
                         .replace('\\', "/")
                 })
+                .sorted()
                 .collect_vec();
+            expected.sort();
             assert_eq!(file_names, expected);
         }
     }
