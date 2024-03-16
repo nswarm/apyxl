@@ -1,3 +1,36 @@
+## Adding a NamespaceChild
+
+List of stuff to consider when adding a new NamespaceChild:
+- model type
+  - need `name` and `attributes`
+  - add to `NamespaceChild` enum
+  - add find/get/iterate methods to `Namespace`
+  - add to `EntityType` enum
+  - add to `Entity` and `EntityMut` enums
+  - bunch of places where you'll need to handle the new enum values
+  - implement `ToEntity`
+  - implement `FindEntity`
+  - add `subtype` names in `api/entity.rs`
+  - add subtype to `try_from` for `EntityType`
+  - consider valid subtypes, add to doc comment in `api/entity_id`
+- view type
+  - add to `NamespaceChild` enum
+  - add find/get/iterate methods to `Namespace`
+  - add `Transform` type
+  - add xform to `Transforms`
+  - handle transform filtering in `NamespaceTransform`
+  - bunch of places where you'll need to handle the new enum values
+- api validation
+  - add relevant errors to `ValidationError` enum
+  - add additional validation steps to `api/validate` and hook up in `model/builder` build method
+  - make sure to run `qualify_type` on any `Type`s during validation
+  - add support to `model::Api::find_qualified_type_relative` if necessary
+- parser
+  - add support to the builtin rust parser
+- add tests to support everything ^
+- add docs to explain everything ^
+- add examples at least to the "fake platform" example
+
 ## Parsing with `chumsky`
 
 ### `recursive`

@@ -1,21 +1,27 @@
-use crate::model::entity::{EntityMut, FindEntity};
+use crate::model::entity::{EntityMut, FindEntity, ToEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Type};
 
-/// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
+/// A single enum type in the within an [Api].
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Field<'a> {
+pub struct TypeAlias<'a> {
     pub name: &'a str,
-    pub ty: Type,
+    pub target_ty: Type,
     pub attributes: Attributes<'a>,
 }
 
-impl<'api> FindEntity<'api> for Field<'api> {
+impl ToEntity for TypeAlias<'_> {
+    fn to_entity(&self) -> Entity {
+        Entity::TypeAlias(self)
+    }
+}
+
+impl<'api> FindEntity<'api> for TypeAlias<'api> {
     fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
                 EntityType::Type => {
-                    if entity::subtype::TY_ALL.contains(&name.as_str()) {
-                        Some(Entity::Type(&self.ty))
+                    if entity::subtype::TY_ALIAS_TARGET_ALL.contains(&name.as_str()) {
+                        Some(Entity::Type(&self.target_ty))
                     } else {
                         None
                     }
@@ -30,7 +36,7 @@ impl<'api> FindEntity<'api> for Field<'api> {
                 | EntityType::Field => None,
             }
         } else {
-            Some(Entity::Field(self))
+            Some(Entity::TypeAlias(self))
         }
     }
 
@@ -38,8 +44,8 @@ impl<'api> FindEntity<'api> for Field<'api> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
                 EntityType::Type => {
-                    if entity::subtype::TY_ALL.contains(&name.as_str()) {
-                        Some(EntityMut::Type(&mut self.ty))
+                    if entity::subtype::TY_ALIAS_TARGET_ALL.contains(&name.as_str()) {
+                        Some(EntityMut::Type(&mut self.target_ty))
                     } else {
                         None
                     }
@@ -54,7 +60,7 @@ impl<'api> FindEntity<'api> for Field<'api> {
                 | EntityType::Field => None,
             }
         } else {
-            Some(EntityMut::Field(self))
+            Some(EntityMut::TypeAlias(self))
         }
     }
 }

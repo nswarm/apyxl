@@ -64,6 +64,9 @@ impl Dependencies {
                 NamespaceChild::Enum(en) => {
                     self.add_node(&namespace_id.child(EntityType::Enum, en.name).unwrap());
                 }
+                NamespaceChild::TypeAlias(en) => {
+                    self.add_node(&namespace_id.child(EntityType::TypeAlias, en.name).unwrap());
+                }
                 NamespaceChild::Namespace(_) => {}
             }
         }

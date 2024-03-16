@@ -1,6 +1,6 @@
 use crate::model::api::entity::{Entity, EntityType, ToEntity};
 use crate::model::entity::{EntityMut, FindEntity};
-use crate::model::{Attributes, Dto, EntityId, Enum, Rpc};
+use crate::model::{Attributes, Dto, EntityId, Enum, Rpc, TypeAlias};
 use itertools::Itertools;
 use std::borrow::Cow;
 
@@ -22,6 +22,7 @@ pub enum NamespaceChild<'a> {
     Dto(Dto<'a>),
     Rpc(Rpc<'a>),
     Enum(Enum<'a>),
+    TypeAlias(TypeAlias<'a>),
     Namespace(Namespace<'a>),
 }
 
@@ -39,6 +40,7 @@ impl<'api> FindEntity<'api> for Namespace<'api> {
                 EntityType::Dto => self.dto(&name).and_then(|x| x.find_entity(id)),
                 EntityType::Rpc => self.rpc(&name).and_then(|x| x.find_entity(id)),
                 EntityType::Enum => self.en(&name).and_then(|x| x.find_entity(id)),
+                EntityType::TypeAlias => self.ty_alias(&name).and_then(|x| x.find_entity(id)),
 
                 EntityType::None | EntityType::Field | EntityType::Type => None,
             }
@@ -56,6 +58,9 @@ impl<'api> FindEntity<'api> for Namespace<'api> {
                 EntityType::Dto => self.dto_mut(&name).and_then(|x| x.find_entity_mut(id)),
                 EntityType::Rpc => self.rpc_mut(&name).and_then(|x| x.find_entity_mut(id)),
                 EntityType::Enum => self.en_mut(&name).and_then(|x| x.find_entity_mut(id)),
+                EntityType::TypeAlias => {
+                    self.ty_alias_mut(&name).and_then(|x| x.find_entity_mut(id))
+                }
 
                 EntityType::None | EntityType::Field | EntityType::Type => None,
             }
@@ -74,7 +79,7 @@ impl<'a> Namespace<'a> {
         self.attributes.merge(other.attributes);
     }
 
-    /// Add dto [Dto] `dto` as a child of this [Namespace].
+    /// Add the [Dto] `dto` as a child of this [Namespace].
     /// No validation is performed to ensure the [Dto] does not already exist, which may result
     /// in duplicates.
     pub fn add_dto(&mut self, dto: Dto<'a>) {
@@ -93,6 +98,13 @@ impl<'a> Namespace<'a> {
     /// in duplicates.
     pub fn add_enum(&mut self, en: Enum<'a>) {
         self.children.push(NamespaceChild::Enum(en));
+    }
+
+    /// Add the [TypeAlias] `ty_alias` as a child of this [Namespace].
+    /// No validation is performed to ensure the [TypeAlias] does not already exist, which may result
+    /// in duplicates.
+    pub fn add_ty_alias(&mut self, alias: TypeAlias<'a>) {
+        self.children.push(NamespaceChild::TypeAlias(alias));
     }
 
     /// Add the [Namespace] `namespace` as a child of this [Namespace].
@@ -115,7 +127,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Dto] within this [Namespace] by name.
+    /// Get a mutable [Dto] within this [Namespace] by name.
     pub fn dto_mut(&mut self, name: &str) -> Option<&mut Dto<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             // todo... trait<T> fn that returns Option<T: ChildType>... trait ChildType
@@ -125,7 +137,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Rpc] within this [Namespace] by name.
+    /// Get an [Rpc] within this [Namespace] by name.
     pub fn rpc(&self, name: &str) -> Option<&Rpc<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Rpc(value) if value.name == name => Some(value),
@@ -133,7 +145,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Rpc] within this [Namespace] by name.
+    /// Get a mutable [Rpc] within this [Namespace] by name.
     pub fn rpc_mut(&mut self, name: &str) -> Option<&mut Rpc<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Rpc(value) if value.name == name => Some(value),
@@ -141,7 +153,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Enum] within this [Namespace] by name.
+    /// Get an [Enum] within this [Namespace] by name.
     pub fn en(&self, name: &str) -> Option<&Enum<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Enum(en) if en.name == name => Some(en),
@@ -149,10 +161,26 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Enum] within this [Namespace] by name.
+    /// Get a mutable [Enum] within this [Namespace] by name.
     pub fn en_mut(&mut self, name: &str) -> Option<&mut Enum<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Enum(en) if en.name == name => Some(en),
+            _ => None,
+        })
+    }
+
+    /// Get a [TypeAlias] within this [Namespace] by name.
+    pub fn ty_alias(&self, name: &str) -> Option<&TypeAlias<'a>> {
+        self.children.iter().find_map(|s| match s {
+            NamespaceChild::TypeAlias(alias) if alias.name == name => Some(alias),
+            _ => None,
+        })
+    }
+
+    /// Get a mutable [TypeAlias] within this [Namespace] by name.
+    pub fn ty_alias_mut(&mut self, name: &str) -> Option<&mut TypeAlias<'a>> {
+        self.children.iter_mut().find_map(|s| match s {
+            NamespaceChild::TypeAlias(alias) if alias.name == name => Some(alias),
             _ => None,
         })
     }
@@ -165,7 +193,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Get a [Namespace] within this [Namespace] by name.
+    /// Get a mutable [Namespace] within this [Namespace] by name.
     pub fn namespace_mut(&mut self, name: &str) -> Option<&mut Namespace<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Namespace(value) if value.name == name => Some(value),
@@ -184,7 +212,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Iterate over all [Dto]s within this [Namespace].
+    /// Iterate over all [Dto]s mutably within this [Namespace].
     pub fn dtos_mut(&mut self) -> impl Iterator<Item = &mut Dto<'a>> {
         self.children.iter_mut().filter_map(|child| {
             if let NamespaceChild::Dto(value) = child {
@@ -206,7 +234,7 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Iterate over all [Rpc]s within this [Namespace].
+    /// Iterate over all [Rpc]s mutably within this [Namespace].
     pub fn rpcs_mut(&mut self) -> impl Iterator<Item = &mut Rpc<'a>> {
         self.children.iter_mut().filter_map(|child| {
             if let NamespaceChild::Rpc(value) = child {
@@ -228,10 +256,32 @@ impl<'a> Namespace<'a> {
         })
     }
 
-    /// Iterate over all [Enum]s within this [Namespace].
+    /// Iterate over all [Enum]s mutably within this [Namespace].
     pub fn enums_mut(&mut self) -> impl Iterator<Item = &mut Enum<'a>> {
         self.children.iter_mut().filter_map(|child| {
             if let NamespaceChild::Enum(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Iterate over all [TypeAlias]s within this [Namespace].
+    pub fn ty_aliases(&self) -> impl Iterator<Item = &TypeAlias<'a>> {
+        self.children.iter().filter_map(|child| {
+            if let NamespaceChild::TypeAlias(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Iterate over all [TypeAlias]s mutably within this [Namespace].
+    pub fn ty_aliases_mut(&mut self) -> impl Iterator<Item = &mut TypeAlias<'a>> {
+        self.children.iter_mut().filter_map(|child| {
+            if let NamespaceChild::TypeAlias(value) = child {
                 Some(value)
             } else {
                 None
@@ -310,7 +360,7 @@ impl<'a> Namespace<'a> {
         }
     }
 
-    /// Find a [Dto] by [EntityId] relative to this [Namespace].
+    /// Find a mutable [Dto] by [EntityId] relative to this [Namespace].
     pub fn find_dto_mut(&mut self, entity_id: &EntityId) -> Option<&mut Dto<'a>> {
         let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
         let name = unqualified_name(&entity_id);
@@ -330,7 +380,7 @@ impl<'a> Namespace<'a> {
         }
     }
 
-    /// Find a [Rpc] by [EntityId] relative to this [Namespace].
+    /// Find a mutable [Rpc] by [EntityId] relative to this [Namespace].
     pub fn find_rpc_mut(&mut self, entity_id: &EntityId) -> Option<&mut Rpc<'a>> {
         let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
         let name = unqualified_name(&entity_id);
@@ -340,7 +390,7 @@ impl<'a> Namespace<'a> {
         }
     }
 
-    /// Find a [Enum] by [EntityId] relative to this [Namespace].
+    /// Find an [Enum] by [EntityId] relative to this [Namespace].
     pub fn find_enum(&self, entity_id: &EntityId) -> Option<&Enum<'a>> {
         let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
         let name = unqualified_name(&entity_id);
@@ -350,12 +400,32 @@ impl<'a> Namespace<'a> {
         }
     }
 
-    /// Find a [Enum] by [EntityId] relative to this [Namespace].
+    /// Find a mutable [Enum] by [EntityId] relative to this [Namespace].
     pub fn find_enum_mut(&mut self, entity_id: &EntityId) -> Option<&mut Enum<'a>> {
         let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
         let name = unqualified_name(&entity_id);
         match (namespace, name) {
             (Some(namespace), Some(name)) => namespace.en_mut(&name),
+            _ => None,
+        }
+    }
+
+    /// Find a [TypeAlias] by [EntityId] relative to this [Namespace].
+    pub fn find_ty_alias(&self, entity_id: &EntityId) -> Option<&TypeAlias<'a>> {
+        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.ty_alias(&name),
+            _ => None,
+        }
+    }
+
+    /// Find a mutable [TypeAlias] by [EntityId] relative to this [Namespace].
+    pub fn find_ty_alias_mut(&mut self, entity_id: &EntityId) -> Option<&mut TypeAlias<'a>> {
+        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.ty_alias_mut(&name),
             _ => None,
         }
     }
@@ -407,6 +477,7 @@ impl<'a> NamespaceChild<'a> {
             NamespaceChild::Rpc(rpc) => &rpc.name,
             NamespaceChild::Enum(en) => &en.name,
             NamespaceChild::Namespace(namespace) => &namespace.name,
+            NamespaceChild::TypeAlias(alias) => &alias.name,
         }
     }
 
@@ -416,6 +487,7 @@ impl<'a> NamespaceChild<'a> {
             NamespaceChild::Rpc(rpc) => &rpc.attributes,
             NamespaceChild::Enum(en) => &en.attributes,
             NamespaceChild::Namespace(namespace) => &namespace.attributes,
+            NamespaceChild::TypeAlias(alias) => &alias.attributes,
         }
     }
 
@@ -425,6 +497,7 @@ impl<'a> NamespaceChild<'a> {
             NamespaceChild::Rpc(rpc) => &mut rpc.attributes,
             NamespaceChild::Enum(en) => &mut en.attributes,
             NamespaceChild::Namespace(namespace) => &mut namespace.attributes,
+            NamespaceChild::TypeAlias(alias) => &mut alias.attributes,
         }
     }
 
@@ -440,6 +513,7 @@ impl ToEntity for NamespaceChild<'_> {
             NamespaceChild::Rpc(rpc) => rpc.to_entity(),
             NamespaceChild::Enum(en) => en.to_entity(),
             NamespaceChild::Namespace(namespace) => namespace.to_entity(),
+            NamespaceChild::TypeAlias(alias) => alias.to_entity(),
         }
     }
 }

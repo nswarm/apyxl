@@ -40,6 +40,7 @@ impl<'api> FindEntity<'api> for Dto<'api> {
                 | EntityType::Dto
                 | EntityType::Rpc
                 | EntityType::Enum
+                | EntityType::TypeAlias
                 | EntityType::Type => None,
             }
         } else {
@@ -51,14 +52,14 @@ impl<'api> FindEntity<'api> for Dto<'api> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
                 EntityType::Field => self
-                    .field_mut(&name)
-                    .map_or(None, |x| x.find_entity_mut(id)),
+                    .field_mut(&name).and_then(|x| x.find_entity_mut(id)),
 
                 EntityType::None
                 | EntityType::Namespace
                 | EntityType::Dto
                 | EntityType::Rpc
                 | EntityType::Enum
+                | EntityType::TypeAlias
                 | EntityType::Type => None,
             }
         } else {

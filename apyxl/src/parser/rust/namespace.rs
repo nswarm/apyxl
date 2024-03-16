@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::model::{Attributes, Namespace, NamespaceChild};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, dto, en, rpc, visibility};
+use crate::parser::rust::{attributes, dto, en, rpc, ty_alias, visibility};
 use crate::parser::util::keyword_ex;
 use crate::parser::{comment, Config};
 
@@ -50,9 +50,10 @@ pub fn children<'a>(
         dto::parser(config).map(|(c, v)| Some((NamespaceChild::Dto(c), v))),
         rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
         en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
+        ty_alias::parser(config).map(|(c, v)| Some((NamespaceChild::TypeAlias(c), v))),
         namespace.map(|(c, v)| Some((NamespaceChild::Namespace(c), v))),
         impl_block(config).map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
-        const_or_alias().map(|_| None),
+        const_var().map(|_| None),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
@@ -68,10 +69,10 @@ pub fn children<'a>(
     .then_ignore(comment::multi_comment())
 }
 
-pub fn const_or_alias<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
+pub fn const_var<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
     comment::multi_comment()
         .then(visibility::parser())
-        .then(just("const").or(just("type")))
+        .then(just("const"))
         .then(any().and_is(none_of(";")).repeated().slice())
         .then(just(';'))
         .padded()
@@ -84,7 +85,8 @@ pub fn impl_block(config: &Config) -> impl Parser<&str, Namespace, Error> {
 
     let children = choice((
         rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
-        const_or_alias().map(|_| None),
+        ty_alias::parser(config).map(|(c, v)| Some((NamespaceChild::TypeAlias(c), v))),
+        const_var().map(|_| None),
     ))
     .recover_with(skip_then_retry_until(any().ignored(), just('}').ignored()))
     .map(|opt| match opt {
@@ -350,6 +352,7 @@ mod tests {
             .map_err(wrap_test_err)?;
         assert!(namespace.is_virtual);
         assert!(namespace.rpc("rpc").is_some());
+        assert!(namespace.ty_alias("T").is_some());
         Ok(())
     }
 
@@ -376,7 +379,7 @@ mod tests {
         Ok(())
     }
 
-    mod const_or_alias {
+    mod const_var {
         use crate::parser::rust::namespace;
         use crate::parser::test_util::wrap_test_err;
         use anyhow::Result;
@@ -392,18 +395,8 @@ mod tests {
             run_test("const ASDF: &[&str] = &[\"zz\", \"xx\"];")
         }
 
-        #[test]
-        fn public_alias() -> Result<()> {
-            run_test("pub type zzz = u128;")
-        }
-
-        #[test]
-        fn private_alias() -> Result<()> {
-            run_test("type zzz = u128;")
-        }
-
         fn run_test(input: &'static str) -> Result<()> {
-            namespace::const_or_alias()
+            namespace::const_var()
                 .parse(input)
                 .into_result()
                 .map_err(wrap_test_err)

@@ -8,7 +8,7 @@ use crate::model::{attribute, Chunk, Comment, Dependencies, EntityType};
 use crate::output::{Indented, Output};
 use crate::view::{
     Attributes, Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, SubView,
-    Type,
+    Type, TypeAlias,
 };
 use crate::{model, rust_util};
 
@@ -94,6 +94,11 @@ fn write_namespace(namespace: Namespace, o: &mut Indented) -> Result<()> {
 }
 
 fn write_namespace_contents(namespace: Namespace, o: &mut Indented) -> Result<()> {
+    for alias in namespace.ty_aliases() {
+        write_alias(alias, o)?;
+        o.newline()?;
+    }
+
     for rpc in namespace.rpcs() {
         write_rpc(rpc, o)?;
         o.newline()?;
@@ -113,6 +118,19 @@ fn write_namespace_contents(namespace: Namespace, o: &mut Indented) -> Result<()
         write_namespace(nested_ns, o)?;
         o.newline()?;
     }
+
+    Ok(())
+}
+
+fn write_alias(alias: TypeAlias, o: &mut Indented) -> Result<()> {
+    write_attributes(&alias.attributes(), o)?;
+
+    o.write_str("pub type ")?;
+    o.write_str(&alias.name())?;
+    o.write_str(" = ")?;
+    write_type(alias.target_ty(), o)?;
+    o.write(';')?;
+    o.newline()?;
 
     Ok(())
 }

@@ -15,6 +15,7 @@ pub use rpc::Rpc;
 pub use ty::BaseType;
 pub use ty::Type;
 pub use ty::UserTypeName;
+pub use ty_alias::TypeAlias;
 pub use validate::ValidationError;
 
 pub mod attribute;
@@ -28,6 +29,7 @@ mod namespace;
 mod rpc;
 mod ty;
 pub mod validate;
+mod ty_alias;
 
 /// The root namespace of the entire API.
 pub const UNDEFINED_NAMESPACE: &str = "_";

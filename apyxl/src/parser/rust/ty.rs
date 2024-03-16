@@ -313,11 +313,12 @@ mod tests {
     }
 
     mod entity_id {
-        use crate::parser::rust::ty::entity_id;
-        use crate::parser::test_util::wrap_test_err;
         use anyhow::Result;
         use chumsky::Parser;
         use itertools::Itertools;
+
+        use crate::parser::rust::ty::entity_id;
+        use crate::parser::test_util::wrap_test_err;
 
         #[test]
         fn starts_with_underscore() -> Result<()> {

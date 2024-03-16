@@ -45,6 +45,7 @@ impl<'api> FindEntity<'api> for Rpc<'api> {
                 | EntityType::Namespace
                 | EntityType::Dto
                 | EntityType::Rpc
+                | EntityType::TypeAlias
                 | EntityType::Enum => None,
             }
         } else {
@@ -56,8 +57,7 @@ impl<'api> FindEntity<'api> for Rpc<'api> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
                 EntityType::Field => self
-                    .param_mut(&name)
-                    .map_or(None, |x| x.find_entity_mut(id)),
+                    .param_mut(&name).and_then(|x| x.find_entity_mut(id)),
 
                 EntityType::Type => {
                     if entity::subtype::RETURN_TY_ALL.contains(&name.as_str()) {
@@ -71,6 +71,7 @@ impl<'api> FindEntity<'api> for Rpc<'api> {
                 | EntityType::Namespace
                 | EntityType::Dto
                 | EntityType::Rpc
+                | EntityType::TypeAlias
                 | EntityType::Enum => None,
             }
         } else {

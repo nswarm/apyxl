@@ -42,7 +42,7 @@ use crate::model::api::entity::EntityType;
 /// Possible `subtypes` are defined by the parent entity. Some subtypes have aliases for convenience
 /// e.g. `n` is equivalent to `namespace`.
 ///
-/// all components prefixing an [EntityId] string that _do not have_ a subtype are parsed as
+/// All components prefixing an [EntityId] string that _do not have_ a subtype are parsed as
 /// [crate::model::Namespace]s, e.g. `n:aaa.n:bbb.n:ccc.dto:Name` is equivalent to `aaa.bbb.ccc.dto:Name` for
 /// readability and convenience.
 ///
@@ -54,10 +54,12 @@ use crate::model::api::entity::EntityType;
 ///     [crate::model::Namespace]: `d`, `dto`:                [crate::model::Dto],
 ///                                `r`, `rpc`:                [crate::model::Rpc],
 ///                                `e`, `enum`, `en`:         [crate::model::Enum],
+///                                `a`, `alias`:              [crate::model::TypeAlias],
 ///     [crate::model::Dto]:       `f`, `field`:              [crate::model::Field],
 ///     [crate::model::Rpc]:       `p`, `param`:              [crate::model::Field],
 ///                                `return_ty`:               [crate::model::Type] (nameless),
 ///     [crate::model::Field]:     `ty`:                      [crate::model::Type] (nameless),
+///     [crate::model::TypeAlias]: `target`:                  [crate::model::Type] (nameless),
 ///     [crate::model::Enum]:      <none>
 ///     [crate::model::Type]:      <none>
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -347,8 +349,14 @@ impl Display for EntityId {
                     Some(c) if c.ty == EntityType::Rpc => {
                         path.push(entity::subtype::RETURN_TY.to_owned())
                     }
+                    Some(c) if c.ty == EntityType::TypeAlias => {
+                        path.push(entity::subtype::TY_ALIAS_TARGET.to_owned())
+                    }
                     _ => return Err(std::fmt::Error),
                 },
+                EntityType::TypeAlias => {
+                    path.push(format!("{}:{}", entity::subtype::TY_ALIAS, component.name))
+                }
             }
             last_component = Some(&component);
         }
@@ -368,7 +376,7 @@ impl<S: AsRef<str>> TryFrom<&[S]> for EntityId {
     fn try_from(value: &[S]) -> Result<Self, Self::Error> {
         let mut components = VecDeque::new();
         for s in value.iter().map(AsRef::as_ref) {
-            let split = s.split(":").collect_vec();
+            let split = s.split(':').collect_vec();
             let parent = components.iter().last();
             if split.len() < 2 {
                 let value = split.get(0).unwrap();
@@ -571,9 +579,13 @@ mod tests {
             let dto = id.child(EntityType::Dto, "c").unwrap();
             let field = dto.child(EntityType::Field, "d").unwrap();
             let ty = field.child(EntityType::Type, "ty").unwrap();
+            let alias = id.child(EntityType::TypeAlias, "c").unwrap();
+            let target = alias.child(EntityType::Type, "target_ty").unwrap();
             assert_eq!(dto, EntityId::try_from("a.b.dto:c").unwrap());
             assert_eq!(field, EntityId::try_from("a.b.dto:c.field:d").unwrap());
             assert_eq!(ty, EntityId::try_from("a.b.dto:c.field:d.ty").unwrap());
+            assert_eq!(alias, EntityId::try_from("a.b.alias:c").unwrap());
+            assert_eq!(target, EntityId::try_from("a.b.alias:c.target_ty").unwrap());
         }
 
         #[test]
@@ -651,6 +663,11 @@ mod tests {
         #[test]
         fn with_return_ty() -> Result<()> {
             run_test("a.b.c.r:Name.return_ty", "a.b.c.rpc:Name.return_ty")
+        }
+
+        #[test]
+        fn alias_target_ty() -> Result<()> {
+            run_test("a.b.c.a:Name.target_ty", "a.b.c.alias:Name.target_ty")
         }
 
         fn run_test(from: &str, expected: &str) -> Result<()> {

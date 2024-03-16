@@ -1,4 +1,4 @@
-use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, Type};
+use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, Type, TypeAlias};
 use anyhow::anyhow;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Copy, Clone)]
@@ -9,6 +9,7 @@ pub enum EntityType {
     Rpc,
     Enum,
     Field,
+    TypeAlias,
     Type,
 }
 
@@ -19,6 +20,7 @@ pub enum Entity<'a, 'api> {
     Rpc(&'a Rpc<'api>),
     Enum(&'a Enum<'api>),
     Field(&'a Field<'api>),
+    TypeAlias(&'a TypeAlias<'api>),
     Type(&'a Type),
 }
 
@@ -29,6 +31,7 @@ pub enum EntityMut<'a, 'api> {
     Rpc(&'a mut Rpc<'api>),
     Enum(&'a mut Enum<'api>),
     Field(&'a mut Field<'api>),
+    TypeAlias(&'a mut TypeAlias<'api>),
     Type(&'a mut Type),
 }
 
@@ -96,9 +99,10 @@ impl<'api> FindEntity<'api> for Entity<'_, 'api> {
             Entity::Namespace(ns) => ns.find_entity(id),
             Entity::Dto(dto) => dto.find_entity(id),
             Entity::Rpc(rpc) => rpc.find_entity(id),
-            Entity::Enum(_) => None,
+            Entity::Enum(en) => en.find_entity(id),
             Entity::Field(field) => field.find_entity(id),
-            Entity::Type(_) => None,
+            Entity::TypeAlias(alias) => alias.find_entity(id),
+            Entity::Type(ty) => ty.find_entity(id),
         }
     }
 
@@ -115,7 +119,8 @@ impl<'api> FindEntity<'api> for EntityMut<'_, 'api> {
             EntityMut::Rpc(rpc) => rpc.find_entity(id),
             EntityMut::Enum(en) => en.find_entity(id),
             EntityMut::Field(field) => field.find_entity(id),
-            EntityMut::Type(_) => None,
+            EntityMut::TypeAlias(alias) => alias.find_entity(id),
+            EntityMut::Type(ty) => ty.find_entity(id),
         }
     }
 
@@ -126,7 +131,8 @@ impl<'api> FindEntity<'api> for EntityMut<'_, 'api> {
             EntityMut::Rpc(rpc) => rpc.find_entity_mut(id),
             EntityMut::Enum(en) => en.find_entity_mut(id),
             EntityMut::Field(field) => field.find_entity_mut(id),
-            EntityMut::Type(_) => None,
+            EntityMut::TypeAlias(alias) => alias.find_entity_mut(id),
+            EntityMut::Type(ty) => ty.find_entity_mut(id),
         }
     }
 }
@@ -158,6 +164,9 @@ pub mod subtype {
     pub const PARAM_SHORT: &str =     "p";
     pub const TY: &str =              "ty";
     pub const RETURN_TY: &str =       "return_ty";
+    pub const TY_ALIAS: &str =        "alias";
+    pub const TY_ALIAS_SHORT: &str =  "a";
+    pub const TY_ALIAS_TARGET: &str = "target_ty";
 
     pub const NAMESPACE_ALL: &[&str] = &[NAMESPACE, NAMESPACE_SHORT];
     pub const DTO_ALL: &[&str] = &[DTO, DTO_SHORT];
@@ -167,6 +176,8 @@ pub mod subtype {
     pub const PARAM_ALL: &[&str] = &[PARAM, PARAM_SHORT];
     pub const TY_ALL: &[&str] = &[TY];
     pub const RETURN_TY_ALL: &[&str] = &[RETURN_TY];
+    pub const TY_ALIAS_ALL: &[&str] = &[TY_ALIAS, TY_ALIAS_SHORT];
+    pub const TY_ALIAS_TARGET_ALL: &[&str] = &[TY_ALIAS_TARGET];
 }
 
 impl EntityType {
@@ -177,9 +188,11 @@ impl EntityType {
             EntityType::None => *ty == EntityType::None,
 
             EntityType::Namespace => match ty {
-                EntityType::Namespace | EntityType::Dto | EntityType::Rpc | EntityType::Enum => {
-                    true
-                }
+                EntityType::Namespace
+                | EntityType::Dto
+                | EntityType::Rpc
+                | EntityType::Enum
+                | EntityType::TypeAlias => true,
                 EntityType::Field | EntityType::Type | EntityType::None => false,
             },
 
@@ -190,6 +203,7 @@ impl EntityType {
                 | EntityType::Rpc
                 | EntityType::Enum
                 | EntityType::Type
+                | EntityType::TypeAlias
                 | EntityType::None => false,
             },
 
@@ -199,6 +213,7 @@ impl EntityType {
                 | EntityType::Dto
                 | EntityType::Rpc
                 | EntityType::Enum
+                | EntityType::TypeAlias
                 | EntityType::None => false,
             },
 
@@ -208,6 +223,7 @@ impl EntityType {
                 | EntityType::Rpc
                 | EntityType::Enum
                 | EntityType::Type
+                | EntityType::TypeAlias
                 | EntityType::Field
                 | EntityType::None => false,
             },
@@ -218,6 +234,7 @@ impl EntityType {
                 | EntityType::Dto
                 | EntityType::Rpc
                 | EntityType::Enum
+                | EntityType::TypeAlias
                 | EntityType::Field
                 | EntityType::None => false,
             },
@@ -228,6 +245,18 @@ impl EntityType {
                 | EntityType::Rpc
                 | EntityType::Enum
                 | EntityType::Type
+                | EntityType::TypeAlias
+                | EntityType::Field
+                | EntityType::None => false,
+            },
+
+            EntityType::TypeAlias => match ty {
+                EntityType::Type => true,
+                EntityType::Namespace
+                | EntityType::Dto
+                | EntityType::Rpc
+                | EntityType::Enum
+                | EntityType::TypeAlias
                 | EntityType::Field
                 | EntityType::None => false,
             },
@@ -244,6 +273,7 @@ impl Entity<'_, '_> {
             Entity::Enum(_) => EntityType::Enum,
             Entity::Field(_) => EntityType::Field,
             Entity::Type(_) => EntityType::Type,
+            Entity::TypeAlias(_) => EntityType::TypeAlias,
         }
     }
 }
@@ -261,6 +291,8 @@ impl TryFrom<&str> for EntityType {
             _ if subtype::PARAM_ALL.contains(&value) => Ok(EntityType::Field),
             _ if subtype::TY_ALL.contains(&value) => Ok(EntityType::Type),
             _ if subtype::RETURN_TY_ALL.contains(&value) => Ok(EntityType::Type),
+            _ if subtype::TY_ALIAS_TARGET_ALL.contains(&value) => Ok(EntityType::Type),
+            _ if subtype::TY_ALIAS_ALL.contains(&value) => Ok(EntityType::TypeAlias),
             _ => Err(anyhow!(
                 "subtype '{}' does not map to a valid EntityType",
                 value

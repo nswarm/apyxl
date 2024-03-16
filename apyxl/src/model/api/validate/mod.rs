@@ -25,6 +25,9 @@ pub enum ValidationError {
     #[error("Invalid enum name within namespace '{0}', index #{1}. Enum names cannot be empty.")]
     InvalidEnumName(EntityId, usize),
 
+    #[error("Invalid type alias name within namespace '{0}', index #{1}. Type alias names cannot be empty.")]
+    InvalidTypeAliasName(EntityId, usize),
+
     #[error("Invalid field name at '{0}', index {1}. Field names cannot be empty.")]
     InvalidFieldName(EntityId, usize),
 
@@ -32,15 +35,18 @@ pub enum ValidationError {
     InvalidEnumValueName(EntityId, usize),
 
     #[error(
-        "Invalid field type '{0}::{1}', index {2}. Type '{3}' must be a valid DTO or enum in the API."
+        "Invalid field type '{0}::{1}', index {2}. Type '{3}' must be a valid DTO, enum, or type alias in the API."
     )]
     InvalidFieldType(EntityId, String, usize, EntityId),
 
-    #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO or enum in the API.")]
+    #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
     InvalidRpcReturnType(EntityId, EntityId),
 
+    #[error("Invalid target type for TypeAlias {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
+    InvalidTypeAliasTargetType(EntityId, EntityId),
+
     #[error("Duplicate DTO or enum definition: '{0}'")]
-    DuplicateDtoOrEnum(EntityId),
+    DuplicateDtoOrEnumOrAlias(EntityId),
 
     #[error("Duplicate RPC definition: '{0}'")]
     DuplicateRpc(EntityId),
@@ -75,17 +81,19 @@ pub fn namespace_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .collect_vec()
 }
 
-pub fn no_duplicate_dto_enums(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+pub fn no_duplicate_dto_enum_alias(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     let namespace = api
         .find_namespace(&namespace_id)
         .expect("namespace must exist in api");
     let dto_names = namespace.dtos().map(|dto| dto.name);
     let enum_names = namespace.enums().map(|en| en.name);
+    let alias_names = namespace.ty_aliases().map(|alias| alias.name);
     dto_names
         .chain(enum_names)
+        .chain(alias_names)
         .duplicates()
         .map(|name| {
-            Err(ValidationError::DuplicateDtoOrEnum(
+            Err(ValidationError::DuplicateDtoOrEnumOrAlias(
                 namespace_id.to_unqualified().child_unqualified(name),
             ))
         })
@@ -242,6 +250,24 @@ pub fn no_duplicate_enum_value_names(api: &Api, namespace_id: EntityId) -> Vec<V
         .collect_vec()
 }
 
+pub fn ty_alias_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+    api.find_namespace(&namespace_id)
+        .expect("namespace must exist in api")
+        .ty_aliases()
+        .enumerate()
+        .map(|(i, alias)| {
+            if alias.name.is_empty() {
+                Err(ValidationError::InvalidTypeAliasName(
+                    namespace_id.clone(),
+                    i,
+                ))
+            } else {
+                Ok(None)
+            }
+        })
+        .collect_vec()
+}
+
 pub fn field_names(fields: &[Field], parent_entity_id: EntityId) -> Vec<ValidationResult> {
     fields
         .iter()
@@ -342,6 +368,31 @@ pub fn field_types<'a, 'b: 'a>(
                     parent_entity_id.clone(),
                     field.name.to_string(),
                     i,
+                    err_entity_id,
+                )),
+                _ => Ok(None),
+            }
+        })
+        .collect_vec()
+}
+
+pub fn ty_alias_target_type(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+    api.find_namespace(&namespace_id)
+        .expect("namespace must exist in api")
+        .ty_aliases()
+        .map(|alias| {
+            let alias_id = namespace_id
+                .child(EntityType::TypeAlias, alias.name)
+                .unwrap();
+            let target_ty_id = alias_id
+                .child(EntityType::Type, entity::subtype::TY_ALIAS_TARGET)
+                .unwrap();
+            match qualify_type(api, &namespace_id, &alias.target_ty) {
+                Ok(Some(qualified_ty)) => {
+                    Ok(Some(Mutation::new_qualify_type(target_ty_id, qualified_ty)))
+                }
+                Err(err_entity_id) => Err(ValidationError::InvalidTypeAliasTargetType(
+                    alias_id,
                     err_entity_id,
                 )),
                 _ => Ok(None),

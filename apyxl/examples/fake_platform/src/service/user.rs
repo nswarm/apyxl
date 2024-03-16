@@ -33,10 +33,12 @@ pub struct Display {
 }
 
 // feature: these are ignored
-pub type PubTypeAlias = u128;
-type TypeAlias = u128;
 pub const PUB_CONST_NAME: &str = "name";
 const CONST_NAME: &str = "name";
+
+// feature: type alias to primitive
+pub type PubTypeAlias = u128;
+type TypeAlias = u128;
 
 #[derive(Default)]
 pub struct Id {

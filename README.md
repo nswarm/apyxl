@@ -45,7 +45,7 @@ apyxl is built to support users writing their own **parsers** and **generators**
 
 ## Writing a Parser
 
-See the [rust parser](apyxl/src/parser/rust.rs) for a complete example using [chumsky](https://github.com/zesterer/chumsky). 
+See the [rust parser](apyxl/src/parser/rust) for a complete example using [chumsky](https://github.com/zesterer/chumsky). 
 
 apyxl parsers can be written however you want, as long as they implement the trait [Parser](apyxl/src/parser/mod.rs).
 If you're parsing a programming language or IDL, the included library [chumsky](https://github.com/zesterer/chumsky) is
@@ -69,6 +69,7 @@ This is a list of things to keep in mind when writing a parser.
   - DTOs, fields
   - RPCs, params, return types
   - Enums
+  - Type aliases
   - Imports/includes
   - Comments (see [Attributes](apyxl/src/model/api/attribute.rs))
   - Types including primitives, arrays, maps, optionals
@@ -172,7 +173,7 @@ generator's view of the model.
 Each transformable type has a Transform trait e.g. `DtoTransform`. Implement this and then apply to the view via a
 `Transformer` trait method such as `with_dto_transform(...)`.
 
-Views are trivially cloneable so you can create as many views with different transforms as you need.
+Views are trivially cloneable, so you can create as many views with different transforms as you need.
 
 See also [Subview](apyxl/src/view/sub_view.rs) for another way of using views & transforms.
 
@@ -199,7 +200,6 @@ instead of a file.
 
 ## Planned Feature Support
 
-- RPCs associated with DTOs i.e. methods
 - Union/oneof types
 - Refactor out common chumsky helpers
 - Applying transforms through configuration/cli

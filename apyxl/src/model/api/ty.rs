@@ -1,8 +1,9 @@
 use std::fmt::Debug;
 
 use anyhow::Result;
+use crate::model::entity::{EntityMut, FindEntity};
 
-use crate::model::EntityId;
+use crate::model::{Entity, EntityId};
 
 /// A type within the language or API. Types other than [Type::Api] are assumed to always
 /// exist during API validation and can be used by [crate::Generator]s to map to the relevant known
@@ -103,5 +104,23 @@ impl Type {
 
     pub fn new_optional(ty: Self) -> Self {
         Type::Optional(Box::new(ty))
+    }
+}
+
+impl<'api> FindEntity<'api> for Type {
+    fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
+        if id.is_empty() {
+            Some(Entity::Type(self))
+        } else {
+            None
+        }
+    }
+
+    fn find_entity_mut<'a>(&'a mut self, id: EntityId) -> Option<EntityMut<'a, 'api>> {
+        if id.is_empty() {
+            Some(EntityMut::Type(self))
+        } else {
+            None
+        }
     }
 }

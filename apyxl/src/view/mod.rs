@@ -13,6 +13,7 @@ pub use namespace::*;
 pub use rpc::*;
 pub use sub_view::*;
 pub use ty::*;
+pub use ty_alias::*;
 
 use crate::model;
 use crate::model::chunk::ChunkFilter;
@@ -27,6 +28,7 @@ mod namespace;
 mod rpc;
 mod sub_view;
 mod ty;
+mod ty_alias;
 
 // In everything in this module and submodules:
 //   'v: view
@@ -49,6 +51,7 @@ pub struct Transforms {
     rpc_param: Vec<Box<dyn FieldTransform>>,
     en: Vec<Box<dyn EnumTransform>>,
     en_value: Vec<Box<dyn EnumValueTransform>>,
+    ty_alias: Vec<Box<dyn TypeAliasTransform>>,
     entity_id: Vec<Box<dyn EntityIdTransform>>,
     attr: Vec<Box<dyn AttributeTransform>>,
 }
@@ -148,6 +151,11 @@ pub(crate) trait Transformer: Sized {
         self
     }
 
+    fn with_ty_alias_transform(mut self, xform: impl TypeAliasTransform + 'static) -> Self {
+        self.xforms().ty_alias.push(Box::new(xform));
+        self
+    }
+
     fn with_entity_id_transform(mut self, xform: impl EntityIdTransform + 'static) -> Self {
         self.xforms().entity_id.push(Box::new(xform));
         self
@@ -175,6 +183,9 @@ impl Transforms {
     pub fn rpc_param(&self) -> impl Iterator<Item = &Box<dyn FieldTransform>> {
         self.rpc_param.iter()
     }
+    pub fn ty_alias(&self) -> impl Iterator<Item = &Box<dyn TypeAliasTransform>> {
+        self.ty_alias.iter()
+    }
     pub fn entity_id_xforms(&self) -> impl Iterator<Item = &Box<dyn EntityIdTransform>> {
         self.entity_id.iter()
     }
@@ -188,6 +199,7 @@ mod tests {
     use std::borrow::Cow;
 
     use crate::model;
+    use crate::view::ty_alias::TypeAliasTransform;
     use crate::view::{
         DtoTransform, EntityIdTransform, EnumTransform, EnumValueTransform, FieldTransform,
         NamespaceTransform, RpcTransform,
@@ -232,6 +244,11 @@ mod tests {
             *value = Cow::Owned(TestRenamer::renamed(value))
         }
     }
+    impl TypeAliasTransform for TestRenamer {
+        fn name(&self, value: &mut Cow<str>) {
+            *value = Cow::Owned(TestRenamer::renamed(value))
+        }
+    }
     impl EntityIdTransform for TestRenamer {
         fn path(&self, value: &mut Vec<Cow<str>>) {
             value.push(Cow::Borrowed(TestRenamer::SUFFIX))
@@ -252,6 +269,9 @@ mod tests {
             !rpc.name.contains("hidden")
         }
         fn filter_enum(&self, en: &model::Enum) -> bool {
+            !en.name.contains("hidden")
+        }
+        fn filter_ty_alias(&self, en: &model::TypeAlias) -> bool {
             !en.name.contains("hidden")
         }
     }

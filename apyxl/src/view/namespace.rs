@@ -6,6 +6,7 @@ use dyn_clone::DynClone;
 use crate::model;
 use crate::model::entity::ToEntity;
 use crate::model::EntityType;
+use crate::view::ty_alias::TypeAlias;
 use crate::view::{Attributes, Dto, Enum, Rpc, Transforms};
 
 /// A named, nestable wrapper for a set of API entities.
@@ -22,6 +23,7 @@ pub enum NamespaceChild<'v, 'a> {
     Dto(Dto<'v, 'a>),
     Rpc(Rpc<'v, 'a>),
     Enum(Enum<'v, 'a>),
+    TypeAlias(TypeAlias<'v, 'a>),
     Namespace(Namespace<'v, 'a>),
 }
 
@@ -51,6 +53,12 @@ pub trait NamespaceTransform: Debug + DynClone {
     fn filter_enum(&self, _: &model::Enum) -> bool {
         true
     }
+
+    /// `true`: included.
+    /// `false`: excluded.
+    fn filter_ty_alias(&self, _: &model::TypeAlias) -> bool {
+        true
+    }
 }
 
 dyn_clone::clone_trait_object!(NamespaceTransform);
@@ -64,6 +72,9 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             }
             model::NamespaceChild::Enum(target) => NamespaceChild::Enum(Enum::new(target, &xforms)),
             model::NamespaceChild::Rpc(target) => NamespaceChild::Rpc(Rpc::new(target, &xforms)),
+            model::NamespaceChild::TypeAlias(target) => {
+                NamespaceChild::TypeAlias(TypeAlias::new(target, &xforms))
+            }
         }
     }
 
@@ -72,6 +83,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             NamespaceChild::Dto(dto) => dto.name(),
             NamespaceChild::Rpc(rpc) => rpc.name(),
             NamespaceChild::Enum(en) => en.name(),
+            NamespaceChild::TypeAlias(alias) => alias.name(),
             NamespaceChild::Namespace(namespace) => namespace.name(),
         }
     }
@@ -81,6 +93,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             NamespaceChild::Dto(dto) => dto.attributes(),
             NamespaceChild::Rpc(rpc) => rpc.attributes(),
             NamespaceChild::Enum(en) => en.attributes(),
+            NamespaceChild::TypeAlias(alias) => alias.attributes(),
             NamespaceChild::Namespace(namespace) => namespace.attributes(),
         }
     }
@@ -90,6 +103,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             NamespaceChild::Dto(dto) => dto.entity_type(),
             NamespaceChild::Rpc(rpc) => rpc.entity_type(),
             NamespaceChild::Enum(en) => en.entity_type(),
+            NamespaceChild::TypeAlias(alias) => alias.entity_type(),
             NamespaceChild::Namespace(namespace) => namespace.entity_type(),
         }
     }
@@ -175,6 +189,13 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .map(|en| Enum::new(en, self.xforms))
     }
 
+    pub fn find_ty_alias(&'a self, id: &model::EntityId) -> Option<TypeAlias<'v, 'a>> {
+        self.target
+            .find_ty_alias(id)
+            .filter(|alias| self.filter_ty_alias(alias))
+            .map(|en| TypeAlias::new(en, self.xforms))
+    }
+
     pub fn namespaces(&'a self) -> impl Iterator<Item = Namespace<'v, 'a>> + 'a {
         self.target
             .namespaces()
@@ -203,12 +224,20 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .map(|en| Enum::new(en, self.xforms))
     }
 
+    pub fn ty_aliases(&'a self) -> impl Iterator<Item = TypeAlias<'v, 'a>> {
+        self.target
+            .ty_aliases()
+            .filter(|alias| self.filter_ty_alias(alias))
+            .map(|alias| TypeAlias::new(alias, self.xforms))
+    }
+
     fn filter_child(&self, child: &model::NamespaceChild) -> bool {
         match child {
             model::NamespaceChild::Dto(value) => self.filter_dto(value),
             model::NamespaceChild::Rpc(value) => self.filter_rpc(value),
             model::NamespaceChild::Enum(value) => self.filter_enum(value),
             model::NamespaceChild::Namespace(value) => self.filter_namespace(value),
+            model::NamespaceChild::TypeAlias(value) => self.filter_ty_alias(value),
         }
     }
 
@@ -229,6 +258,13 @@ impl<'v, 'a> Namespace<'v, 'a> {
 
     fn filter_enum(&self, en: &model::Enum) -> bool {
         self.xforms.namespace.iter().all(|x| x.filter_enum(en))
+    }
+
+    fn filter_ty_alias(&self, alias: &model::TypeAlias) -> bool {
+        self.xforms
+            .namespace
+            .iter()
+            .all(|x| x.filter_ty_alias(alias))
     }
 }
 
@@ -390,6 +426,30 @@ mod tests {
     }
 
     #[test]
+    fn find_alias() {
+        let mut exe = TestExecutor::new(
+            r#"
+                    mod ns0 {
+                        type visible = SomeType;
+                        type hidden = SomeType;
+                    }
+                "#,
+        );
+        let model = exe.model();
+        let view = model.view().with_namespace_transform(TestFilter {});
+        let root = view.api();
+
+        let visible_id = EntityId::try_from("ns0.alias:visible").unwrap();
+        let expected = model.api().find_ty_alias(&visible_id).unwrap();
+        let found = root.find_ty_alias(&visible_id).unwrap();
+        assert_eq!(found.name(), expected.name);
+
+        let hidden_id = EntityId::try_from("ns0.alias:hidden").unwrap();
+        let found = root.find_ty_alias(&hidden_id);
+        assert!(found.is_none());
+    }
+
+    #[test]
     fn children() {
         let mut exe = TestExecutor::new(
             r#"
@@ -401,6 +461,8 @@ mod tests {
                     fn hidden() {}
                     enum visible {}
                     enum hidden {}
+                    type visible = SomeType;
+                    type hidden = SomeType;
                 "#,
         );
         let model = exe.model();
@@ -413,10 +475,14 @@ mod tests {
                 NamespaceChild::Dto(value) => value.name().to_string(),
                 NamespaceChild::Rpc(value) => value.name().to_string(),
                 NamespaceChild::Enum(value) => value.name().to_string(),
+                NamespaceChild::TypeAlias(value) => value.name().to_string(),
                 NamespaceChild::Namespace(value) => value.name().to_string(),
             })
             .collect_vec();
-        assert_eq!(children, vec!["visible", "visible", "visible", "visible"]);
+        assert_eq!(
+            children,
+            vec!["visible", "visible", "visible", "visible", "visible"]
+        );
     }
 
     #[test]
@@ -471,5 +537,42 @@ mod tests {
 
         let rpcs = root.rpcs().map(|v| v.name().to_string()).collect_vec();
         assert_eq!(rpcs, vec!["visible0", "visible1"]);
+    }
+
+    #[test]
+    fn enums() {
+        let mut exe = TestExecutor::new(
+            r#"
+                    enum visible0 {}
+                    enum hidden {}
+                    enum visible1 {}
+                "#,
+        );
+        let model = exe.model();
+        let view = model.view().with_namespace_transform(TestFilter {});
+        let root = view.api();
+
+        let enums = root.enums().map(|v| v.name().to_string()).collect_vec();
+        assert_eq!(enums, vec!["visible0", "visible1"]);
+    }
+
+    #[test]
+    fn aliases() {
+        let mut exe = TestExecutor::new(
+            r#"
+                    type visible0 = u32;
+                    type hidden = u32;
+                    type visible1 = u32;
+                "#,
+        );
+        let model = exe.model();
+        let view = model.view().with_namespace_transform(TestFilter {});
+        let root = view.api();
+
+        let aliases = root
+            .ty_aliases()
+            .map(|v| v.name().to_string())
+            .collect_vec();
+        assert_eq!(aliases, vec!["visible0", "visible1"]);
     }
 }

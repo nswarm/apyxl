@@ -44,9 +44,10 @@ impl Default for Builder<'_> {
 
 impl<'a> Builder<'a> {
     pub fn with_config(config: Config) -> Self {
-        let mut s = Self::default();
-        s.config = config;
-        s
+        Self {
+            config,
+            ..Default::default()
+        }
     }
 
     pub fn config(&self) -> &Config {
@@ -134,9 +135,11 @@ impl<'a> Builder<'a> {
             validate::recurse_api(&self.api, validate::rpc_param_names_no_duplicates),
             validate::recurse_api(&self.api, validate::rpc_param_types),
             validate::recurse_api(&self.api, validate::rpc_return_types),
+            validate::recurse_api(&self.api, validate::ty_alias_target_type),
             validate::recurse_api(&self.api, validate::enum_names),
             validate::recurse_api(&self.api, validate::enum_value_names),
-            validate::recurse_api(&self.api, validate::no_duplicate_dto_enums),
+            validate::recurse_api(&self.api, validate::ty_alias_names),
+            validate::recurse_api(&self.api, validate::no_duplicate_dto_enum_alias),
             validate::recurse_api(&self.api, validate::no_duplicate_rpcs),
             validate::recurse_api(&self.api, validate::no_duplicate_enum_value_names),
         ]
@@ -649,6 +652,7 @@ mod tests {
                     r#"
                     struct dto {}
                     impl dto {
+                        type NestedAlias = u32;
                         fn nested_rpc() {}
                     }
                 "#,
@@ -658,6 +662,7 @@ mod tests {
                 let dto = model.api.dto("dto").unwrap();
                 let dto_namespace = dto.namespace.as_ref().unwrap();
                 assert!(dto_namespace.rpc("nested_rpc").is_some());
+                assert!(dto_namespace.ty_alias("NestedAlias").is_some());
             }
 
             #[test]
@@ -700,7 +705,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateDtoOrEnum(EntityId::new_unqualified("ns.dto")),
+                    ValidationError::DuplicateDtoOrEnumOrAlias(EntityId::new_unqualified("ns.dto")),
                 );
             }
 
@@ -734,7 +739,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateDtoOrEnum(EntityId::new_unqualified("ns.en")),
+                    ValidationError::DuplicateDtoOrEnumOrAlias(EntityId::new_unqualified("ns.en")),
                 );
             }
 
@@ -751,7 +756,47 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateDtoOrEnum(EntityId::new_unqualified("ns.asdf")),
+                    ValidationError::DuplicateDtoOrEnumOrAlias(EntityId::new_unqualified(
+                        "ns.asdf",
+                    )),
+                );
+            }
+
+            #[test]
+            fn enum_alias() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        enum asdf {}
+                        type asdf = u32;
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateDtoOrEnumOrAlias(EntityId::new_unqualified(
+                        "ns.asdf",
+                    )),
+                );
+            }
+
+            #[test]
+            fn dto_alias() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct asdf {}
+                        type asdf = u32;
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateDtoOrEnumOrAlias(EntityId::new_unqualified(
+                        "ns.asdf",
+                    )),
                 );
             }
 
@@ -1105,6 +1150,64 @@ mod tests {
             }
         }
 
+        mod validate_ty_alias {
+            use crate::model::builder::tests::{
+                assert_contains_error, build_from_input, test_builder,
+            };
+            use crate::model::builder::ValidationError;
+            use crate::model::EntityId;
+            use crate::test_util::executor::TestExecutor;
+
+            #[test]
+            fn name_empty() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        type alias0 = u32;
+                        type alias1 = u32;
+                        type alias2 = u32;
+                    }
+                "#,
+                );
+                let mut builder = test_builder(&mut exe);
+                builder
+                    .api
+                    .find_ty_alias_mut(&EntityId::new_unqualified("ns.alias2"))
+                    .unwrap()
+                    .name = "";
+
+                let result = builder.build();
+                let expected_entity_id = EntityId::try_from("ns").unwrap();
+                let expected_index = 2;
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidTypeAliasName(
+                        expected_entity_id.to_owned(),
+                        expected_index,
+                    ),
+                );
+            }
+
+            #[test]
+            fn target_ty_invalid_linkage() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    type alias = ns::dto;
+                    mod ns {
+                        struct definitely_not_dto {}
+                    }"#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::InvalidTypeAliasTargetType(
+                        EntityId::try_from("a:alias").unwrap(),
+                        EntityId::new_unqualified("ns.dto"),
+                    ),
+                );
+            }
+        }
+
         mod validate_namespace {
             use crate::model::builder::tests::{assert_contains_error, build_from_input};
             use crate::model::builder::ValidationError;
@@ -1243,6 +1346,25 @@ mod tests {
                 let model = exe.build();
 
                 assert_qualified_ty(&model.api, "ns2.r:rpc.return_ty", "ns0.ns1.enum:dep");
+            }
+
+            #[test]
+            fn ty_alias_target_type() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns0 {
+                        mod ns1 {
+                            enum dep {}
+                        }
+                    }
+                    mod ns2 {
+                        type alias = ns0::ns1::dep;
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "ns2.a:alias.target_ty", "ns0.ns1.enum:dep");
             }
 
             fn assert_qualified_ty(api: &Api, ty_id: &str, expected_target_id: &str) {

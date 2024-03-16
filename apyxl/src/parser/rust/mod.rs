@@ -17,6 +17,7 @@ mod expr_block;
 mod namespace;
 mod rpc;
 mod ty;
+mod ty_alias;
 mod visibility;
 
 #[derive(Default)]
@@ -111,8 +112,10 @@ mod tests {
         pub fn rpc() {}
         // zzz
         const ignored: &[&str] = &["zz", "xx"];
-        type asdf;
-        pub type fdsa;
+        // alias comment
+        type private_alias = u32;
+        // alias comment
+        pub type alias = u32;
         fn private_rpc() {}
         pub enum en {}
         enum private_en {}
@@ -134,10 +137,15 @@ mod tests {
         assert!(model.api().dto("dto").is_some(), "dto");
         assert!(model.api().rpc("rpc").is_some(), "rpc");
         assert!(model.api().en("en").is_some(), "en");
+        assert!(model.api().ty_alias("alias").is_some(), "alias");
         assert!(model.api().namespace("namespace").is_some(), "namespace");
         assert!(model.api().dto("private_dto").is_some(), "private_dto");
         assert!(model.api().rpc("private_rpc").is_some(), "private_rpc");
         assert!(model.api().en("private_en").is_some(), "private_en");
+        assert!(
+            model.api().ty_alias("private_alias").is_some(),
+            "private_alias"
+        );
         assert!(
             model.api().namespace("private_namespace").is_some(),
             "private_namespace"
@@ -182,6 +190,8 @@ mod tests {
         enum ignored_en {}
         pub struct dto {}
         struct ignored_dto {}
+        type ignored_alias = u32;
+        pub type alias = u32;
         pub mod namespace {}
         mod ignored_namespace {}
         "#,
@@ -197,10 +207,12 @@ mod tests {
         assert!(model.api().dto("dto").is_some());
         assert!(model.api().rpc("rpc").is_some());
         assert!(model.api().en("en").is_some());
+        assert!(model.api().ty_alias("alias").is_some());
         assert!(model.api().namespace("namespace").is_some());
         assert!(model.api().dto("ignored_dto").is_none());
         assert!(model.api().rpc("ignored_rpc").is_none());
         assert!(model.api().en("ignored_en").is_none());
+        assert!(model.api().ty_alias("ignored_alias").is_none());
         assert!(model.api().namespace("ignored_namespace").is_none());
         Ok(())
     }
