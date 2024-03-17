@@ -56,6 +56,9 @@ use crate::model::api::entity::EntityType;
 ///                                `e`, `enum`, `en`:         [crate::model::Enum],
 ///                                `a`, `alias`:              [crate::model::TypeAlias],
 ///     [crate::model::Dto]:       `f`, `field`:              [crate::model::Field],
+///                                `d`, `dto`:                [crate::model::Dto],
+///                                `r`, `rpc`:                [crate::model::Rpc],
+///                                `a`, `alias`:              [crate::model::TypeAlias],
 ///     [crate::model::Rpc]:       `p`, `param`:              [crate::model::Field],
 ///                                `return_ty`:               [crate::model::Type] (nameless),
 ///     [crate::model::Field]:     `ty`:                      [crate::model::Type] (nameless),
@@ -103,6 +106,10 @@ impl EntityId {
 
     pub fn is_qualified(&self) -> bool {
         !self.components.iter().any(|c| c.ty == EntityType::None)
+    }
+
+    pub fn components(&self) -> impl Iterator<Item = &Component> {
+        self.components.iter()
     }
 
     pub fn component_names(&self) -> impl Iterator<Item = &str> {
@@ -376,28 +383,32 @@ impl<S: AsRef<str>> TryFrom<&[S]> for EntityId {
     fn try_from(value: &[S]) -> Result<Self, Self::Error> {
         let mut components = VecDeque::new();
         for s in value.iter().map(AsRef::as_ref) {
-            let split = s.split(':').collect_vec();
             let parent = components.iter().last();
-            if split.len() < 2 {
-                let value = split.get(0).unwrap();
-                // Namespaces are allowed without subtype.
-                if let Ok(c) =
-                    parse_component(entity::subtype::NAMESPACE, value.to_string(), parent)
-                {
-                    components.push_back(c);
-                    continue;
+            let split = s.split(':').collect_vec();
+            match split.len().cmp(&2) {
+                Ordering::Less => {
+                    let value = split.first().unwrap();
+                    // Namespaces are allowed without subtype.
+                    if let Ok(c) =
+                        parse_component(entity::subtype::NAMESPACE, value.to_string(), parent)
+                    {
+                        components.push_back(c);
+                        continue;
+                    }
+                    // "nameless" subtypes are allowed depending on context.
+                    components.push_back(parse_component(value, value.to_string(), parent)?);
                 }
-                // "nameless" subtypes are allowed depending on context.
-                components.push_back(parse_component(value, value.to_string(), parent)?);
-            } else if split.len() == 2 {
-                let subtype = split.get(0).unwrap();
-                let name = split.get(1).unwrap().to_string();
-                components.push_back(parse_component(subtype, name, parent)?);
-            } else {
-                return Err(anyhow!(
-                    "EntityId: component '{}' must be in the form `type:name`",
-                    s
-                ));
+                Ordering::Equal => {
+                    let subtype = split.first().unwrap();
+                    let name = split.get(1).unwrap().to_string();
+                    components.push_back(parse_component(subtype, name, parent)?);
+                }
+                Ordering::Greater => {
+                    return Err(anyhow!(
+                        "EntityId: component '{}' must be in the form `type:name`",
+                        s
+                    ));
+                }
             }
         }
         Ok(Self { components })
@@ -600,11 +611,11 @@ mod tests {
                 .is_err());
             assert!(EntityId::try_from("dto:x")
                 .unwrap()
-                .child(EntityType::Rpc, "x")
+                .child(EntityType::Type, "x")
                 .is_err());
             assert!(EntityId::try_from("dto:x")
                 .unwrap()
-                .child(EntityType::Type, "x")
+                .child(EntityType::Enum, "x")
                 .is_err());
             assert!(EntityId::try_from("rpc:x")
                 .unwrap()

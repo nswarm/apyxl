@@ -135,10 +135,10 @@ impl<'a> Builder<'a> {
             validate::recurse_api(&self.api, validate::rpc_param_names_no_duplicates),
             validate::recurse_api(&self.api, validate::rpc_param_types),
             validate::recurse_api(&self.api, validate::rpc_return_types),
+            validate::recurse_api(&self.api, validate::ty_alias_names),
             validate::recurse_api(&self.api, validate::ty_alias_target_type),
             validate::recurse_api(&self.api, validate::enum_names),
             validate::recurse_api(&self.api, validate::enum_value_names),
-            validate::recurse_api(&self.api, validate::ty_alias_names),
             validate::recurse_api(&self.api, validate::no_duplicate_dto_enum_alias),
             validate::recurse_api(&self.api, validate::no_duplicate_rpcs),
             validate::recurse_api(&self.api, validate::no_duplicate_enum_value_names),
@@ -147,10 +147,12 @@ impl<'a> Builder<'a> {
         .flatten()
         .partition(|x| x.is_ok());
 
-        errs.append(&mut devirtualize_namespaces(
-            &mut self.api,
-            &EntityId::default(),
-        ));
+        errs.append(
+            &mut devirtualize_namespaces(&mut self.api, &EntityId::default())
+                .into_iter()
+                .filter(|x| x.is_err())
+                .collect_vec(),
+        );
 
         if !errs.is_empty() {
             return Err(errs.into_iter().map(Result::unwrap_err).collect_vec());
@@ -206,7 +208,7 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
         .into_iter()
         .sorted_unstable_by_key(|ns| ns.name.to_string())
         .coalesce(|mut lhs, rhs| {
-            if rhs.name == lhs.name {
+            if rhs.name == lhs.name && rhs.is_virtual == lhs.is_virtual {
                 lhs.merge(rhs);
                 Ok(lhs)
             } else {
@@ -224,26 +226,41 @@ fn devirtualize_namespaces(
     namespace: &mut Namespace,
     namespace_id: &EntityId,
 ) -> Vec<ValidationResult> {
-    namespace
+    let results = namespace
         .take_namespaces_filtered(|namespace| namespace.is_virtual)
         .into_iter()
-        .flat_map(|mut virtual_namespace| {
-            let virtual_ns_id = namespace_id
-                .child(EntityType::Namespace, &virtual_namespace.name)
-                .unwrap();
-            let mut results = devirtualize_namespaces(&mut virtual_namespace, &virtual_ns_id);
-            match namespace.dto_mut(&virtual_namespace.name) {
+        .map(
+            |virtual_namespace| match namespace.dto_mut(&virtual_namespace.name) {
                 None => {
-                    results.push(Err(ValidationError::VirtualNamespaceMissingOwner(
+                    let virtual_ns_id = namespace_id
+                        .child(EntityType::Namespace, &virtual_namespace.name)
+                        .unwrap();
+                    Err(ValidationError::VirtualNamespaceMissingOwner(
                         virtual_ns_id.clone(),
-                    )));
+                    ))
                 }
                 Some(dto) => {
                     dto.namespace = Some(virtual_namespace);
+                    Ok(None)
                 }
-            }
-            results
+            },
+        )
+        .collect_vec();
+
+    let children_results = namespace
+        .namespaces_mut()
+        .filter(|nested| !nested.is_virtual)
+        .flat_map(|nested| {
+            let nested_id = &namespace_id
+                .child(EntityType::Namespace, &nested.name)
+                .unwrap();
+            devirtualize_namespaces(nested, nested_id)
         })
+        .collect_vec();
+
+    vec![results, children_results]
+        .into_iter()
+        .flatten()
         .collect_vec()
 }
 
@@ -253,6 +270,7 @@ fn pretty_print_api(api: &Api) {
     match generator::Rust::default().generate(model.view(), &mut output) {
         Ok(_) => {
             println!("pre-validation API:\n{}", output.to_string());
+            println!("PLEASE NOTE: this print style may hide errors. Recommend building with PreValidatePrint::Debug if you see errors");
         }
         Err(err) => error!(
             "error when generating pre-validation API for printing: {}",
@@ -660,6 +678,32 @@ mod tests {
                 let model = build_from_input(&mut exe).unwrap();
 
                 let dto = model.api.dto("dto").unwrap();
+                let dto_namespace = dto.namespace.as_ref().unwrap();
+                assert!(dto_namespace.rpc("nested_rpc").is_some());
+                assert!(dto_namespace.ty_alias("NestedAlias").is_some());
+            }
+
+            #[test]
+            fn recurse_into_nested_namespaces() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns0 {
+                        mod ns1 {
+                            struct dto {}
+                            impl dto {
+                                type NestedAlias = u32;
+                                fn nested_rpc() {}
+                            }
+                        }
+                    }
+                "#,
+                );
+                let model = build_from_input(&mut exe).unwrap();
+
+                let dto = model
+                    .api
+                    .find_dto(&EntityId::try_from("ns0.ns1.d:dto").unwrap())
+                    .unwrap();
                 let dto_namespace = dto.namespace.as_ref().unwrap();
                 assert!(dto_namespace.rpc("nested_rpc").is_some());
                 assert!(dto_namespace.ty_alias("NestedAlias").is_some());
@@ -1367,13 +1411,87 @@ mod tests {
                 assert_qualified_ty(&model.api, "ns2.a:alias.target_ty", "ns0.ns1.enum:dep");
             }
 
+            #[test]
+            fn dto_virtual_namespace_rpc() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    struct outside {}
+                    struct dto {}
+                    impl dto {
+                        fn rpc() -> outside {}
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "d:dto.r:rpc.return_ty", "dto:outside");
+            }
+
+            #[test]
+            fn nested_dto_virtual_namespace_rpc() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct outside {}
+                        struct dto {}
+                        impl dto {
+                            fn rpc() -> outside {}
+                        }
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "ns.d:dto.r:rpc.return_ty", "ns.dto:outside");
+            }
+
+            #[test]
+            fn dto_virtual_namespace_alias() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    struct outside {}
+                    struct dto {}
+                    impl dto {
+                        type alias = outside;
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "d:dto.a:alias.target_ty", "dto:outside");
+            }
+
+            #[test]
+            fn nested_dto_virtual_namespace_alias() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct outside {}
+                        struct dto {}
+                        impl dto {
+                            type alias = outside;
+                        }
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "ns.d:dto.a:alias.target_ty", "ns.dto:outside");
+            }
+
             fn assert_qualified_ty(api: &Api, ty_id: &str, expected_target_id: &str) {
                 let ty_id = EntityId::try_from(ty_id).unwrap();
-                let ty_entity = api.find_entity(ty_id).unwrap();
+                let ty_entity = api.find_entity(ty_id).expect("couldn't find ty_id");
                 if let Entity::Type(ty) = ty_entity {
                     let target = ty.api().unwrap();
-                    assert!(target.is_qualified());
-                    assert_eq!(target.to_string(), expected_target_id);
+                    assert!(target.is_qualified(), "target not qualified");
+                    assert_eq!(
+                        target.to_string(),
+                        expected_target_id,
+                        "{:?} != {:?}",
+                        target,
+                        expected_target_id
+                    );
                 } else {
                     panic!("found wrong type");
                 }

@@ -56,7 +56,11 @@ impl Dependencies {
         for child in &namespace.children {
             match child {
                 NamespaceChild::Dto(dto) => {
-                    self.add_node(&namespace_id.child(EntityType::Dto, dto.name).unwrap());
+                    let dto_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
+                    self.add_node(&dto_id);
+                    if let Some(namespace) = &dto.namespace {
+                        self.add_nodes_recursively(namespace, &dto_id);
+                    }
                 }
                 NamespaceChild::Rpc(rpc) => {
                     self.add_node(&namespace_id.child(EntityType::Rpc, rpc.name).unwrap());
@@ -94,6 +98,9 @@ impl Dependencies {
             for field in &dto.fields {
                 self.add_edge(from, namespace_id, &field.ty);
             }
+            if let Some(namespace) = &dto.namespace {
+                self.add_edges_recursively(namespace, &from_id);
+            }
         }
 
         for rpc in namespace.rpcs() {
@@ -103,7 +110,7 @@ impl Dependencies {
                 self.add_edge(from, namespace_id, &param.ty);
             }
             if let Some(return_type) = &rpc.return_type {
-                self.add_edge(from, namespace_id, &return_type);
+                self.add_edge(from, namespace_id, return_type);
             }
         }
 
@@ -140,7 +147,10 @@ impl Dependencies {
         while let Some(base) = it {
             let entity_id = match base.concat(relative) {
                 Ok(id) => id,
-                Err(_) => return None,
+                Err(_) => {
+                    it = base.parent();
+                    continue;
+                }
             };
             if let Some(index) = self.node_map.get(&entity_id) {
                 return Some(index);
@@ -170,7 +180,7 @@ impl Dependencies {
             | Type::F128
             | Type::String
             | Type::Bytes
-            | Type::User(_) => return,
+            | Type::User(_) => (),
 
             Type::Api(entity_id) => self.add_edge_relative(from, namespace_id, entity_id),
 
@@ -384,6 +394,38 @@ mod tests {
                 r#"
             struct dto {}
             type alias = dto;
+            "#,
+                |deps| assert!(deps.contains_edge(&from, &to)),
+            );
+        }
+
+        #[test]
+        fn impl_block_rpc_param() {
+            let from = EntityId::try_from("d:other.r:rpc").unwrap();
+            let to = EntityId::try_from("d:dto").unwrap();
+            run_test(
+                r#"
+            struct dto {}
+            struct other {}
+            impl other {
+                fn rpc(d: dto) {}
+            }
+            "#,
+                |deps| assert!(deps.contains_edge(&from, &to)),
+            );
+        }
+
+        #[test]
+        fn impl_block_alias_target_ty() {
+            let from = EntityId::try_from("d:other.a:alias").unwrap();
+            let to = EntityId::try_from("d:dto").unwrap();
+            run_test(
+                r#"
+            struct dto {}
+            struct other {}
+            impl other {
+                type alias = dto;
+            }
             "#,
                 |deps| assert!(deps.contains_edge(&from, &to)),
             );

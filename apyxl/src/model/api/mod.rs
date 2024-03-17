@@ -28,8 +28,8 @@ mod field;
 mod namespace;
 mod rpc;
 mod ty;
-pub mod validate;
 mod ty_alias;
+pub mod validate;
 
 /// The root namespace of the entire API.
 pub const UNDEFINED_NAMESPACE: &str = "_";

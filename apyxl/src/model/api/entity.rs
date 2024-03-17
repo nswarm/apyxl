@@ -197,14 +197,13 @@ impl EntityType {
             },
 
             EntityType::Dto => match ty {
-                EntityType::Field => true,
-                EntityType::Namespace
-                | EntityType::Dto
-                | EntityType::Rpc
-                | EntityType::Enum
-                | EntityType::Type
-                | EntityType::TypeAlias
-                | EntityType::None => false,
+                EntityType::Field | EntityType::Dto | EntityType::Rpc | EntityType::TypeAlias => {
+                    true
+                }
+
+                EntityType::Namespace | EntityType::Enum | EntityType::Type | EntityType::None => {
+                    false
+                }
             },
 
             EntityType::Rpc => match ty {

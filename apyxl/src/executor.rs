@@ -97,7 +97,7 @@ impl<I: Input, P: Parser> Executor<I, P> {
             }
         }
 
-        let parser_config = self.parser_config.unwrap_or(Default::default());
+        let parser_config = self.parser_config.unwrap_or_default();
         debug!("Parser Config: {:#?}", parser_config);
 
         info!("Parsing...");

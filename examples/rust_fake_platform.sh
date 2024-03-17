@@ -10,7 +10,7 @@ rm -rf "$outDir"
 # Parses `apyxl/examples/fake_platform` to various outputs.
 # See results in sibling folder `output`.
 cd "$scriptDir"
-RUST_LOG=info cargo run -- \
+RUST_LOG=${RUST_LOG-info} cargo run -- \
   --input "$examplesDir/fake_platform/src/**/*.rs" \
   --parser rust \
   --parser-config "$examplesDir/fake_platform/parser_config.json" \

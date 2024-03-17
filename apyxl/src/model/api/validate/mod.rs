@@ -492,11 +492,14 @@ where
         .expect("namespace must exist in api");
 
     let child_results = namespace.namespaces().flat_map(|child| {
+        let child_ty = if child.is_virtual {
+            EntityType::Dto
+        } else {
+            EntityType::Namespace
+        };
         recurse_namespaces(
             api,
-            namespace_id
-                .child(EntityType::Namespace, &child.name)
-                .unwrap(),
+            namespace_id.child(child_ty, &child.name).unwrap(),
             action,
         )
     });
@@ -697,14 +700,14 @@ mod tests {
         ) {
             let mut exe = TestExecutor::new(data);
             let api = exe.api();
-            let qualified = qualify_type(&api, namespace_id, &unqualified).unwrap();
+            let qualified = qualify_type(&api, namespace_id, unqualified).unwrap();
             assert_eq!(qualified, expected);
         }
 
         fn run_test_err(data: &str, namespace_id: &EntityId, unqualified: &Type) {
             let mut exe = TestExecutor::new(data);
             let api = exe.api();
-            assert!(qualify_type(&api, namespace_id, &unqualified).is_err());
+            assert!(qualify_type(&api, namespace_id, unqualified).is_err());
         }
     }
 

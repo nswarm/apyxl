@@ -9,7 +9,7 @@ pub struct Dto<'a> {
     pub fields: Vec<Field<'a>>,
     pub attributes: Attributes<'a>,
 
-    /// Namespace that holds e.g. nested [Dtos] and [Rpcs].
+    /// Namespace that holds e.g. nested [Dtos], [Rpcs], and [TypeAliases].
     pub namespace: Option<Namespace<'a>>,
 }
 
@@ -33,15 +33,21 @@ impl<'api> FindEntity<'api> for Dto<'api> {
     fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
-                EntityType::Field => self.field(&name).map_or(None, |x| x.find_entity(id)),
+                EntityType::Field => self.field(&name).and_then(|x| x.find_entity(id)),
 
-                EntityType::None
-                | EntityType::Namespace
-                | EntityType::Dto
-                | EntityType::Rpc
-                | EntityType::Enum
-                | EntityType::TypeAlias
-                | EntityType::Type => None,
+                EntityType::Dto | EntityType::Rpc | EntityType::TypeAlias => {
+                    // Need to put the id for this level back together and evaluate it on the namespace.
+                    let id = EntityId::default()
+                        .child(ty, name)
+                        .unwrap()
+                        .concat(&id)
+                        .unwrap();
+                    self.namespace.as_ref()?.find_entity(id)
+                }
+
+                EntityType::None | EntityType::Namespace | EntityType::Enum | EntityType::Type => {
+                    None
+                }
             }
         } else {
             Some(Entity::Dto(self))
@@ -51,16 +57,21 @@ impl<'api> FindEntity<'api> for Dto<'api> {
     fn find_entity_mut<'a>(&'a mut self, mut id: EntityId) -> Option<EntityMut<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
-                EntityType::Field => self
-                    .field_mut(&name).and_then(|x| x.find_entity_mut(id)),
+                EntityType::Field => self.field_mut(&name).and_then(|x| x.find_entity_mut(id)),
 
-                EntityType::None
-                | EntityType::Namespace
-                | EntityType::Dto
-                | EntityType::Rpc
-                | EntityType::Enum
-                | EntityType::TypeAlias
-                | EntityType::Type => None,
+                EntityType::Dto | EntityType::Rpc | EntityType::TypeAlias => {
+                    // Need to put the id for this level back together and evaluate it on the namespace.
+                    let id = EntityId::default()
+                        .child(ty, name)
+                        .unwrap()
+                        .concat(&id)
+                        .unwrap();
+                    self.namespace.as_mut()?.find_entity_mut(id)
+                }
+
+                EntityType::None | EntityType::Namespace | EntityType::Enum | EntityType::Type => {
+                    None
+                }
             }
         } else {
             Some(EntityMut::Dto(self))
