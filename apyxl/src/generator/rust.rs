@@ -301,6 +301,7 @@ fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
         InnerType::U32 => o.write_str("u32"),
         InnerType::U64 => o.write_str("u64"),
         InnerType::U128 => o.write_str("u128"),
+        InnerType::USIZE => o.write_str("usize"),
         InnerType::I8 => o.write_str("i8"),
         InnerType::I16 => o.write_str("i16"),
         InnerType::I32 => o.write_str("i32"),

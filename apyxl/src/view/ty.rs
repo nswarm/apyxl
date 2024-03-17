@@ -28,6 +28,7 @@ impl<'v> Type<'v> {
             model::Type::U32 => InnerType::U32,
             model::Type::U64 => InnerType::U64,
             model::Type::U128 => InnerType::U128,
+            model::Type::USIZE => InnerType::USIZE,
             model::Type::I8 => InnerType::I8,
             model::Type::I16 => InnerType::I16,
             model::Type::I32 => InnerType::I32,

@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
-use anyhow::Result;
 use crate::model::entity::{EntityMut, FindEntity};
+use anyhow::Result;
 
 use crate::model::{Entity, EntityId};
 
@@ -29,6 +29,7 @@ where
     U32,
     U64,
     U128,
+    USIZE,
 
     // Signed integers.
     I8,

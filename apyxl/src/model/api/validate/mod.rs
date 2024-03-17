@@ -448,6 +448,7 @@ fn qualify_type(api: &Api, namespace_id: &EntityId, ty: &Type) -> Result<Option<
         Type::U32 => {}
         Type::U64 => {}
         Type::U128 => {}
+        Type::USIZE => {}
         Type::I8 => {}
         Type::I16 => {}
         Type::I32 => {}

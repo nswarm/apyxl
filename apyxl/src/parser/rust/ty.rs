@@ -23,6 +23,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, Type, Error> {
             ty_or_ref!("u32").map(|_| Type::U32),
             ty_or_ref!("u64").map(|_| Type::U64),
             ty_or_ref!("u128").map(|_| Type::U128),
+            ty_or_ref!("usize").map(|_| Type::USIZE),
             ty_or_ref!("i8").map(|_| Type::I8),
             ty_or_ref!("i16").map(|_| Type::I16),
             ty_or_ref!("i32").map(|_| Type::I32),
@@ -173,6 +174,7 @@ mod tests {
         test!(u32, "u32", Type::U32);
         test!(u64, "u64", Type::U64);
         test!(u128, "u128", Type::U128);
+        test!(usize, "usize", Type::USIZE);
         test!(i8, "i8", Type::I8);
         test!(i16, "i16", Type::I16);
         test!(i32, "i32", Type::I32);
@@ -191,6 +193,7 @@ mod tests {
         test!(u32_ref, "&u32", Type::U32);
         test!(u64_ref, "&u64", Type::U64);
         test!(u128_ref, "&u128", Type::U128);
+        test!(usize_ref, "&usize", Type::USIZE);
         test!(i8_ref, "&i8", Type::I8);
         test!(i16_ref, "&i16", Type::I16);
         test!(i32_ref, "&i32", Type::I32);
