@@ -64,8 +64,12 @@ impl Dependencies {
                 NamespaceChild::Enum(en) => {
                     self.add_node(&namespace_id.child(EntityType::Enum, en.name).unwrap());
                 }
-                NamespaceChild::TypeAlias(en) => {
-                    self.add_node(&namespace_id.child(EntityType::TypeAlias, en.name).unwrap());
+                NamespaceChild::TypeAlias(alias) => {
+                    self.add_node(
+                        &namespace_id
+                            .child(EntityType::TypeAlias, alias.name)
+                            .unwrap(),
+                    );
                 }
                 NamespaceChild::Namespace(_) => {}
             }
@@ -101,6 +105,14 @@ impl Dependencies {
             if let Some(return_type) = &rpc.return_type {
                 self.add_edge(from, namespace_id, &return_type);
             }
+        }
+
+        for alias in namespace.ty_aliases() {
+            let from_id = namespace_id
+                .child(EntityType::TypeAlias, alias.name)
+                .unwrap();
+            let from = *self.node(&from_id).unwrap();
+            self.add_edge(from, namespace_id, &alias.target_ty);
         }
 
         for child in namespace.namespaces() {
@@ -194,9 +206,26 @@ mod tests {
         use crate::model::EntityId;
 
         #[test]
-        fn success() {
+        fn dto() {
             let node_id = EntityId::try_from("d:dto").unwrap();
             run_test(r#"struct dto {}"#, |deps| {
+                assert!(deps.contains_node(&node_id))
+            });
+        }
+
+        #[test]
+        fn en() {
+            let node_id = EntityId::try_from("e:en").unwrap();
+            run_test(
+                r#"enum en {}"#,
+                |deps| assert!(deps.contains_node(&node_id)),
+            );
+        }
+
+        #[test]
+        fn alias() {
+            let node_id = EntityId::try_from("a:alias").unwrap();
+            run_test(r#"type alias = u32;"#, |deps| {
                 assert!(deps.contains_node(&node_id))
             });
         }
@@ -303,6 +332,60 @@ mod tests {
                     assert!(deps.contains_edge(&a, &b));
                     assert!(deps.contains_edge(&b, &a));
                 },
+            );
+        }
+
+        #[test]
+        fn field_to_enum() {
+            let from = EntityId::try_from("d:dto").unwrap();
+            let to = EntityId::try_from("e:en").unwrap();
+            run_test(
+                r#"
+            enum en {}
+            struct dto {
+                field: en,
+            }
+            "#,
+                |deps| assert!(deps.contains_edge(&from, &to)),
+            );
+        }
+
+        #[test]
+        fn rpc_param() {
+            let from = EntityId::try_from("r:rpc").unwrap();
+            let to = EntityId::try_from("d:dto").unwrap();
+            run_test(
+                r#"
+            struct dto {}
+            fn rpc(d: dto) {}
+            "#,
+                |deps| assert!(deps.contains_edge(&from, &to)),
+            );
+        }
+
+        #[test]
+        fn rpc_return_type() {
+            let from = EntityId::try_from("r:rpc").unwrap();
+            let to = EntityId::try_from("d:dto").unwrap();
+            run_test(
+                r#"
+            struct dto {}
+            fn rpc() -> dto {}
+            "#,
+                |deps| assert!(deps.contains_edge(&from, &to)),
+            );
+        }
+
+        #[test]
+        fn alias_target_ty() {
+            let from = EntityId::try_from("a:alias").unwrap();
+            let to = EntityId::try_from("d:dto").unwrap();
+            run_test(
+                r#"
+            struct dto {}
+            type alias = dto;
+            "#,
+                |deps| assert!(deps.contains_edge(&from, &to)),
             );
         }
 
