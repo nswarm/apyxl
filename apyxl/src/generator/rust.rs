@@ -1,16 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
 use itertools::Itertools;
 
-use crate::generator::Generator;
-use crate::model::{attribute, Chunk, Comment, Dependencies, EntityType};
+use crate::generator::{util, Generator};
+use crate::model::{attribute, Chunk, Comment};
 use crate::output::{Indented, Output};
+use crate::rust_util;
 use crate::view::{
     Attributes, Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, SubView,
     Type, TypeAlias,
 };
-use crate::{model, rust_util};
 
 #[derive(Debug, Default)]
 pub struct Rust {}
@@ -42,7 +42,7 @@ fn write_dependencies(
     sub_view: &SubView,
     o: &mut dyn Output,
 ) -> Result<()> {
-    let mut deps = collect_chunk_dependencies(
+    let mut deps = util::collect_chunk_dependencies(
         &model.api(),
         &sub_view.root_id(),
         sub_view.namespace(),
@@ -241,7 +241,7 @@ fn write_attributes(attributes: &Attributes, o: &mut dyn Output) -> Result<()> {
 }
 
 fn write_comments(comments: &[Comment], o: &mut dyn Output) -> Result<()> {
-    write_joined(comments, "\n", o, |comment, o| {
+    util::write_joined(comments, "\n", o, |comment, o| {
         for line in comment.lines() {
             o.write_str("// ")?;
             o.write_str(line)?;
@@ -257,7 +257,7 @@ fn write_user_attributes(user_attributes: &[attribute::User], o: &mut dyn Output
         return Ok(());
     }
     o.write_str("#[")?;
-    write_joined(user_attributes, ", ", o, |attr, o| {
+    util::write_joined(user_attributes, ", ", o, |attr, o| {
         write_user_attribute(attr.name, &attr.data, o)
     })?;
     o.write(']')?;
@@ -275,7 +275,7 @@ fn write_user_attribute(
         return Ok(());
     }
     o.write('(')?;
-    write_joined(data, ", ", o, |data, o| {
+    util::write_joined(data, ", ", o, |data, o| {
         match data.key {
             None => {}
             Some(key) => {
@@ -326,7 +326,7 @@ fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
 fn write_entity_id(entity_id: EntityId, o: &mut dyn Output) -> Result<()> {
     // Fully qualify everything by crate.
     o.write_str("crate::")?;
-    write_joined_str(
+    util::write_joined_str(
         &entity_id.path().iter().map(|s| s.as_ref()).collect_vec(),
         "::",
         o,
@@ -353,85 +353,6 @@ fn write_option(ty: InnerType, o: &mut dyn Output) -> Result<()> {
     o.write('>')
 }
 
-fn write_joined_str(components: &[&str], separator: &str, o: &mut dyn Output) -> Result<()> {
-    write_joined(components, separator, o, |component, o| {
-        o.write_str(component)
-    })
-}
-
-/// Writes the `components` joined with `separator` without unnecessary allocations.
-fn write_joined<T, F>(
-    components: &[T],
-    separator: &str,
-    o: &mut dyn Output,
-    write_component: F,
-) -> Result<()>
-where
-    F: Fn(&T, &mut dyn Output) -> Result<()>,
-{
-    let mut first = true;
-    for component in components {
-        if !first {
-            o.write_str(separator)?;
-        }
-        first = false;
-        write_component(component, o)?;
-    }
-    Ok(())
-}
-
-/// Collects relative paths for every chunk referenced by any child (recursively) within `dependent_ns`.
-fn collect_chunk_dependencies<'v, 'a>(
-    root: &'v Namespace<'v, 'a>,
-    dependent_id: &model::EntityId,
-    dependent_ns: Namespace<'v, 'a>,
-    dependencies: &'v Dependencies,
-) -> Vec<PathBuf> {
-    collect_dependencies_recursively(dependent_id, dependent_ns, dependencies)
-        .iter()
-        .flat_map(|id| match root.find_child(&id) {
-            None => vec![],
-            Some(child) => match child.attributes().chunk() {
-                None => vec![],
-                Some(attr) => attr.relative_file_paths.clone(),
-            },
-        })
-        .dedup()
-        .collect_vec()
-}
-
-/// Collects all [model::EntityId]s that `dependent` [Namespace] depends on by recursing the
-/// hierarchy and collecting all dependents of each [NamespaceChild].
-fn collect_dependencies_recursively<'a>(
-    dependent_id: &model::EntityId,
-    dependent_ns: Namespace,
-    dependencies: &'a Dependencies,
-) -> Vec<&'a model::EntityId> {
-    let child_dependencies = dependent_ns
-        .children()
-        .map(|child| {
-            // unwrap ok: we're iterating over known children.
-            dependent_id
-                .child(child.entity_type(), child.name())
-                .unwrap()
-        })
-        .flat_map(|id| dependencies.get_for(&id));
-    dependent_ns
-        .namespaces()
-        .flat_map(|ns| {
-            // unwrap ok: we're iterating over known children.
-            collect_dependencies_recursively(
-                &dependent_id
-                    .child(EntityType::Namespace, ns.name())
-                    .unwrap(),
-                ns,
-                dependencies,
-            )
-        })
-        .chain(child_dependencies)
-        .collect_vec()
-}
-
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -439,12 +360,13 @@ mod tests {
     use crate::generator::rust::{
         write_dto, write_entity_id, write_enum, write_field, write_rpc, INDENT,
     };
+    use crate::generator::util::tests::{assert_output, assert_output_slice, indent};
     use crate::generator::Rust;
     use crate::model::{attribute, Attributes};
     use crate::output::Indented;
     use crate::test_util::executor::TestExecutor;
     use crate::view::Transforms;
-    use crate::{model, output, view, Generator};
+    use crate::{model, view, Generator};
 
     #[test]
     fn full_generation() -> Result<()> {
@@ -691,8 +613,8 @@ pub mod ns0 {
     mod imports {
         use anyhow::Result;
 
-        use crate::generator::rust::tests::assert_output;
         use crate::generator::rust::write_imports;
+        use crate::generator::util::tests::assert_output;
 
         #[test]
         fn with_extension() -> Result<()> {
@@ -754,8 +676,8 @@ pub mod ns0 {
     mod ty {
         use anyhow::Result;
 
-        use crate::generator::rust::tests::assert_output;
         use crate::generator::rust::write_type;
+        use crate::generator::util::tests::assert_output;
         use crate::model;
         use crate::view::Type;
 
@@ -819,26 +741,5 @@ pub mod ns0 {
             |o| write_entity_id(view::EntityId::new(&entity_id, &vec![]), o),
             "crate::a::b::c",
         )
-    }
-
-    fn assert_output<F: FnOnce(&mut output::Buffer) -> Result<()>>(
-        write: F,
-        expected: &str,
-    ) -> Result<()> {
-        let mut output = output::Buffer::default();
-        write(&mut output)?;
-        assert_eq!(&output.to_string(), expected);
-        Ok(())
-    }
-
-    fn assert_output_slice<F: FnOnce(&mut output::Buffer) -> Result<()>>(
-        write: F,
-        expected: &[&str],
-    ) -> Result<()> {
-        assert_output(write, &expected.join("\n"))
-    }
-
-    fn indent(indent: &str, s: &str) -> String {
-        [indent, s].join("")
     }
 }

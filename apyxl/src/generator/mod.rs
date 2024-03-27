@@ -9,6 +9,7 @@ use crate::view;
 
 mod dbg;
 mod rust;
+mod util;
 
 pub trait Generator: Debug {
     fn generate(&mut self, model: view::Model, output: &mut dyn Output) -> Result<()>;
