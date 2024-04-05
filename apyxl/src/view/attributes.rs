@@ -35,18 +35,23 @@ impl<'v, 'a> Attributes<'v, 'a> {
     pub fn comments(&self) -> Vec<Comment<'a>> {
         let mut comments = self.target.comments.clone();
         for x in self.xforms {
-            x.comments(&mut comments)
+            x.comments(&mut comments);
         }
         comments
     }
 
-    pub fn user(&self) -> &Vec<model::attributes::User<'a>> {
-        &self.target.user
+    pub fn user(&self) -> Vec<model::attributes::User<'a>> {
+        let mut attrs = self.target.user.clone();
+        for x in self.xforms {
+            x.user(&mut attrs);
+        }
+        attrs
     }
 }
 
 pub trait AttributeTransform: Debug + DynClone {
     fn comments(&self, comment: &mut Vec<Comment>);
+    fn user(&self, attr: &mut Vec<model::attributes::User>);
 }
 
 dyn_clone::clone_trait_object!(AttributeTransform);
@@ -54,16 +59,18 @@ dyn_clone::clone_trait_object!(AttributeTransform);
 #[cfg(test)]
 mod tests {
     use crate::model;
+    use crate::model::attributes::User;
     use crate::test_util::executor::TestExecutor;
     use crate::view::{AttributeTransform, Transformer};
     use std::borrow::Cow;
 
     #[test]
-    fn comment_transform() {
+    fn transform() {
         let mut exe = TestExecutor::new(
             r#"
                     // This comment has a bad_word
                     // bad_word bad_word bad_word
+                    #[some_attr, bad_word_attr]
                     struct dto {}
                 "#,
         );
@@ -83,6 +90,8 @@ mod tests {
                 "<3 <3 <3"
             ])],
         );
+        assert_eq!(attr.user()[0].name.as_ref(), "some_attr");
+        assert_eq!(attr.user()[1].name.as_ref(), "nice_attr");
     }
 
     #[derive(Debug, Clone)]
@@ -92,9 +101,17 @@ mod tests {
             comments.iter_mut().for_each(|comment| {
                 comment.lines_mut().for_each(|line| {
                     if line.contains("bad_word") {
-                        *line = Cow::Owned(line.replace("bad_word", "<3"))
+                        *line = Cow::Owned(line.replace("bad_word", "<3"));
                     }
                 });
+            });
+        }
+
+        fn user(&self, attr: &mut Vec<User>) {
+            attr.iter_mut().for_each(|attr| {
+                if attr.name.contains("bad_word") {
+                    attr.name = Cow::Owned(attr.name.replace("bad_word", "nice"));
+                }
             });
         }
     }

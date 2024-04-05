@@ -20,7 +20,7 @@ pub struct Comment<'a> {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct User<'a> {
-    pub name: &'a str,
+    pub name: Cow<'a, str>,
     pub data: Vec<UserData<'a>>,
 }
 
@@ -93,11 +93,17 @@ impl<'a> From<Vec<&'a str>> for Comment<'a> {
 
 impl<'a> User<'a> {
     pub fn new(name: &'a str, data: Vec<UserData<'a>>) -> Self {
-        Self { name, data }
+        Self {
+            name: Cow::Borrowed(name),
+            data,
+        }
     }
 
     pub fn new_flag(name: &'a str) -> Self {
-        Self { name, data: vec![] }
+        Self {
+            name: Cow::Borrowed(name),
+            data: vec![],
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 use chumsky::prelude::*;
+use std::borrow::Cow;
 
 use crate::model::attributes;
 use crate::parser::error::Error;
@@ -19,7 +20,7 @@ pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, E
         .or_not();
     name.then(data_list)
         .map(|(name, data)| attributes::User {
-            name,
+            name: Cow::Borrowed(name),
             data: data.unwrap_or(vec![]),
         })
         .separated_by(just(',').padded())

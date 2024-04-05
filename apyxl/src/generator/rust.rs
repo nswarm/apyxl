@@ -236,7 +236,7 @@ fn write_param(field: Field, o: &mut dyn Output) -> Result<()> {
 
 fn write_attributes(attributes: &Attributes, o: &mut dyn Output) -> Result<()> {
     write_comments(&attributes.comments(), o)?;
-    write_user_attributes(attributes.user(), o)?;
+    write_user_attributes(&attributes.user(), o)?;
     Ok(())
 }
 
@@ -258,7 +258,7 @@ fn write_user_attributes(user_attributes: &[attributes::User], o: &mut dyn Outpu
     }
     o.write_str("#[")?;
     util::write_joined(user_attributes, ", ", o, |attr, o| {
-        write_user_attribute(attr.name, &attr.data, o)
+        write_user_attribute(attr.name.as_ref(), &attr.data, o)
     })?;
     o.write(']')?;
     o.newline()?;
