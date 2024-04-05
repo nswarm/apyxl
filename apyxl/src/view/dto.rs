@@ -1,7 +1,7 @@
 use crate::model;
 use crate::model::entity::ToEntity;
 use crate::model::EntityType;
-use crate::view::{Attributes, Field, Transforms};
+use crate::view::{Attributes, Field, Namespace, Transforms};
 use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -59,7 +59,18 @@ impl<'v, 'a> Dto<'v, 'a> {
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.xforms.attr, &self.xforms.entity_id)
+        Attributes::new(
+            &self.target.attributes,
+            &self.xforms.attr,
+            &self.xforms.entity_id,
+        )
+    }
+
+    pub fn namespace(&self) -> Option<Namespace<'v, 'a>> {
+        self.target
+            .namespace
+            .as_ref()
+            .map(|ns| Namespace::new(ns, self.xforms))
     }
 
     fn filter_field(&self, field: &model::Field) -> bool {
