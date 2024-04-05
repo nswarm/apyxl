@@ -1,4 +1,4 @@
-use crate::model::{Attributes, Field, Rpc};
+use crate::model::{Attributes, Field, Rpc, Type};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, expr_block, ty, visibility};
@@ -44,12 +44,17 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
 }
 
 fn param(config: &Config) -> impl Parser<&str, Field, Error> {
+    let self_param = choice((
+        just("self").map(|ty| ("self", Type::User(ty.to_string()))),
+        just("&self").map(|ty| ("self", Type::User(ty.to_string()))),
+        just("&mut self").map(|ty| ("self", Type::User(ty.to_string()))),
+    ));
     let field = text::ident()
         .then_ignore(just(':').padded())
         .then(ty::parser(config));
     comment::multi_comment()
         .then(attributes::attributes().padded())
-        .then(field)
+        .then(field.or(self_param))
         .map(|((comments, user), (name, ty))| Field {
             name,
             ty,
@@ -62,14 +67,10 @@ fn param(config: &Config) -> impl Parser<&str, Field, Error> {
 }
 
 fn params(config: &Config) -> impl Parser<&str, Vec<Field>, Error> {
-    let ignored_param =
-        choice((just("self"), just("&self"), just("&mut self"))).then(just(',').padded().or_not());
-    ignored_param.or_not().ignore_then(
-        param(config)
-            .separated_by(just(',').padded())
-            .allow_trailing()
-            .collect::<Vec<_>>(),
-    )
+    param(config)
+        .separated_by(just(',').padded())
+        .allow_trailing()
+        .collect::<Vec<_>>()
 }
 
 #[cfg(test)]
@@ -77,7 +78,7 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{attributes, Comment};
+    use crate::model::{attributes, Comment, Type};
     use crate::parser::rust::rpc;
     use crate::parser::rust::visibility::Visibility;
     use crate::parser::test_util::wrap_test_err;
@@ -100,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn ignore_self_param() -> Result<()> {
+    fn self_param() -> Result<()> {
         let (rpc, _) = rpc::parser(&TEST_CONFIG)
             .parse(
                 r#"
@@ -109,9 +110,41 @@ mod tests {
             )
             .into_result()
             .map_err(wrap_test_err)?;
-        assert_eq!(rpc.name, "rpc_name");
-        assert!(rpc.params.is_empty());
-        assert!(rpc.return_type.is_none());
+        assert_eq!(rpc.params.len(), 1);
+        assert_eq!(rpc.params[0].ty, Type::User("self".to_string()));
+        assert_eq!(rpc.params[0].name, "self");
+        Ok(())
+    }
+
+    #[test]
+    fn self_ref_param() -> Result<()> {
+        let (rpc, _) = rpc::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            fn rpc_name(&self) {}
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(rpc.params.len(), 1);
+        assert_eq!(rpc.params[0].ty, Type::User("&self".to_string()));
+        assert_eq!(rpc.params[0].name, "self");
+        Ok(())
+    }
+
+    #[test]
+    fn self_mut_param() -> Result<()> {
+        let (rpc, _) = rpc::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            fn rpc_name(&mut self) {}
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(rpc.params.len(), 1);
+        assert_eq!(rpc.params[0].ty, Type::User("&mut self".to_string()));
+        assert_eq!(rpc.params[0].name, "self");
         Ok(())
     }
 
@@ -350,68 +383,5 @@ mod tests {
             ]
         );
         Ok(())
-    }
-
-    mod params {
-        use anyhow::Result;
-        use chumsky::Parser;
-        use itertools::Itertools;
-
-        use crate::parser::rust::rpc::params;
-        use crate::parser::test_util::wrap_test_err;
-        use crate::test_util::executor::TEST_CONFIG;
-
-        #[test]
-        fn ignores_self_single() -> Result<()> {
-            test_ignored_empty("self")
-        }
-
-        #[test]
-        fn ignores_ref_self_single() -> Result<()> {
-            test_ignored_empty("&self")
-        }
-
-        #[test]
-        fn ignores_mut_self_single() -> Result<()> {
-            test_ignored_empty("&mut self")
-        }
-
-        #[test]
-        fn ignores_self() -> Result<()> {
-            test_ignored("self, name: Type")
-        }
-
-        #[test]
-        fn ignores_ref_self() -> Result<()> {
-            test_ignored("&self, name: Type")
-        }
-
-        #[test]
-        fn ignores_mut_self() -> Result<()> {
-            test_ignored("&mut self, name: Type")
-        }
-
-        fn test_ignored_empty(input: &'static str) -> Result<()> {
-            let output = params(&TEST_CONFIG)
-                .parse(input)
-                .into_result()
-                .map_err(wrap_test_err)?;
-            assert_eq!(output.len(), 0);
-            Ok(())
-        }
-
-        fn test_ignored(input: &'static str) -> Result<()> {
-            let output = params(&TEST_CONFIG)
-                .parse(input)
-                .into_result()
-                .map_err(wrap_test_err)?;
-            assert_eq!(output.len(), 1);
-            assert_eq!(output[0].name, "name");
-            assert_eq!(
-                output[0].ty.api().unwrap().component_names().collect_vec()[0],
-                "Type"
-            );
-            Ok(())
-        }
     }
 }

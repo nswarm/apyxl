@@ -33,6 +33,7 @@ Notes:
 - Only parses `pub` definitions unless the parser config `enable_parse_private` is set to `true`.
 - Ignores `use` declarations.
 - Ignores anything inside the body of functions.
+- `self` fn params are parsed as `Type::User("self", <type>)` where `<type>` is one of `self, &self, &mut self`
 
 ### Generator: Rust
 
