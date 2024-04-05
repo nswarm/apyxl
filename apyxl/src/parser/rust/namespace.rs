@@ -118,7 +118,7 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{attribute, Comment, NamespaceChild};
+    use crate::model::{attributes, Comment, NamespaceChild};
     use crate::parser::rust::namespace;
     use crate::parser::rust::visibility::Visibility;
     use crate::parser::test_util::wrap_test_err;
@@ -329,8 +329,8 @@ mod tests {
         assert_eq!(
             namespace.attributes.user,
             vec![
-                attribute::User::new_flag("flag1"),
-                attribute::User::new_flag("flag2"),
+                attributes::User::new_flag("flag1"),
+                attributes::User::new_flag("flag2"),
             ]
         );
         Ok(())

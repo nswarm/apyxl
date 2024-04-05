@@ -2,12 +2,13 @@ use std::borrow::Cow;
 
 use itertools::Itertools;
 
-use crate::model::chunk;
+use crate::model::{chunk, EntityId};
 
 /// Additional metadata attached to entities.
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Attributes<'a> {
     pub chunk: Option<chunk::Attribute>,
+    pub entity_id: EntityId,
     pub comments: Vec<Comment<'a>>,
     pub user: Vec<User<'a>>,
 }
@@ -34,6 +35,8 @@ impl<'a> Attributes<'a> {
         self.merge_chunks(other.chunk);
         self.merge_comments(other.comments);
         self.merge_user(other.user);
+        // Note: entity_id should typically be equivalent, but in the case where its not it
+        // makes sense to keep the current entity_id.
     }
 
     fn merge_chunks(&mut self, other: Option<chunk::Attribute>) {
@@ -106,7 +109,7 @@ impl<'a> UserData<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::attribute::User;
+    use crate::model::attributes::User;
     use crate::model::{Attributes, Comment};
 
     mod merge_chunks {

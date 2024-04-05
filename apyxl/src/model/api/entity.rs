@@ -1,5 +1,6 @@
-use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, Type, TypeAlias};
 use anyhow::anyhow;
+
+use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, Type, TypeAlias};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Copy, Clone)]
 pub enum EntityType {
@@ -34,56 +35,6 @@ pub enum EntityMut<'a, 'api> {
     TypeAlias(&'a mut TypeAlias<'api>),
     Type(&'a mut Type),
 }
-
-/// Find an entity mutably by qualified [EntityId].
-// pub fn find_entity_mut<'a, 'b>(
-//     ns: &'b mut Namespace<'a>,
-//     mut id: EntityId,
-// ) -> Option<EntityMut<'a, 'b>> {
-//     // This is a free fn to avoid recursive mutable self references.
-//     let mut entity = EntityMut::Namespace(ns);
-//     while let Some((ty, name)) = id.pop_front() {
-//         match (entity, ty) {
-//             (EntityMut::Namespace(ns), EntityType::Namespace) => match ns.namespace_mut(&name) {
-//                 None => return None,
-//                 Some(value) => entity = EntityMut::Namespace(value),
-//             },
-//             (EntityMut::Namespace(ns), EntityType::Dto) => match ns.dto_mut(&name) {
-//                 None => return None,
-//                 Some(value) => entity = EntityMut::Dto(value),
-//             },
-//             (EntityMut::Namespace(ns), EntityType::Rpc) => match ns.rpc_mut(&name) {
-//                 None => return None,
-//                 Some(value) => entity = EntityMut::Rpc(value),
-//             },
-//             _ => return None,
-//         }
-//     }
-//     Some(entity)
-// }
-
-// pub fn mutate_entity<'a>(ns: &'a mut Namespace<'a>, mut id: EntityId, ) {
-//     // This is a free fn to avoid recursive mutable self references.
-//     let mut entity = EntityMut::Namespace(ns);
-//     while let Some((ty, name)) = id.pop_front() {
-//         match (entity, ty) {
-//             (EntityMut::Namespace(ns), EntityType::Namespace) => match ns.namespace_mut(&name) {
-//                 None => return None,
-//                 Some(value) => entity = EntityMut::Namespace(value),
-//             },
-//             (EntityMut::Namespace(ns), EntityType::Dto) => match ns.dto_mut(&name) {
-//                 None => return None,
-//                 Some(value) => entity = EntityMut::Dto(value),
-//             },
-//             (EntityMut::Namespace(ns), EntityType::Rpc) => match ns.rpc_mut(&name) {
-//                 None => return None,
-//                 Some(value) => entity = EntityMut::Rpc(value),
-//             },
-//             _ => return None,
-//         }
-//     }
-//     Some(entity)
-// }
 
 pub trait FindEntity<'api> {
     /// Find an [Entity] by qualified [EntityId], if it exists.

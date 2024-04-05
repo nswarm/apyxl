@@ -43,7 +43,11 @@ impl<'v, 'a> TypeAlias<'v, 'a> {
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.xforms.attr)
+        Attributes::new(
+            &self.target.attributes,
+            &self.xforms.attr,
+            &self.xforms.entity_id,
+        )
     }
 }
 

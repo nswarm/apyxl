@@ -59,7 +59,7 @@ impl<'v, 'a> Dto<'v, 'a> {
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.xforms.attr)
+        Attributes::new(&self.target.attributes, &self.xforms.attr, &self.xforms.entity_id)
     }
 
     fn filter_field(&self, field: &model::Field) -> bool {

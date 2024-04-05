@@ -122,6 +122,8 @@ impl<'a> Builder<'a> {
     pub fn build(mut self) -> Result<Model<'a>, Vec<ValidationError>> {
         dedupe_namespace_children(&mut self.api);
 
+        populate_entity_id_attributes(&mut self.api, &EntityId::default());
+
         self.pre_validation_print();
 
         let (oks, mut errs): (Vec<_>, Vec<_>) = [
@@ -188,17 +190,17 @@ impl<'a> Builder<'a> {
             .expect("enter_namespace must always create the namespace if it does not exist, which will guarantee this never fails")
     }
 
-    #[cfg(test)]
-    pub fn into_api(self) -> Api<'a> {
-        self.api
-    }
-
     fn pre_validation_print(&self) {
         match self.config.debug_pre_validate_print {
             PreValidatePrint::None => {}
             PreValidatePrint::Rust => pretty_print_api(&self.api),
             PreValidatePrint::Debug => println!("pre-validation API: {:#?}", self.api),
         }
+    }
+
+    #[cfg(test)]
+    pub fn into_api(self) -> Api<'a> {
+        self.api
     }
 }
 
@@ -219,6 +221,33 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
             dedupe_namespace_children(&mut ns);
             namespace.add_namespace(ns)
         });
+}
+
+/// Walk the namespace hierarchy, adding the fully-qualified [Attributes]' `entity_id` for
+/// use in generators. Note that this should be called before devirtualizing namespaces
+/// otherwise it will miss namespaces owned by dtos.
+fn populate_entity_id_attributes(namespace: &mut Namespace, ns_id: &EntityId) {
+    namespace.namespaces_mut().for_each(|ns| {
+        let ns_child_type = if ns.is_virtual {
+            EntityType::Dto
+        } else {
+            EntityType::Namespace
+        };
+        let ns_child_id = ns_id
+            .child(ns_child_type, &ns.name)
+            .expect("namespace or dto child of namespace should not fail");
+        populate_entity_id_attributes(ns, &ns_child_id);
+        populate_entity_id_for_namespace_children(ns, &ns_child_id);
+    });
+}
+
+fn populate_entity_id_for_namespace_children(namespace: &mut Namespace, ns_id: &EntityId) {
+    for child in &mut namespace.children {
+        let child_id = ns_id
+            .child(child.entity_type(), child.name())
+            .expect("should not fail walking existing hierarchy");
+        child.attributes_mut().entity_id = child_id;
+    }
 }
 
 /// Moves any namespaces marked as 'virtual' into DTOs with the same name.
@@ -727,6 +756,59 @@ mod tests {
                         EntityId::try_from("wrong_name").unwrap()
                     )
                 );
+            }
+        }
+
+        mod populate_entity_ids {
+            use crate::model::builder::tests::build_from_input;
+            use crate::model::entity::FindEntity;
+            use crate::model::{Entity, EntityId, Model};
+            use crate::test_util::executor::TestExecutor;
+
+            #[test]
+            fn populate_entity_ids() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns0 {
+                        mod ns1 {
+                            struct dto0 {}
+                            fn rpc0() {}
+                            enum en0 {}
+                        }
+
+                        struct dto1 {}
+                        impl dto1 {
+                            fn rpc1() {}
+                        }
+                    }
+                "#,
+                );
+                let model = build_from_input(&mut exe).unwrap();
+                assert_entity_id_attr(&model, "ns0.ns1.d:dto0");
+                assert_entity_id_attr(&model, "ns0.ns1.r:rpc0");
+                assert_entity_id_attr(&model, "ns0.ns1.e:en0");
+                assert_entity_id_attr(&model, "ns0.d:dto1.r:rpc1");
+            }
+
+            fn assert_entity_id_attr(model: &Model, id: &str) {
+                let entity_id = EntityId::try_from(id).expect("invalid entity_id");
+                let dto0 = model
+                    .api
+                    .find_entity(entity_id.clone())
+                    .expect("entity does not exist");
+                assert_eq!(entity_id_attr(&dto0), Some(&entity_id), "{}", id);
+            }
+
+            fn entity_id_attr<'a>(entity: &'a Entity) -> Option<&'a EntityId> {
+                match entity {
+                    Entity::Namespace(entity) => Some(&entity.attributes.entity_id),
+                    Entity::Dto(entity) => Some(&entity.attributes.entity_id),
+                    Entity::Rpc(entity) => Some(&entity.attributes.entity_id),
+                    Entity::Enum(entity) => Some(&entity.attributes.entity_id),
+                    Entity::Field(entity) => Some(&entity.attributes.entity_id),
+                    Entity::Type(_) => None,
+                    Entity::TypeAlias(entity) => Some(&entity.attributes.entity_id),
+                }
             }
         }
 

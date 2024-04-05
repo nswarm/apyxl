@@ -7,6 +7,12 @@ pub struct Buffer {
     data: String,
 }
 
+impl Buffer {
+    pub fn data(&self) -> &str {
+        &self.data
+    }
+}
+
 impl ToString for Buffer {
     fn to_string(&self) -> String {
         self.data.clone()

@@ -49,7 +49,7 @@ impl<'v, 'a> Field<'v, 'a> {
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, self.attr_xforms)
+        Attributes::new(&self.target.attributes, self.attr_xforms, self.entity_id_xforms)
     }
 }
 

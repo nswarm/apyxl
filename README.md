@@ -70,8 +70,9 @@ This is a list of things to keep in mind when writing a parser.
   - RPCs, params, return types
   - Enums
   - Type aliases
+  - Nested types (e.g. other types inside DTOs)
   - Imports/includes
-  - Comments (see [Attributes](apyxl/src/model/api/attribute.rs))
+  - Comments (see [Attributes](apyxl/src/model/api/attributes))
   - Types including primitives, arrays, maps, optionals
   - [User types](#user-types)
   - [User attributes](#user-attributes)
@@ -91,6 +92,7 @@ Once you have finished parsing the entire API, call `Builder::build()`. This met
 - Performs a host of validations like checking for duplicate definitions and ensuring all types are valid primitives
 or exist within the API.
 - Fully qualifies all types within the API.
+- Adds the fully-qualified `entity_id` the `Attributes` of each Entity for access (and transformation) during generation.
 
 ### User Types
 
@@ -117,7 +119,7 @@ appropriate type on their end.
 ### User Attributes
 
 Many languages have a way to specify custom attributes or annotations on various things. The `user` field inside
-[Attributes](apyxl/src/model/api/attribute.rs) exists to support passing these through the API for use in your
+[Attributes](apyxl/src/model/api/attributes) exists to support passing these through the API for use in your
 generators.
 
 These support various use cases e.g.:
@@ -184,6 +186,14 @@ Type aliases are treated as a top-level namespace child, which works great for g
 For generator targets that do _not_ support type aliases, or that you want to write the resolved type anyway, there's
 an extra step. You'll need to manually check the model's api using `find_ty_alias` to see if it is actually an alias
 anytime you write type, and if it is an alias, write the `TypeAlias::target_ty()` instead.
+
+### Attributes
+
+Many entities have `Attributes`, which include metadata such as:
+- Language-specific attributes or annotations applied within the parsed source
+- Comments associated with the Entity
+- Their full `EntityId` within the API
+- Their chunk they were parsed from
 
 ### Output
 

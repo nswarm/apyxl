@@ -81,7 +81,7 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::attribute;
+        use crate::model::attributes;
         use crate::parser::rust::en::en_value;
         use crate::parser::test_util::wrap_test_err;
 
@@ -110,8 +110,8 @@ mod tests {
             assert_eq!(
                 value.attributes.user,
                 vec![
-                    attribute::User::new_flag("flag1"),
-                    attribute::User::new_flag("flag2"),
+                    attributes::User::new_flag("flag1"),
+                    attributes::User::new_flag("flag2"),
                 ]
             );
             Ok(())
@@ -122,7 +122,7 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::{attribute, Comment, EnumValue, EnumValueNumber};
+        use crate::model::{attributes, Comment, EnumValue, EnumValueNumber};
         use crate::parser::rust::en;
         use crate::parser::rust::visibility::Visibility;
         use crate::parser::test_util::wrap_test_err;
@@ -292,8 +292,8 @@ mod tests {
             assert_eq!(
                 en.attributes.user,
                 vec![
-                    attribute::User::new_flag("flag1"),
-                    attribute::User::new_flag("flag2"),
+                    attributes::User::new_flag("flag1"),
+                    attributes::User::new_flag("flag2"),
                 ]
             );
             Ok(())

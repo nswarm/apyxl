@@ -1,5 +1,5 @@
-pub use attribute::Attributes;
-pub use attribute::Comment;
+pub use attributes::Attributes;
+pub use attributes::Comment;
 pub use dependencies::Dependencies;
 pub use dto::Dto;
 pub use en::Enum;
@@ -18,7 +18,7 @@ pub use ty::UserTypeName;
 pub use ty_alias::TypeAlias;
 pub use validate::ValidationError;
 
-pub mod attribute;
+pub mod attributes;
 mod dependencies;
 mod dto;
 mod en;

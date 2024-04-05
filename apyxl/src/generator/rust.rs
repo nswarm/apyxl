@@ -4,7 +4,7 @@ use anyhow::Result;
 use itertools::Itertools;
 
 use crate::generator::{util, Generator};
-use crate::model::{attribute, Chunk, Comment};
+use crate::model::{attributes, Chunk, Comment};
 use crate::output::{Indented, Output};
 use crate::rust_util;
 use crate::view::{
@@ -252,7 +252,7 @@ fn write_comments(comments: &[Comment], o: &mut dyn Output) -> Result<()> {
     Ok(())
 }
 
-fn write_user_attributes(user_attributes: &[attribute::User], o: &mut dyn Output) -> Result<()> {
+fn write_user_attributes(user_attributes: &[attributes::User], o: &mut dyn Output) -> Result<()> {
     if user_attributes.is_empty() {
         return Ok(());
     }
@@ -267,7 +267,7 @@ fn write_user_attributes(user_attributes: &[attribute::User], o: &mut dyn Output
 
 fn write_user_attribute(
     name: &str,
-    data: &[attribute::UserData],
+    data: &[attributes::UserData],
     o: &mut dyn Output,
 ) -> Result<()> {
     o.write_str(name)?;
@@ -360,17 +360,17 @@ mod tests {
     use crate::generator::rust::{
         write_dto, write_entity_id, write_enum, write_field, write_rpc, INDENT,
     };
-    use crate::generator::util::tests::{assert_output, assert_output_slice, indent};
+    use crate::generator::util::tests::{assert_e2e, assert_output, assert_output_slice, indent};
     use crate::generator::Rust;
-    use crate::model::{attribute, Attributes};
+    use crate::model::{attributes, Attributes};
     use crate::output::Indented;
-    use crate::test_util::executor::TestExecutor;
     use crate::view::Transforms;
-    use crate::{model, view, Generator};
+    use crate::{model, view};
 
     #[test]
     fn full_generation() -> Result<()> {
-        let data = r#"
+        assert_e2e::<Rust>(
+            r#"
 pub enum EnumName {
     One = 1,
     Two,
@@ -391,8 +391,8 @@ pub mod ns0 {
         i: i32,
     }
 }
-"#;
-        let expected = r#"pub fn rpc_name(
+"#,
+            r#"pub fn rpc_name(
     dto: crate::DtoName,
     dto2: crate::ns0::DtoName,
 ) -> crate::DtoName {}
@@ -414,11 +414,8 @@ pub mod ns0 {
 
 }
 
-"#;
-        let mut exe = TestExecutor::new(data);
-        let model = exe.model();
-        let view = model.view();
-        assert_output(move |o| Rust::default().generate(view, o), expected)
+"#,
+        )
     }
 
     #[test]
@@ -586,19 +583,19 @@ pub mod ns0 {
     fn test_attributes<'a>() -> Attributes<'a> {
         Attributes {
             user: vec![
-                attribute::User::new_flag("flag"),
-                attribute::User::new(
+                attributes::User::new_flag("flag"),
+                attributes::User::new(
                     "list",
                     vec![
-                        attribute::UserData::new(None, "Abc"),
-                        attribute::UserData::new(None, "Def"),
+                        attributes::UserData::new(None, "Abc"),
+                        attributes::UserData::new(None, "Def"),
                     ],
                 ),
-                attribute::User::new(
+                attributes::User::new(
                     "map",
                     vec![
-                        attribute::UserData::new(Some("a"), "1"),
-                        attribute::UserData::new(Some("b"), "2"),
+                        attributes::UserData::new(Some("a"), "1"),
+                        attributes::UserData::new(Some("b"), "2"),
                     ],
                 ),
             ],

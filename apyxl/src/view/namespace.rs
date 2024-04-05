@@ -146,7 +146,11 @@ impl<'v, 'a> Namespace<'v, 'a> {
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.xforms.attr)
+        Attributes::new(
+            &self.target.attributes,
+            &self.xforms.attr,
+            &self.xforms.entity_id,
+        )
     }
 
     pub fn find_child(&'a self, id: &model::EntityId) -> Option<NamespaceChild<'v, 'a>> {

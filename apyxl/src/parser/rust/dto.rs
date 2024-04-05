@@ -80,7 +80,7 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{attribute, Comment};
+    use crate::model::{attributes, Comment};
     use crate::parser::rust::dto;
     use crate::parser::rust::visibility::Visibility;
     use crate::parser::test_util::wrap_test_err;
@@ -238,8 +238,8 @@ mod tests {
         assert_eq!(
             dto.attributes.user,
             vec![
-                attribute::User::new_flag("flag1"),
-                attribute::User::new_flag("flag2"),
+                attributes::User::new_flag("flag1"),
+                attributes::User::new_flag("flag2"),
             ]
         );
         Ok(())

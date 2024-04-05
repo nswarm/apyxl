@@ -1,5 +1,6 @@
 use crate::model;
 use crate::model::{chunk, Comment};
+use crate::view::{EntityId, EntityIdTransform};
 use dyn_clone::DynClone;
 use std::fmt::Debug;
 
@@ -7,18 +8,28 @@ use std::fmt::Debug;
 pub struct Attributes<'v, 'a> {
     target: &'v model::Attributes<'a>,
     xforms: &'v Vec<Box<dyn AttributeTransform>>,
+    entity_id_xforms: &'v Vec<Box<dyn EntityIdTransform>>,
 }
 
 impl<'v, 'a> Attributes<'v, 'a> {
     pub fn new(
         target: &'v model::Attributes<'a>,
         xforms: &'v Vec<Box<dyn AttributeTransform>>,
+        entity_id_xforms: &'v Vec<Box<dyn EntityIdTransform>>,
     ) -> Self {
-        Self { target, xforms }
+        Self {
+            target,
+            xforms,
+            entity_id_xforms,
+        }
     }
 
     pub fn chunk(&self) -> Option<&chunk::Attribute> {
         self.target.chunk.as_ref()
+    }
+
+    pub fn entity_id(&self) -> EntityId {
+        EntityId::new(&self.target.entity_id, self.entity_id_xforms)
     }
 
     pub fn comments(&self) -> Vec<Comment<'a>> {
@@ -29,7 +40,7 @@ impl<'v, 'a> Attributes<'v, 'a> {
         comments
     }
 
-    pub fn user(&self) -> &Vec<model::attribute::User<'a>> {
+    pub fn user(&self) -> &Vec<model::attributes::User<'a>> {
         &self.target.user
     }
 }
@@ -42,13 +53,13 @@ dyn_clone::clone_trait_object!(AttributeTransform);
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{Comment, EntityId};
+    use crate::model;
     use crate::test_util::executor::TestExecutor;
     use crate::view::{AttributeTransform, Transformer};
     use std::borrow::Cow;
 
     #[test]
-    fn attr_transform() {
+    fn comment_transform() {
         let mut exe = TestExecutor::new(
             r#"
                     // This comment has a bad_word
@@ -59,22 +70,25 @@ mod tests {
         let model = exe.build();
         let view = model
             .view()
-            .with_attribute_transform(CommentWordFilterTransform {});
+            .with_attribute_transform(WordFilterTransform {});
         let root = view.api();
         let dto = root
-            .find_dto(&EntityId::try_from("d:dto").unwrap())
+            .find_dto(&model::EntityId::try_from("d:dto").unwrap())
             .unwrap();
         let attr = dto.attributes();
         assert_eq!(
             attr.comments(),
-            vec![Comment::unowned(&["This comment has a <3", "<3 <3 <3"])],
+            vec![model::Comment::unowned(&[
+                "This comment has a <3",
+                "<3 <3 <3"
+            ])],
         );
     }
 
     #[derive(Debug, Clone)]
-    struct CommentWordFilterTransform {}
-    impl AttributeTransform for CommentWordFilterTransform {
-        fn comments(&self, comments: &mut Vec<Comment>) {
+    struct WordFilterTransform {}
+    impl AttributeTransform for WordFilterTransform {
+        fn comments(&self, comments: &mut Vec<model::Comment>) {
             comments.iter_mut().for_each(|comment| {
                 comment.lines_mut().for_each(|line| {
                     if line.contains("bad_word") {

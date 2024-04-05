@@ -1,15 +1,15 @@
 use chumsky::prelude::*;
 
-use crate::model::attribute;
+use crate::model::attributes;
 use crate::parser::error::Error;
 
-pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Error<'a>> {
+pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, Error<'a>> {
     let name = text::ident();
     let data = text::ident()
         .then(just('=').padded().ignore_then(text::ident()).or_not())
         .map(|(lhs, rhs)| match rhs {
-            None => attribute::UserData::new(None, lhs),
-            Some(rhs) => attribute::UserData::new(Some(lhs), rhs),
+            None => attributes::UserData::new(None, lhs),
+            Some(rhs) => attributes::UserData::new(Some(lhs), rhs),
         });
     let data_list = data
         .separated_by(just(',').padded())
@@ -18,7 +18,7 @@ pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Er
         .delimited_by(just('(').padded(), just(')').padded())
         .or_not();
     name.then(data_list)
-        .map(|(name, data)| attribute::User {
+        .map(|(name, data)| attributes::User {
             name,
             data: data.unwrap_or(vec![]),
         })
@@ -40,8 +40,8 @@ pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attribute::User<'a>>, Er
 mod tests {
     use chumsky::Parser;
 
-    use crate::model::attribute;
-    use crate::model::attribute::UserData;
+    use crate::model::attributes;
+    use crate::model::attributes::UserData;
     use crate::parser::rust::dto;
     use crate::test_util::executor::TEST_CONFIG;
 
@@ -53,9 +53,9 @@ mod tests {
                     struct dto {}
                     "#,
             vec![
-                attribute::User::new_flag("flag1"),
-                attribute::User::new_flag("flag2"),
-                attribute::User::new_flag("flag3"),
+                attributes::User::new_flag("flag1"),
+                attributes::User::new_flag("flag2"),
+                attributes::User::new_flag("flag3"),
             ],
         )
     }
@@ -68,8 +68,8 @@ mod tests {
                     struct dto {}
                     "#,
             vec![
-                attribute::User::new("attr0", vec![UserData::new(None, "a_one")]),
-                attribute::User::new(
+                attributes::User::new("attr0", vec![UserData::new(None, "a_one")]),
+                attributes::User::new(
                     "attr1",
                     vec![
                         UserData::new(None, "a_two"),
@@ -89,14 +89,14 @@ mod tests {
                     struct dto {}
                     "#,
             vec![
-                attribute::User::new(
+                attributes::User::new(
                     "attr0",
                     vec![
                         UserData::new(Some("k0"), "v0"),
                         UserData::new(Some("k1"), "v1"),
                     ],
                 ),
-                attribute::User::new("attr1", vec![UserData::new(Some("k00"), "v00")]),
+                attributes::User::new("attr1", vec![UserData::new(Some("k00"), "v00")]),
             ],
         )
     }
@@ -109,15 +109,15 @@ mod tests {
                     struct dto {}
                     "#,
             vec![
-                attribute::User::new(
+                attributes::User::new(
                     "attr0",
                     vec![
                         UserData::new(Some("k0"), "v0"),
                         UserData::new(Some("k1"), "v1"),
                     ],
                 ),
-                attribute::User::new_flag("attr1"),
-                attribute::User::new(
+                attributes::User::new_flag("attr1"),
+                attributes::User::new(
                     "attr2",
                     vec![
                         UserData::new(None, "one"),
@@ -129,7 +129,7 @@ mod tests {
         )
     }
 
-    fn run_test(content: &str, expected: Vec<attribute::User>) {
+    fn run_test(content: &str, expected: Vec<attributes::User>) {
         let (dto, _) = dto::parser(&TEST_CONFIG)
             .parse(content)
             .into_result()

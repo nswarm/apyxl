@@ -16,8 +16,8 @@ pub use ty::*;
 pub use ty_alias::*;
 
 use crate::model;
-use crate::model::chunk::ChunkFilter;
 use crate::model::Chunk;
+use crate::model::chunk::ChunkFilter;
 
 mod attributes;
 mod dto;
@@ -199,11 +199,11 @@ mod tests {
     use std::borrow::Cow;
 
     use crate::model;
-    use crate::view::ty_alias::TypeAliasTransform;
     use crate::view::{
-        DtoTransform, EntityIdTransform, EnumTransform, EnumValueTransform, FieldTransform,
-        NamespaceTransform, RpcTransform,
+        DtoTransform, EntityIdTransform, EnumTransform, EnumValueTransform,
+        FieldTransform, NamespaceTransform, RpcTransform,
     };
+    use crate::view::ty_alias::TypeAliasTransform;
 
     #[derive(Default, Debug, Clone)]
     pub struct TestRenamer {}

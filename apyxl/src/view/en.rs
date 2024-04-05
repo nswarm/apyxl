@@ -6,7 +6,7 @@ use dyn_clone::DynClone;
 use crate::model;
 use crate::model::entity::ToEntity;
 use crate::model::EntityType;
-use crate::view::{AttributeTransform, Attributes, Transforms};
+use crate::view::{Attributes, Transforms};
 
 /// A single enum within an [Api].
 /// Wraps [model::Enum].
@@ -21,8 +21,7 @@ pub struct Enum<'v, 'a> {
 #[derive(Debug, Copy, Clone)]
 pub struct EnumValue<'v, 'a> {
     target: &'v model::EnumValue<'a>,
-    xforms: &'v Vec<Box<dyn EnumValueTransform>>,
-    attr_xforms: &'v Vec<Box<dyn AttributeTransform>>,
+    xforms: &'v Transforms,
 }
 
 pub trait EnumTransform: Debug + DynClone {
@@ -64,11 +63,15 @@ impl<'v, 'a> Enum<'v, 'a> {
             .values
             .iter()
             .filter(|value| self.filter_value(value))
-            .map(move |value| EnumValue::new(value, &self.xforms.en_value, &self.xforms.attr))
+            .map(move |value| EnumValue::new(value, self.xforms))
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.xforms.attr)
+        Attributes::new(
+            &self.target.attributes,
+            &self.xforms.attr,
+            &self.xforms.entity_id,
+        )
     }
 
     fn filter_value(&self, value: &model::EnumValue) -> bool {
@@ -77,21 +80,13 @@ impl<'v, 'a> Enum<'v, 'a> {
 }
 
 impl<'v, 'a> EnumValue<'v, 'a> {
-    pub fn new(
-        target: &'v model::EnumValue<'a>,
-        xforms: &'v Vec<Box<dyn EnumValueTransform>>,
-        attr_xforms: &'v Vec<Box<dyn AttributeTransform>>,
-    ) -> Self {
-        Self {
-            target,
-            xforms,
-            attr_xforms,
-        }
+    pub fn new(target: &'v model::EnumValue<'a>, xforms: &'v Transforms) -> Self {
+        Self { target, xforms }
     }
 
     pub fn name(&self) -> Cow<str> {
         let mut name = Cow::Borrowed(self.target.name);
-        for x in self.xforms {
+        for x in self.xforms.en_value.as_slice() {
             x.name(&mut name)
         }
         name
@@ -99,14 +94,18 @@ impl<'v, 'a> EnumValue<'v, 'a> {
 
     pub fn number(&self) -> model::EnumValueNumber {
         let mut number = self.target.number;
-        for x in self.xforms {
+        for x in self.xforms.en_value.as_slice() {
             x.number(&mut number)
         }
         number
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.attr_xforms)
+        Attributes::new(
+            &self.target.attributes,
+            &self.xforms.attr,
+            &self.xforms.entity_id,
+        )
     }
 }
 

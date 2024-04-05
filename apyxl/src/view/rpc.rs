@@ -18,7 +18,6 @@ pub struct Rpc<'v, 'a> {
 
 pub trait RpcTransform: Debug + DynClone {
     fn name(&self, _: &mut Cow<str>) {}
-    fn return_type(&self, _: &mut model::EntityId) {}
 
     /// `true`: included.
     /// `false`: excluded.
@@ -69,7 +68,11 @@ impl<'v, 'a> Rpc<'v, 'a> {
     }
 
     pub fn attributes(&self) -> Attributes {
-        Attributes::new(&self.target.attributes, &self.xforms.attr)
+        Attributes::new(
+            &self.target.attributes,
+            &self.xforms.attr,
+            &self.xforms.entity_id,
+        )
     }
 
     fn filter_param(&self, param: &model::Field) -> bool {

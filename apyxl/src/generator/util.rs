@@ -88,8 +88,10 @@ fn collect_dependencies_recursively<'a>(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub mod tests {
-    use crate::output;
+    use crate::test_util::executor::TestExecutor;
+    use crate::{output, Generator};
 
     pub fn assert_output<F: FnOnce(&mut output::Buffer) -> anyhow::Result<()>>(
         write: F,
@@ -97,7 +99,8 @@ pub mod tests {
     ) -> anyhow::Result<()> {
         let mut output = output::Buffer::default();
         write(&mut output)?;
-        assert_eq!(&output.to_string(), expected);
+        println!("OUTPUT:\n{}", output.data());
+        assert_eq!(output.data(), expected);
         Ok(())
     }
 
@@ -106,6 +109,37 @@ pub mod tests {
         expected: &[&str],
     ) -> anyhow::Result<()> {
         assert_output(write, &expected.join("\n"))
+    }
+
+    pub fn assert_output_contains<F: FnOnce(&mut output::Buffer) -> anyhow::Result<()>>(
+        write: F,
+        expected: &str,
+    ) -> anyhow::Result<()> {
+        let mut output = output::Buffer::default();
+        write(&mut output)?;
+        println!("OUTPUT:\n{}", output.data());
+        assert!(
+            &output.data().contains(expected),
+            "output did not contain expected sequence"
+        );
+        Ok(())
+    }
+
+    pub fn assert_e2e<T: Generator + Default>(data: &str, expected: &str) -> anyhow::Result<()> {
+        let mut exe = TestExecutor::new(data);
+        let model = exe.model();
+        let view = model.view();
+        assert_output(move |o| T::default().generate(view, o), expected)
+    }
+
+    pub fn assert_e2e_contains<T: Generator + Default>(
+        data: &str,
+        expected: &str,
+    ) -> anyhow::Result<()> {
+        let mut exe = TestExecutor::new(data);
+        let model = exe.model();
+        let view = model.view();
+        assert_output_contains(move |o| T::default().generate(view, o), expected)
     }
 
     pub fn indent(indent: &str, s: &str) -> String {
