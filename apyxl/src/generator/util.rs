@@ -127,7 +127,7 @@ pub mod tests {
 
     pub fn assert_e2e<T: Generator + Default>(data: &str, expected: &str) -> anyhow::Result<()> {
         let mut exe = TestExecutor::new(data);
-        let model = exe.model();
+        let model = exe.build();
         let view = model.view();
         assert_output(move |o| T::default().generate(view, o), expected)
     }
@@ -137,7 +137,7 @@ pub mod tests {
         expected: &str,
     ) -> anyhow::Result<()> {
         let mut exe = TestExecutor::new(data);
-        let model = exe.model();
+        let model = exe.build();
         let view = model.view();
         assert_output_contains(move |o| T::default().generate(view, o), expected)
     }

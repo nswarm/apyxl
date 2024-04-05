@@ -41,6 +41,29 @@ impl Output for Buffer {
     }
 }
 
+// Alternative for Buffer if actually operating on strings.
+impl Output for String {
+    fn write_chunk(&mut self, _: &Chunk) -> Result<()> {
+        // String does nothing with chunks.
+        Ok(())
+    }
+
+    fn write_str(&mut self, data: &str) -> Result<()> {
+        self.push_str(data);
+        Ok(())
+    }
+
+    fn write(&mut self, data: char) -> Result<()> {
+        self.push(data);
+        Ok(())
+    }
+
+    fn newline(&mut self) -> Result<()> {
+        self.push('\n');
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::output::Buffer;

@@ -227,6 +227,7 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
 /// use in generators. Note that this should be called before devirtualizing namespaces
 /// otherwise it will miss namespaces owned by dtos.
 fn populate_entity_id_attributes(namespace: &mut Namespace, ns_id: &EntityId) {
+    populate_entity_id_for_namespace_children(namespace, &ns_id);
     namespace.namespaces_mut().for_each(|ns| {
         let ns_child_type = if ns.is_virtual {
             EntityType::Dto
@@ -237,7 +238,6 @@ fn populate_entity_id_attributes(namespace: &mut Namespace, ns_id: &EntityId) {
             .child(ns_child_type, &ns.name)
             .expect("namespace or dto child of namespace should not fail");
         populate_entity_id_attributes(ns, &ns_child_id);
-        populate_entity_id_for_namespace_children(ns, &ns_child_id);
     });
 }
 
@@ -769,6 +769,8 @@ mod tests {
             fn populate_entity_ids() {
                 let mut exe = TestExecutor::new(
                     r#"
+                    struct TopDto {}
+
                     mod ns0 {
                         mod ns1 {
                             struct dto0 {}
@@ -784,6 +786,7 @@ mod tests {
                 "#,
                 );
                 let model = build_from_input(&mut exe).unwrap();
+                assert_entity_id_attr(&model, "d:TopDto");
                 assert_entity_id_attr(&model, "ns0.ns1.d:dto0");
                 assert_entity_id_attr(&model, "ns0.ns1.r:rpc0");
                 assert_entity_id_attr(&model, "ns0.ns1.e:en0");
