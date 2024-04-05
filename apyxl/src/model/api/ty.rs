@@ -61,7 +61,7 @@ where
 
     /// Reference to another type within the API. This must reference an existing type within
     /// the API when built.
-    Api(ApiType),
+    Api(ApiType, Semantics),
 
     /// An array of the contained type.
     Array(Box<Self>),
@@ -79,14 +79,21 @@ where
 pub type UserTypeName = String;
 pub type Type = BaseType<EntityId, UserTypeName>;
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Semantics {
+    Value,
+    Ref,
+    Mut,
+}
+
 impl Type {
-    pub fn new_api(value: &str) -> Result<Self> {
-        Ok(Self::Api(EntityId::try_from(value)?))
+    pub fn new_api(value: &str, semantics: Semantics) -> Result<Self> {
+        Ok(Self::Api(EntityId::try_from(value)?, semantics))
     }
 
-    pub fn api(&self) -> Option<&EntityId> {
-        if let Type::Api(id) = self {
-            Some(id)
+    pub fn api(&self) -> Option<(&EntityId, Semantics)> {
+        if let Type::Api(id, semantics) = self {
+            Some((id, *semantics))
         } else {
             None
         }

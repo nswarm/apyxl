@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use crate::model::{EntityId, Type};
+use crate::model::{EntityId, Semantics, Type};
 use crate::parser::error::Error;
 use crate::parser::Config;
 
@@ -42,7 +42,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, Type, Error> {
             vec(nested.clone()),
             map(nested.clone()),
             option(nested),
-            entity_id().map(Type::Api),
+            entity_id().map(|(entity_id, semantics)| Type::Api(entity_id, semantics)),
         ))
         .boxed()
     })
@@ -122,17 +122,22 @@ fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
     })
 }
 
-fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
+fn entity_id<'a>() -> impl Parser<'a, &'a str, (EntityId, Semantics), Error<'a>> {
     let ref_type = choice((
-        just("&mut").then(text::whitespace().at_least(1)).ignored(),
-        just("&").ignored(),
+        just("&mut")
+            .then(text::whitespace().at_least(1))
+            .map(|_| Semantics::Mut),
+        just("&").map(|_| Semantics::Ref),
     ));
     let entity_id = type_name()
         .separated_by(just("::"))
         .at_least(1)
         .collect::<Vec<_>>()
         .map(|components| EntityId::new_unqualified_vec(components.into_iter()));
-    ref_type.or_not().ignore_then(entity_id)
+    ref_type
+        .or_not()
+        .then(entity_id)
+        .map(|(semantics, entity_id)| (entity_id, semantics.unwrap_or(Semantics::Value)))
 }
 
 #[cfg(test)]
@@ -142,8 +147,8 @@ mod tests {
         use chumsky::Parser;
         use lazy_static::lazy_static;
 
-        use crate::model::EntityId;
         use crate::model::Type;
+        use crate::model::{EntityId, Semantics};
         use crate::parser::rust::ty;
         use crate::parser::test_util::wrap_test_err;
         use crate::parser::{Config, UserType};
@@ -212,7 +217,7 @@ mod tests {
         test!(
             entity_id,
             "a::b::c",
-            Type::Api(EntityId::new_unqualified("a.b.c"))
+            Type::Api(EntityId::new_unqualified("a.b.c"), Semantics::Value)
         );
 
         // Vec/Array.
@@ -220,7 +225,10 @@ mod tests {
         test!(
             vec_api,
             "Vec<a::b::c>",
-            Type::new_array(Type::Api(EntityId::new_unqualified("a.b.c")))
+            Type::new_array(Type::Api(
+                EntityId::new_unqualified("a.b.c"),
+                Semantics::Value
+            ))
         );
         test!(
             vec_nested,
@@ -238,8 +246,8 @@ mod tests {
             map_api,
             "HashMap<dto, a::b::c>",
             Type::new_map(
-                Type::Api(EntityId::new_unqualified("dto")),
-                Type::Api(EntityId::new_unqualified("a.b.c")),
+                Type::Api(EntityId::new_unqualified("dto"), Semantics::Value),
+                Type::Api(EntityId::new_unqualified("a.b.c"), Semantics::Value),
             )
         );
         test!(
@@ -256,7 +264,10 @@ mod tests {
         test!(
             option_api,
             "Option<a::b::c>",
-            Type::new_optional(Type::Api(EntityId::new_unqualified("a.b.c")))
+            Type::new_optional(Type::Api(
+                EntityId::new_unqualified("a.b.c"),
+                Semantics::Value
+            ))
         );
         test!(
             option_nested,
@@ -316,6 +327,7 @@ mod tests {
     }
 
     mod entity_id {
+        use crate::model::Semantics;
         use anyhow::Result;
         use chumsky::Parser;
         use itertools::Itertools;
@@ -325,7 +337,7 @@ mod tests {
 
         #[test]
         fn starts_with_underscore() -> Result<()> {
-            let id = entity_id()
+            let (id, _) = entity_id()
                 .parse("_type")
                 .into_result()
                 .map_err(wrap_test_err)?;
@@ -335,7 +347,7 @@ mod tests {
 
         #[test]
         fn with_path() -> Result<()> {
-            let id = entity_id()
+            let (id, _) = entity_id()
                 .parse("a::b::c")
                 .into_result()
                 .map_err(wrap_test_err)?;
@@ -344,22 +356,35 @@ mod tests {
         }
 
         #[test]
+        fn value() -> Result<()> {
+            let (id, semantics) = entity_id()
+                .parse("Type")
+                .into_result()
+                .map_err(wrap_test_err)?;
+            assert_eq!(id.component_names().collect_vec(), vec!["Type"]);
+            assert_eq!(semantics, Semantics::Value);
+            Ok(())
+        }
+
+        #[test]
         fn reference() -> Result<()> {
-            let id = entity_id()
+            let (id, semantics) = entity_id()
                 .parse("&Type")
                 .into_result()
                 .map_err(wrap_test_err)?;
             assert_eq!(id.component_names().collect_vec(), vec!["Type"]);
+            assert_eq!(semantics, Semantics::Ref);
             Ok(())
         }
 
         #[test]
         fn mut_reference() -> Result<()> {
-            let id = entity_id()
+            let (id, semantics) = entity_id()
                 .parse("&mut Type")
                 .into_result()
                 .map_err(wrap_test_err)?;
             assert_eq!(id.component_names().collect_vec(), vec!["Type"]);
+            assert_eq!(semantics, Semantics::Mut);
             Ok(())
         }
     }

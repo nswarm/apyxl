@@ -183,7 +183,7 @@ impl Dependencies {
             | Type::Bytes
             | Type::User(_) => (),
 
-            Type::Api(entity_id) => self.add_edge_relative(from, namespace_id, entity_id),
+            Type::Api(entity_id, _) => self.add_edge_relative(from, namespace_id, entity_id),
 
             Type::Array(ty) | Type::Optional(ty) => self.add_edge(from, namespace_id, ty),
 

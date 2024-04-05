@@ -69,12 +69,13 @@ mod tests {
             .find_dto(&EntityId::try_from("dto:dto").unwrap())
             .unwrap();
         let fields = dto.fields().collect_vec();
-        let ty = fields.get(0).unwrap().ty();
+        let ty = fields.first().unwrap().ty();
 
         assert_eq!(
             ty.inner()
                 .api()
                 .unwrap()
+                .0
                 .path()
                 .iter()
                 .map(|s| s.as_ref())

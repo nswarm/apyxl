@@ -225,7 +225,7 @@ mod tests {
         assert_eq!(rpc.params.len(), 1);
         assert_eq!(rpc.params[0].name, "param0");
         assert_eq!(
-            rpc.params[0].ty.api().unwrap().component_names().last(),
+            rpc.params[0].ty.api().unwrap().0.component_names().last(),
             Some("ParamType0")
         );
         Ok(())
@@ -244,17 +244,17 @@ mod tests {
         assert_eq!(rpc.params.len(), 3);
         assert_eq!(rpc.params[0].name, "param0");
         assert_eq!(
-            rpc.params[0].ty.api().unwrap().component_names().last(),
+            rpc.params[0].ty.api().unwrap().0.component_names().last(),
             Some("ParamType0")
         );
         assert_eq!(rpc.params[1].name, "param1");
         assert_eq!(
-            rpc.params[1].ty.api().unwrap().component_names().last(),
+            rpc.params[1].ty.api().unwrap().0.component_names().last(),
             Some("ParamType1")
         );
         assert_eq!(rpc.params[2].name, "param2");
         assert_eq!(
-            rpc.params[2].ty.api().unwrap().component_names().last(),
+            rpc.params[2].ty.api().unwrap().0.component_names().last(),
             Some("ParamType2")
         );
         Ok(())
@@ -310,17 +310,17 @@ mod tests {
         assert_eq!(rpc.params.len(), 3);
         assert_eq!(rpc.params[0].name, "param0");
         assert_eq!(
-            rpc.params[0].ty.api().unwrap().component_names().last(),
+            rpc.params[0].ty.api().unwrap().0.component_names().last(),
             Some("ParamType0")
         );
         assert_eq!(rpc.params[1].name, "param1");
         assert_eq!(
-            rpc.params[1].ty.api().unwrap().component_names().last(),
+            rpc.params[1].ty.api().unwrap().0.component_names().last(),
             Some("ParamType1")
         );
         assert_eq!(rpc.params[2].name, "param2");
         assert_eq!(
-            rpc.params[2].ty.api().unwrap().component_names().last(),
+            rpc.params[2].ty.api().unwrap().0.component_names().last(),
             Some("ParamType2")
         );
         Ok(())
@@ -339,7 +339,7 @@ mod tests {
         assert_eq!(
             rpc.return_type
                 .as_ref()
-                .map(|x| x.api().unwrap().component_names().last()),
+                .map(|x| x.api().unwrap().0.component_names().last()),
             Some(Some("Asdfg"))
         );
         Ok(())
@@ -358,7 +358,7 @@ mod tests {
         assert_eq!(
             rpc.return_type
                 .as_ref()
-                .map(|x| x.api().unwrap().component_names().last()),
+                .map(|x| x.api().unwrap().0.component_names().last()),
             Some(Some("Asdfg"))
         );
         Ok(())

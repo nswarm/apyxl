@@ -13,6 +13,7 @@ pub use namespace::Namespace;
 pub use namespace::NamespaceChild;
 pub use rpc::Rpc;
 pub use ty::BaseType;
+pub use ty::Semantics;
 pub use ty::Type;
 pub use ty::UserTypeName;
 pub use ty_alias::TypeAlias;

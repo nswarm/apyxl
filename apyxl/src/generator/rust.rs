@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use itertools::Itertools;
 
 use crate::generator::{util, Generator};
-use crate::model::{attributes, Chunk, Comment};
+use crate::model::{attributes, Chunk, Comment, Semantics};
 use crate::output::{Indented, Output};
 use crate::rust_util;
 use crate::view::{
@@ -324,21 +324,30 @@ fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
         InnerType::Bytes => o.write_str("Vec<u8>"),
         // For the sake of example, just write the user type name.
         InnerType::User(s) => o.write_str(s),
-        InnerType::Api(id) => write_entity_id(id, o),
+        InnerType::Api(id, semantics) => write_entity_id(id, semantics, o),
         InnerType::Array(ty) => write_vec(*ty, o),
         InnerType::Map { key, value } => write_map(*key, *value, o),
         InnerType::Optional(ty) => write_option(*ty, o),
     }
 }
 
-fn write_entity_id(entity_id: EntityId, o: &mut dyn Output) -> Result<()> {
+fn write_entity_id(entity_id: EntityId, semantics: Semantics, o: &mut dyn Output) -> Result<()> {
     // Fully qualify everything by crate.
+    write_semantics(semantics, o)?;
     o.write_str("crate::")?;
     util::write_joined_str(
         &entity_id.path().iter().map(|s| s.as_ref()).collect_vec(),
         "::",
         o,
     )
+}
+
+fn write_semantics(semantics: Semantics, o: &mut dyn Output) -> Result<()> {
+    match semantics {
+        Semantics::Value => Ok(()),
+        Semantics::Ref => o.write('&'),
+        Semantics::Mut => o.write_str("&mut "),
+    }
 }
 
 fn write_vec(ty: InnerType, o: &mut dyn Output) -> Result<()> {
@@ -370,7 +379,7 @@ mod tests {
     };
     use crate::generator::util::tests::{assert_e2e, assert_output, assert_output_slice, indent};
     use crate::generator::Rust;
-    use crate::model::{attributes, Attributes};
+    use crate::model::{attributes, Attributes, Semantics};
     use crate::output::Indented;
     use crate::view::Transforms;
     use crate::{model, view};
@@ -437,12 +446,17 @@ pub mod ns0 {
                             fields: vec![
                                 model::Field {
                                     name: "field0",
-                                    ty: model::Type::new_api("Type0")?,
+                                    ty: model::Type::new_api("Type0", Semantics::Value)?,
                                     attributes: test_attributes(),
                                 },
                                 model::Field {
                                     name: "field1",
-                                    ty: model::Type::new_api("Type1")?,
+                                    ty: model::Type::new_api("Type1", Semantics::Ref)?,
+                                    attributes: test_attributes(),
+                                },
+                                model::Field {
+                                    name: "field2",
+                                    ty: model::Type::new_api("Type2", Semantics::Mut)?,
                                     attributes: test_attributes(),
                                 },
                             ],
@@ -460,7 +474,9 @@ pub mod ns0 {
                 &indent("    ", expected_attribute_str()),
                 "    field0: crate::Type0,",
                 &indent("    ", expected_attribute_str()),
-                "    field1: crate::Type1,",
+                "    field1: &crate::Type1,",
+                &indent("    ", expected_attribute_str()),
+                "    field2: &mut crate::Type2,",
                 "}\n",
             ],
         )
@@ -477,12 +493,12 @@ pub mod ns0 {
                             params: vec![
                                 model::Field {
                                     name: "param0",
-                                    ty: model::Type::new_api("Type0")?,
+                                    ty: model::Type::new_api("Type0", Semantics::Value)?,
                                     attributes: test_attributes(),
                                 },
                                 model::Field {
                                     name: "param1",
-                                    ty: model::Type::new_api("Type1")?,
+                                    ty: model::Type::new_api("Type1", Semantics::Ref)?,
                                     attributes: test_attributes(),
                                 },
                             ],
@@ -500,7 +516,7 @@ pub mod ns0 {
                 &indent("    ", expected_attribute_str()),
                 "    param0: crate::Type0,",
                 &indent("    ", expected_attribute_str()),
-                "    param1: crate::Type1,",
+                "    param1: &crate::Type1,",
                 ") {}\n",
             ],
         )
@@ -515,7 +531,7 @@ pub mod ns0 {
                         &model::Rpc {
                             name: "rpc_name",
                             params: vec![],
-                            return_type: Some(model::Type::new_api("ReturnType")?),
+                            return_type: Some(model::Type::new_api("ReturnType", Semantics::Ref)?),
                             attributes: Default::default(),
                         },
                         &Transforms::default(),
@@ -523,7 +539,7 @@ pub mod ns0 {
                     &mut Indented::new(o, INDENT),
                 )
             },
-            "pub fn rpc_name() -> crate::ReturnType {}\n",
+            "pub fn rpc_name() -> &crate::ReturnType {}\n",
         )
     }
 
@@ -535,7 +551,7 @@ pub mod ns0 {
                     view::Field::new(
                         &model::Field {
                             name: "asdf",
-                            ty: model::Type::new_api("Type")?,
+                            ty: model::Type::new_api("Type", Semantics::Value)?,
                             attributes: test_attributes(),
                         },
                         &vec![],
@@ -736,9 +752,28 @@ pub mod ns0 {
         test!(string, "String", model::Type::String);
         test!(bytes, "Vec<u8>", model::Type::Bytes);
         test!(
-            entity_id,
+            entity_id_value,
             "crate::a::b::c",
-            model::Type::Api(model::EntityId::try_from("a.b.c").unwrap())
+            model::Type::Api(
+                model::EntityId::try_from("a.b.c").unwrap(),
+                model::Semantics::Value
+            )
+        );
+        test!(
+            entity_id_ref,
+            "&crate::a::b::c",
+            model::Type::Api(
+                model::EntityId::try_from("a.b.c").unwrap(),
+                model::Semantics::Ref
+            )
+        );
+        test!(
+            entity_id_mut,
+            "&mut crate::a::b::c",
+            model::Type::Api(
+                model::EntityId::try_from("a.b.c").unwrap(),
+                model::Semantics::Mut
+            )
         );
         test!(
             vec,
@@ -765,7 +800,13 @@ pub mod ns0 {
     fn entity_id() -> Result<()> {
         let entity_id = model::EntityId::try_from("a.b.c")?;
         assert_output(
-            |o| write_entity_id(view::EntityId::new(&entity_id, &vec![]), o),
+            |o| {
+                write_entity_id(
+                    view::EntityId::new(&entity_id, &vec![]),
+                    Semantics::Value,
+                    o,
+                )
+            },
             "crate::a::b::c",
         )
     }

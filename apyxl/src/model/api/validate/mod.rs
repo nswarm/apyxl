@@ -411,11 +411,11 @@ fn qualify_type(api: &Api, namespace_id: &EntityId, ty: &Type) -> Result<Option<
     // will wrap the result in its own enum variant so that by the time we reach the top, it has
     // the same structure as the input type `ty`.
     match ty {
-        Type::Api(id) => {
+        Type::Api(id, semantics) => {
             let qualified_id = api
                 .find_qualified_type_relative(namespace_id, id)
                 .ok_or(id.clone())?;
-            return Ok(Some(Type::Api(qualified_id)));
+            return Ok(Some(Type::Api(qualified_id, *semantics)));
         }
 
         Type::Array(ty) => {
@@ -558,7 +558,7 @@ mod tests {
 
     mod qualify_type {
         use crate::model::validate::qualify_type;
-        use crate::model::{EntityId, Type};
+        use crate::model::{EntityId, Semantics, Type};
         use crate::test_util::executor::TestExecutor;
 
         #[test]
@@ -571,8 +571,8 @@ mod tests {
             run_test(
                 "mod ns { struct dto {} }",
                 &EntityId::default(),
-                &Type::Api(EntityId::new_unqualified("ns.dto")),
-                Some(Type::new_api("ns.d:dto").unwrap()),
+                &Type::Api(EntityId::new_unqualified("ns.dto"), Semantics::Value),
+                Some(Type::new_api("ns.d:dto", Semantics::Value).unwrap()),
             );
         }
 
@@ -591,8 +591,13 @@ mod tests {
             run_test(
                 "mod ns { struct dto {} }",
                 &EntityId::default(),
-                &Type::new_array(Type::Api(EntityId::new_unqualified("ns.dto"))),
-                Some(Type::new_array(Type::new_api("ns.d:dto").unwrap())),
+                &Type::new_array(Type::Api(
+                    EntityId::new_unqualified("ns.dto"),
+                    Semantics::Value,
+                )),
+                Some(Type::new_array(
+                    Type::new_api("ns.d:dto", Semantics::Value).unwrap(),
+                )),
             );
         }
 
@@ -611,8 +616,13 @@ mod tests {
             run_test(
                 "mod ns { struct dto {} }",
                 &EntityId::default(),
-                &Type::new_optional(Type::Api(EntityId::new_unqualified("ns.dto"))),
-                Some(Type::new_optional(Type::new_api("ns.d:dto").unwrap())),
+                &Type::new_optional(Type::Api(
+                    EntityId::new_unqualified("ns.dto"),
+                    Semantics::Value,
+                )),
+                Some(Type::new_optional(
+                    Type::new_api("ns.d:dto", Semantics::Value).unwrap(),
+                )),
             );
         }
 
@@ -639,12 +649,12 @@ mod tests {
                 "#,
                 &EntityId::default(),
                 &Type::new_map(
-                    Type::Api(EntityId::new_unqualified("ns0.ns1.en")),
-                    Type::Api(EntityId::new_unqualified("ns0.dto")),
+                    Type::Api(EntityId::new_unqualified("ns0.ns1.en"), Semantics::Value),
+                    Type::Api(EntityId::new_unqualified("ns0.dto"), Semantics::Value),
                 ),
                 Some(Type::new_map(
-                    Type::new_api("ns0.ns1.e:en").unwrap(),
-                    Type::new_api("ns0.d:dto").unwrap(),
+                    Type::new_api("ns0.ns1.e:en", Semantics::Value).unwrap(),
+                    Type::new_api("ns0.d:dto", Semantics::Value).unwrap(),
                 )),
             );
         }
@@ -662,12 +672,12 @@ mod tests {
                 "#,
                 &EntityId::default(),
                 &Type::new_array(Type::new_map(
-                    Type::Api(EntityId::new_unqualified("ns0.ns1.en")),
-                    Type::Api(EntityId::new_unqualified("ns0.dto")),
+                    Type::Api(EntityId::new_unqualified("ns0.ns1.en"), Semantics::Value),
+                    Type::Api(EntityId::new_unqualified("ns0.dto"), Semantics::Value),
                 )),
                 Some(Type::new_array(Type::new_map(
-                    Type::new_api("ns0.ns1.e:en").unwrap(),
-                    Type::new_api("ns0.d:dto").unwrap(),
+                    Type::new_api("ns0.ns1.e:en", Semantics::Value).unwrap(),
+                    Type::new_api("ns0.d:dto", Semantics::Value).unwrap(),
                 ))),
             );
         }
@@ -677,7 +687,7 @@ mod tests {
             run_test_err(
                 "",
                 &EntityId::default(),
-                &Type::Api(EntityId::new_unqualified("dto")),
+                &Type::Api(EntityId::new_unqualified("dto"), Semantics::Value),
             );
         }
 
@@ -688,7 +698,7 @@ mod tests {
                 &EntityId::default(),
                 &Type::new_array(Type::new_map(
                     Type::String,
-                    Type::Api(EntityId::new_unqualified("dto")),
+                    Type::Api(EntityId::new_unqualified("dto"), Semantics::Value),
                 )),
             );
         }

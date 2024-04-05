@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use crate::model;
+use crate::model::Semantics;
 use crate::view::{EntityId, EntityIdTransform};
 
 pub type InnerType<'v, 'a> = model::BaseType<EntityId<'v>, &'a str>;
@@ -42,7 +43,9 @@ impl<'v> Type<'v> {
             model::Type::String => InnerType::String,
             model::Type::Bytes => InnerType::Bytes,
             model::Type::User(name) => InnerType::User(name),
-            model::Type::Api(id) => InnerType::Api(EntityId::new(id, self.xforms)),
+            model::Type::Api(id, semantics) => {
+                InnerType::Api(EntityId::new(id, self.xforms), *semantics)
+            }
             model::Type::Array(ty) => InnerType::Array(Box::new(self.model_to_view_ty(ty))),
             model::Type::Map { key, value } => InnerType::Map {
                 key: Box::new(self.model_to_view_ty(key)),
@@ -54,9 +57,9 @@ impl<'v> Type<'v> {
 }
 
 impl InnerType<'_, '_> {
-    pub fn api(&self) -> Option<&EntityId> {
-        if let InnerType::Api(id) = self {
-            Some(id)
+    pub fn api(&self) -> Option<(&EntityId, Semantics)> {
+        if let InnerType::Api(id, semantics) = self {
+            Some((id, *semantics))
         } else {
             None
         }
