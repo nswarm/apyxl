@@ -256,7 +256,7 @@ fn devirtualize_namespaces(
     namespace_id: &EntityId,
 ) -> Vec<ValidationResult> {
     let results = namespace
-        .take_namespaces_filtered(|namespace| namespace.is_virtual)
+        .take_namespaces_filtered(|ns| ns.is_virtual)
         .into_iter()
         .map(
             |virtual_namespace| match namespace.dto_mut(&virtual_namespace.name) {
@@ -264,9 +264,8 @@ fn devirtualize_namespaces(
                     let virtual_ns_id = namespace_id
                         .child(EntityType::Namespace, &virtual_namespace.name)
                         .unwrap();
-                    Err(ValidationError::VirtualNamespaceMissingOwner(
-                        virtual_ns_id.clone(),
-                    ))
+                    debug!("ignoring virtual namespace for Entity '{}' because no DTO was found with the same name (probably private)", virtual_ns_id);
+                    Ok(None)
                 }
                 Some(dto) => {
                     dto.namespace = Some(virtual_namespace);
@@ -739,7 +738,7 @@ mod tests {
             }
 
             #[test]
-            fn errors_if_no_owning_dto() {
+            fn ok_if_no_owning_dto() {
                 let mut exe = TestExecutor::new(
                     r#"
                     struct dto {}
@@ -748,14 +747,7 @@ mod tests {
                     }
                 "#,
                 );
-                let errors = build_from_input(&mut exe).unwrap_err();
-                assert_eq!(errors.len(), 1);
-                assert_eq!(
-                    errors[0],
-                    ValidationError::VirtualNamespaceMissingOwner(
-                        EntityId::try_from("wrong_name").unwrap()
-                    )
-                );
+                build_from_input(&mut exe).unwrap();
             }
         }
 

@@ -145,7 +145,25 @@ fn write_dto(dto: Dto, o: &mut Indented) -> Result<()> {
         o.newline()?;
     }
 
-    write_block_end(o)
+    write_block_end(o)?;
+
+    if let Some(ns) = dto.namespace() {
+        o.write_str("impl ")?;
+        o.write_str(&dto.name())?;
+        o.write_str(" {")?;
+
+        o.indent(1);
+        for rpc in ns.rpcs() {
+            o.newline()?;
+            write_rpc(rpc, o)?;
+        }
+        o.indent(-1);
+
+        o.write('}')?;
+        o.newline()?;
+    }
+
+    Ok(())
 }
 
 fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {

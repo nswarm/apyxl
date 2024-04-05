@@ -56,9 +56,6 @@ pub enum ValidationError {
 
     #[error("Duplicate field name within entity '{1}': '{0}'")]
     DuplicateFieldName(EntityId, String),
-
-    #[error("Found a virtual namespace '{0}' but no owning DTO")]
-    VirtualNamespaceMissingOwner(EntityId),
 }
 
 pub type ValidationResult = Result<Option<Mutation>, ValidationError>;
