@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use itertools::Itertools;
 
 use crate::generator::{util, Generator};
@@ -222,7 +222,15 @@ fn write_block_end(o: &mut Indented) -> Result<()> {
 }
 
 fn write_field(field: Field, o: &mut dyn Output) -> Result<()> {
-    write_param(field, o)?;
+    if field.name() == "self" {
+        if let InnerType::User(ty) = field.ty().inner() {
+            o.write_str(ty)?;
+        } else {
+            return Err(anyhow!("'self' param _must_ be a User type"));
+        }
+    } else {
+        write_param(field, o)?;
+    }
     o.write(',')
 }
 
@@ -538,6 +546,28 @@ pub mod ns0 {
                 )
             },
             &[expected_attribute_str(), "asdf: crate::Type,"],
+        )
+    }
+
+    #[test]
+    fn field_self() -> Result<()> {
+        assert_output_slice(
+            |o| {
+                write_field(
+                    view::Field::new(
+                        &model::Field {
+                            name: "self",
+                            ty: model::Type::User("&mut self".to_string()),
+                            attributes: Attributes::default(),
+                        },
+                        &vec![],
+                        &vec![],
+                        &vec![],
+                    ),
+                    o,
+                )
+            },
+            &["&mut self,"],
         )
     }
 
