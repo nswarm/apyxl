@@ -1560,7 +1560,7 @@ mod tests {
                 let ty_id = EntityId::try_from(ty_id).unwrap();
                 let ty_entity = api.find_entity(ty_id).expect("couldn't find ty_id");
                 if let Entity::Type(ty) = ty_entity {
-                    let (target, _) = ty.api().unwrap();
+                    let target = ty.value.api().unwrap();
                     assert!(target.is_qualified(), "target not qualified");
                     assert_eq!(
                         target.to_string(),

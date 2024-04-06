@@ -1,4 +1,4 @@
-use crate::model::{Attributes, Field, Rpc, Type};
+use crate::model::{Attributes, Field, Rpc, Semantics, Type, TypeRef};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, expr_block, ty, visibility};
@@ -45,9 +45,24 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
 
 fn param(config: &Config) -> impl Parser<&str, Field, Error> {
     let self_param = choice((
-        just("self").map(|ty| ("self", Type::User(ty.to_string()))),
-        just("&self").map(|ty| ("self", Type::User(ty.to_string()))),
-        just("&mut self").map(|ty| ("self", Type::User(ty.to_string()))),
+        just("self").map(|ty| {
+            (
+                "self",
+                TypeRef::new(Type::User(ty.to_string()), Semantics::Value),
+            )
+        }),
+        just("&self").map(|ty| {
+            (
+                "self",
+                TypeRef::new(Type::User(ty.to_string()), Semantics::Ref),
+            )
+        }),
+        just("&mut self").map(|ty| {
+            (
+                "self",
+                TypeRef::new(Type::User(ty.to_string()), Semantics::Mut),
+            )
+        }),
     ));
     let field = text::ident()
         .then_ignore(just(':').padded())
@@ -78,7 +93,7 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{attributes, Comment, Type};
+    use crate::model::{attributes, Comment, Semantics, Type, TypeRef};
     use crate::parser::rust::rpc;
     use crate::parser::rust::visibility::Visibility;
     use crate::parser::test_util::wrap_test_err;
@@ -111,7 +126,10 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(rpc.params.len(), 1);
-        assert_eq!(rpc.params[0].ty, Type::User("self".to_string()));
+        assert_eq!(
+            rpc.params[0].ty,
+            TypeRef::new(Type::User("self".to_string()), Semantics::Value)
+        );
         assert_eq!(rpc.params[0].name, "self");
         Ok(())
     }
@@ -127,7 +145,10 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(rpc.params.len(), 1);
-        assert_eq!(rpc.params[0].ty, Type::User("&self".to_string()));
+        assert_eq!(
+            rpc.params[0].ty,
+            TypeRef::new(Type::User("&self".to_string()), Semantics::Ref)
+        );
         assert_eq!(rpc.params[0].name, "self");
         Ok(())
     }
@@ -143,7 +164,10 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(rpc.params.len(), 1);
-        assert_eq!(rpc.params[0].ty, Type::User("&mut self".to_string()));
+        assert_eq!(
+            rpc.params[0].ty,
+            TypeRef::new(Type::User("&mut self".to_string()), Semantics::Mut)
+        );
         assert_eq!(rpc.params[0].name, "self");
         Ok(())
     }
@@ -225,7 +249,13 @@ mod tests {
         assert_eq!(rpc.params.len(), 1);
         assert_eq!(rpc.params[0].name, "param0");
         assert_eq!(
-            rpc.params[0].ty.api().unwrap().0.component_names().last(),
+            rpc.params[0]
+                .ty
+                .value
+                .api()
+                .unwrap()
+                .component_names()
+                .last(),
             Some("ParamType0")
         );
         Ok(())
@@ -244,17 +274,35 @@ mod tests {
         assert_eq!(rpc.params.len(), 3);
         assert_eq!(rpc.params[0].name, "param0");
         assert_eq!(
-            rpc.params[0].ty.api().unwrap().0.component_names().last(),
+            rpc.params[0]
+                .ty
+                .value
+                .api()
+                .unwrap()
+                .component_names()
+                .last(),
             Some("ParamType0")
         );
         assert_eq!(rpc.params[1].name, "param1");
         assert_eq!(
-            rpc.params[1].ty.api().unwrap().0.component_names().last(),
+            rpc.params[1]
+                .ty
+                .value
+                .api()
+                .unwrap()
+                .component_names()
+                .last(),
             Some("ParamType1")
         );
         assert_eq!(rpc.params[2].name, "param2");
         assert_eq!(
-            rpc.params[2].ty.api().unwrap().0.component_names().last(),
+            rpc.params[2]
+                .ty
+                .value
+                .api()
+                .unwrap()
+                .component_names()
+                .last(),
             Some("ParamType2")
         );
         Ok(())
@@ -310,17 +358,35 @@ mod tests {
         assert_eq!(rpc.params.len(), 3);
         assert_eq!(rpc.params[0].name, "param0");
         assert_eq!(
-            rpc.params[0].ty.api().unwrap().0.component_names().last(),
+            rpc.params[0]
+                .ty
+                .value
+                .api()
+                .unwrap()
+                .component_names()
+                .last(),
             Some("ParamType0")
         );
         assert_eq!(rpc.params[1].name, "param1");
         assert_eq!(
-            rpc.params[1].ty.api().unwrap().0.component_names().last(),
+            rpc.params[1]
+                .ty
+                .value
+                .api()
+                .unwrap()
+                .component_names()
+                .last(),
             Some("ParamType1")
         );
         assert_eq!(rpc.params[2].name, "param2");
         assert_eq!(
-            rpc.params[2].ty.api().unwrap().0.component_names().last(),
+            rpc.params[2]
+                .ty
+                .value
+                .api()
+                .unwrap()
+                .component_names()
+                .last(),
             Some("ParamType2")
         );
         Ok(())
@@ -339,7 +405,7 @@ mod tests {
         assert_eq!(
             rpc.return_type
                 .as_ref()
-                .map(|x| x.api().unwrap().0.component_names().last()),
+                .map(|x| x.value.api().unwrap().component_names().last()),
             Some(Some("Asdfg"))
         );
         Ok(())
@@ -358,7 +424,7 @@ mod tests {
         assert_eq!(
             rpc.return_type
                 .as_ref()
-                .map(|x| x.api().unwrap().0.component_names().last()),
+                .map(|x| x.value.api().unwrap().component_names().last()),
             Some(Some("Asdfg"))
         );
         Ok(())

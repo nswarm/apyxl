@@ -8,8 +8,8 @@ use crate::model::{attributes, Chunk, Comment, Semantics};
 use crate::output::{Indented, Output};
 use crate::rust_util;
 use crate::view::{
-    Attributes, Dto, EntityId, Enum, EnumValue, Field, InnerType, Model, Namespace, Rpc, SubView,
-    Type, TypeAlias,
+    Attributes, Dto, EntityId, Enum, EnumValue, Field, Model, Namespace, Rpc, SubView, Type,
+    TypeAlias, TypeRef,
 };
 
 #[derive(Debug, Default)]
@@ -241,7 +241,7 @@ fn write_block_end(o: &mut Indented) -> Result<()> {
 
 fn write_field(field: Field, o: &mut dyn Output) -> Result<()> {
     if field.name() == "self" {
-        if let InnerType::User(ty) = field.ty().inner() {
+        if let Type::User(ty) = field.ty().value() {
             o.write(ty)?;
         } else {
             return Err(anyhow!("'self' param _must_ be a User type"));
@@ -315,43 +315,43 @@ fn write_user_attribute(
     Ok(())
 }
 
-fn write_type(ty: Type, o: &mut dyn Output) -> Result<()> {
-    write_inner_type(ty.inner(), o)
+fn write_type(ty: TypeRef, o: &mut dyn Output) -> Result<()> {
+    write_semantics(ty.semantics(), o)?;
+    write_inner_type(ty, o)
 }
 
-fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
-    match ty {
-        InnerType::Bool => o.write("bool"),
-        InnerType::U8 => o.write("u8"),
-        InnerType::U16 => o.write("u16"),
-        InnerType::U32 => o.write("u32"),
-        InnerType::U64 => o.write("u64"),
-        InnerType::U128 => o.write("u128"),
-        InnerType::USIZE => o.write("usize"),
-        InnerType::I8 => o.write("i8"),
-        InnerType::I16 => o.write("i16"),
-        InnerType::I32 => o.write("i32"),
-        InnerType::I64 => o.write("i64"),
-        InnerType::I128 => o.write("i128"),
-        InnerType::F8 => o.write("f8"),
-        InnerType::F16 => o.write("f16"),
-        InnerType::F32 => o.write("f32"),
-        InnerType::F64 => o.write("f64"),
-        InnerType::F128 => o.write("f128"),
-        InnerType::String => o.write("String"),
-        InnerType::Bytes => o.write("Vec<u8>"),
+fn write_inner_type(ty: TypeRef, o: &mut dyn Output) -> Result<()> {
+    match ty.value() {
+        Type::Bool => o.write("bool"),
+        Type::U8 => o.write("u8"),
+        Type::U16 => o.write("u16"),
+        Type::U32 => o.write("u32"),
+        Type::U64 => o.write("u64"),
+        Type::U128 => o.write("u128"),
+        Type::USIZE => o.write("usize"),
+        Type::I8 => o.write("i8"),
+        Type::I16 => o.write("i16"),
+        Type::I32 => o.write("i32"),
+        Type::I64 => o.write("i64"),
+        Type::I128 => o.write("i128"),
+        Type::F8 => o.write("f8"),
+        Type::F16 => o.write("f16"),
+        Type::F32 => o.write("f32"),
+        Type::F64 => o.write("f64"),
+        Type::F128 => o.write("f128"),
+        Type::String => o.write("String"),
+        Type::Bytes => o.write("Vec<u8>"),
         // For the sake of example, just write the user type name.
-        InnerType::User(s) => o.write(s),
-        InnerType::Api(id, semantics) => write_entity_id(id, semantics, o),
-        InnerType::Array(ty) => write_vec(*ty, o),
-        InnerType::Map { key, value } => write_map(*key, *value, o),
-        InnerType::Optional(ty) => write_option(*ty, o),
+        Type::User(s) => o.write(s),
+        Type::Api(id) => write_entity_id(id, o),
+        Type::Array(array_ty) => write_vec(*array_ty, o),
+        Type::Map { key, value } => write_map(*key, *value, o),
+        Type::Optional(opt_ty) => write_option(*opt_ty, o),
     }
 }
 
-fn write_entity_id(entity_id: EntityId, semantics: Semantics, o: &mut dyn Output) -> Result<()> {
+fn write_entity_id(entity_id: EntityId, o: &mut dyn Output) -> Result<()> {
     // Fully qualify everything by crate.
-    write_semantics(semantics, o)?;
     o.write("crate::")?;
     util::write_joined_str(
         &entity_id.path().iter().map(|s| s.as_ref()).collect_vec(),
@@ -368,23 +368,23 @@ fn write_semantics(semantics: Semantics, o: &mut dyn Output) -> Result<()> {
     }
 }
 
-fn write_vec(ty: InnerType, o: &mut dyn Output) -> Result<()> {
+fn write_vec(ty: TypeRef, o: &mut dyn Output) -> Result<()> {
     o.write("Vec<")?;
-    write_inner_type(ty, o)?;
+    write_type(ty, o)?;
     o.write_char('>')
 }
 
-fn write_map(key: InnerType, value: InnerType, o: &mut dyn Output) -> Result<()> {
+fn write_map(key: TypeRef, value: TypeRef, o: &mut dyn Output) -> Result<()> {
     o.write("HashMap<")?;
-    write_inner_type(key, o)?;
+    write_type(key, o)?;
     o.write(", ")?;
-    write_inner_type(value, o)?;
+    write_type(value, o)?;
     o.write_char('>')
 }
 
-fn write_option(ty: InnerType, o: &mut dyn Output) -> Result<()> {
+fn write_option(ty: TypeRef, o: &mut dyn Output) -> Result<()> {
     o.write("Option<")?;
-    write_inner_type(ty, o)?;
+    write_type(ty, o)?;
     o.write_char('>')
 }
 
@@ -397,7 +397,7 @@ mod tests {
     };
     use crate::generator::util::tests::{assert_e2e, assert_output, assert_output_slice, indent};
     use crate::generator::Rust;
-    use crate::model::{attributes, Attributes, Semantics};
+    use crate::model::{attributes, Attributes, Semantics, Type};
     use crate::output::Indented;
     use crate::view::Transforms;
     use crate::{model, view};
@@ -464,17 +464,17 @@ pub mod ns0 {
                             fields: vec![
                                 model::Field {
                                     name: "field0",
-                                    ty: model::Type::new_api("Type0", Semantics::Value)?,
+                                    ty: model::TypeRef::new_api("Type0", Semantics::Value)?,
                                     attributes: test_attributes(),
                                 },
                                 model::Field {
                                     name: "field1",
-                                    ty: model::Type::new_api("Type1", Semantics::Ref)?,
+                                    ty: model::TypeRef::new_api("Type1", Semantics::Ref)?,
                                     attributes: test_attributes(),
                                 },
                                 model::Field {
                                     name: "field2",
-                                    ty: model::Type::new_api("Type2", Semantics::Mut)?,
+                                    ty: model::TypeRef::new_api("Type2", Semantics::Mut)?,
                                     attributes: test_attributes(),
                                 },
                             ],
@@ -511,12 +511,12 @@ pub mod ns0 {
                             params: vec![
                                 model::Field {
                                     name: "param0",
-                                    ty: model::Type::new_api("Type0", Semantics::Value)?,
+                                    ty: model::TypeRef::new_api("Type0", Semantics::Value)?,
                                     attributes: test_attributes(),
                                 },
                                 model::Field {
                                     name: "param1",
-                                    ty: model::Type::new_api("Type1", Semantics::Ref)?,
+                                    ty: model::TypeRef::new_api("Type1", Semantics::Ref)?,
                                     attributes: test_attributes(),
                                 },
                             ],
@@ -549,7 +549,10 @@ pub mod ns0 {
                         &model::Rpc {
                             name: "rpc_name",
                             params: vec![],
-                            return_type: Some(model::Type::new_api("ReturnType", Semantics::Ref)?),
+                            return_type: Some(model::TypeRef::new_api(
+                                "ReturnType",
+                                Semantics::Ref,
+                            )?),
                             attributes: Default::default(),
                         },
                         &Transforms::default(),
@@ -569,7 +572,7 @@ pub mod ns0 {
                     view::Field::new(
                         &model::Field {
                             name: "asdf",
-                            ty: model::Type::new_api("Type", Semantics::Value)?,
+                            ty: model::TypeRef::new_api("Type", Semantics::Value)?,
                             attributes: test_attributes(),
                         },
                         &vec![],
@@ -591,7 +594,10 @@ pub mod ns0 {
                     view::Field::new(
                         &model::Field {
                             name: "self",
-                            ty: model::Type::User("&mut self".to_string()),
+                            ty: model::TypeRef {
+                                value: Type::User("&mut self".to_string()),
+                                semantics: Semantics::Mut,
+                            },
                             attributes: Attributes::default(),
                         },
                         &vec![],
@@ -739,8 +745,8 @@ pub mod ns0 {
 
         use crate::generator::rust::write_type;
         use crate::generator::util::tests::assert_output;
-        use crate::model;
-        use crate::view::Type;
+        use crate::model::{Semantics, Type, TypeRef};
+        use crate::view;
 
         macro_rules! test {
             ($name:ident, $expected:literal, $ty:expr) => {
@@ -751,66 +757,78 @@ pub mod ns0 {
             };
         }
 
-        test!(bool, "bool", model::Type::Bool);
-        test!(u8, "u8", model::Type::U8);
-        test!(u16, "u16", model::Type::U16);
-        test!(u32, "u32", model::Type::U32);
-        test!(u64, "u64", model::Type::U64);
-        test!(u128, "u128", model::Type::U128);
-        test!(i8, "i8", model::Type::I8);
-        test!(i16, "i16", model::Type::I16);
-        test!(i32, "i32", model::Type::I32);
-        test!(i64, "i64", model::Type::I64);
-        test!(i128, "i128", model::Type::I128);
-        test!(f8, "f8", model::Type::F8);
-        test!(f16, "f16", model::Type::F16);
-        test!(f32, "f32", model::Type::F32);
-        test!(f64, "f64", model::Type::F64);
-        test!(f128, "f128", model::Type::F128);
-        test!(string, "String", model::Type::String);
-        test!(bytes, "Vec<u8>", model::Type::Bytes);
+        test!(bool, "bool", TypeRef::new(Type::Bool, Semantics::Value));
+        test!(u8, "u8", TypeRef::new(Type::U8, Semantics::Value));
+        test!(u16, "u16", TypeRef::new(Type::U16, Semantics::Value));
+        test!(u32, "u32", TypeRef::new(Type::U32, Semantics::Value));
+        test!(u64, "u64", TypeRef::new(Type::U64, Semantics::Value));
+        test!(u128, "u128", TypeRef::new(Type::U128, Semantics::Value));
+        test!(i8, "i8", TypeRef::new(Type::I8, Semantics::Value));
+        test!(i16, "i16", TypeRef::new(Type::I16, Semantics::Value));
+        test!(i32, "i32", TypeRef::new(Type::I32, Semantics::Value));
+        test!(i64, "i64", TypeRef::new(Type::I64, Semantics::Value));
+        test!(i128, "i128", TypeRef::new(Type::I128, Semantics::Value));
+        test!(f8, "f8", TypeRef::new(Type::F8, Semantics::Value));
+        test!(f16, "f16", TypeRef::new(Type::F16, Semantics::Value));
+        test!(f32, "f32", TypeRef::new(Type::F32, Semantics::Value));
+        test!(f64, "f64", TypeRef::new(Type::F64, Semantics::Value));
+        test!(f128, "f128", TypeRef::new(Type::F128, Semantics::Value));
+        test!(
+            string,
+            "String",
+            TypeRef::new(Type::String, Semantics::Value)
+        );
+        test!(
+            bytes,
+            "Vec<u8>",
+            TypeRef::new(Type::Bytes, Semantics::Value)
+        );
         test!(
             entity_id_value,
             "crate::a::b::c",
-            model::Type::Api(
-                model::EntityId::try_from("a.b.c").unwrap(),
-                model::Semantics::Value
-            )
+            TypeRef::new_api("a.b.c", Semantics::Value).unwrap()
         );
         test!(
             entity_id_ref,
             "&crate::a::b::c",
-            model::Type::Api(
-                model::EntityId::try_from("a.b.c").unwrap(),
-                model::Semantics::Ref
-            )
+            TypeRef::new_api("a.b.c", Semantics::Ref).unwrap()
         );
         test!(
             entity_id_mut,
             "&mut crate::a::b::c",
-            model::Type::Api(
-                model::EntityId::try_from("a.b.c").unwrap(),
-                model::Semantics::Mut
-            )
+            TypeRef::new_api("a.b.c", Semantics::Mut).unwrap()
         );
         test!(
             vec,
             "Vec<String>",
-            model::Type::new_array(model::Type::String)
+            TypeRef::new_array(
+                TypeRef::new(Type::String, Semantics::Value),
+                Semantics::Value
+            )
         );
         test!(
             option,
             "Option<String>",
-            model::Type::new_optional(model::Type::String)
+            TypeRef::new_optional(
+                TypeRef::new(Type::String, Semantics::Value),
+                Semantics::Value
+            )
         );
         test!(
             map,
             "HashMap<String, i32>",
-            model::Type::new_map(model::Type::String, model::Type::I32)
+            TypeRef::new_map(
+                TypeRef::new(Type::String, Semantics::Value),
+                TypeRef::new(Type::I32, Semantics::Value),
+                Semantics::Value
+            )
         );
 
-        fn run_test(ty: model::Type, expected: &str) -> Result<()> {
-            assert_output(|o| write_type(Type::new(&ty, &vec![]), o), expected)
+        fn run_test(ty: TypeRef, expected: &str) -> Result<()> {
+            assert_output(
+                |o| write_type(view::TypeRef::new(&ty, &vec![]), o),
+                expected,
+            )
         }
     }
 
@@ -818,13 +836,7 @@ pub mod ns0 {
     fn entity_id() -> Result<()> {
         let entity_id = model::EntityId::try_from("a.b.c")?;
         assert_output(
-            |o| {
-                write_entity_id(
-                    view::EntityId::new(&entity_id, &vec![]),
-                    Semantics::Value,
-                    o,
-                )
-            },
+            |o| write_entity_id(view::EntityId::new(&entity_id, &vec![]), o),
             "crate::a::b::c",
         )
     }

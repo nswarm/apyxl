@@ -1,13 +1,13 @@
 use crate::model::api::entity::ToEntity;
 use crate::model::entity::{EntityMut, FindEntity};
-use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Field, Type};
+use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Field, TypeRef};
 
 /// A single Remote Procedure Call (RPC) within an [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Rpc<'a> {
     pub name: &'a str,
     pub params: Vec<Field<'a>>,
-    pub return_type: Option<Type>,
+    pub return_type: Option<TypeRef>,
     pub attributes: Attributes<'a>,
 }
 
@@ -56,8 +56,7 @@ impl<'api> FindEntity<'api> for Rpc<'api> {
     fn find_entity_mut<'a>(&'a mut self, mut id: EntityId) -> Option<EntityMut<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
-                EntityType::Field => self
-                    .param_mut(&name).and_then(|x| x.find_entity_mut(id)),
+                EntityType::Field => self.param_mut(&name).and_then(|x| x.find_entity_mut(id)),
 
                 EntityType::Type => {
                     if entity::subtype::RETURN_TY_ALL.contains(&name.as_str()) {

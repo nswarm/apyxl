@@ -1,11 +1,11 @@
 use crate::model::entity::{EntityMut, FindEntity, ToEntity};
-use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Type};
+use crate::model::{entity, Attributes, Entity, EntityId, EntityType, TypeRef};
 
 /// A single enum type in the within an [Api].
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TypeAlias<'a> {
     pub name: &'a str,
-    pub target_ty: Type,
+    pub target_ty: TypeRef,
     pub attributes: Attributes<'a>,
 }
 

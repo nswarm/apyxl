@@ -78,10 +78,9 @@ mod tests {
         let ty = fields.first().unwrap().ty();
 
         assert_eq!(
-            ty.inner()
+            ty.value()
                 .api()
                 .unwrap()
-                .0
                 .path()
                 .iter()
                 .map(|s| s.as_ref())

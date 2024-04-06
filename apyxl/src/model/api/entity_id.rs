@@ -37,7 +37,7 @@ use crate::model::api::entity::EntityType;
 ///     `namespace2`        another [crate::model::Namespace] (inside of `namespace1`)
 ///     `dto:DtoName`       a [crate::model::Dto] called `DtoName`
 ///     `field:field_name`  a [crate::model::Field] within the [crate::model::Dto] called `field_name`
-///     `ty`                the [crate::model::Type] of the [crate::model::Field] ("nameless" - see below)
+///     `ty`                the [crate::model::TypeRef] of the [crate::model::Field] ("nameless" - see below)
 ///
 /// Possible `subtypes` are defined by the parent entity. Some subtypes have aliases for convenience
 /// e.g. `n` is equivalent to `namespace`.
@@ -60,11 +60,11 @@ use crate::model::api::entity::EntityType;
 ///                                `r`, `rpc`:                [crate::model::Rpc],
 ///                                `a`, `alias`:              [crate::model::TypeAlias],
 ///     [crate::model::Rpc]:       `p`, `param`:              [crate::model::Field],
-///                                `return_ty`:               [crate::model::Type] (nameless),
-///     [crate::model::Field]:     `ty`:                      [crate::model::Type] (nameless),
-///     [crate::model::TypeAlias]: `target`:                  [crate::model::Type] (nameless),
+///                                `return_ty`:               [crate::model::TypeRef] (nameless),
+///     [crate::model::Field]:     `ty`:                      [crate::model::TypeRef] (nameless),
+///     [crate::model::TypeAlias]: `target`:                  [crate::model::TypeRef] (nameless),
 ///     [crate::model::Enum]:      <none>
-///     [crate::model::Type]:      <none>
+///     [crate::model::TypeRef]:      <none>
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct EntityId {
     components: VecDeque<Component>,

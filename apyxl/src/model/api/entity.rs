@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 
-use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, Type, TypeAlias};
+use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, TypeAlias, TypeRef};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Copy, Clone)]
 pub enum EntityType {
@@ -22,7 +22,7 @@ pub enum Entity<'a, 'api> {
     Enum(&'a Enum<'api>),
     Field(&'a Field<'api>),
     TypeAlias(&'a TypeAlias<'api>),
-    Type(&'a Type),
+    Type(&'a TypeRef),
 }
 
 /// Mutable reference to a specific entity within an API.
@@ -33,7 +33,7 @@ pub enum EntityMut<'a, 'api> {
     Enum(&'a mut Enum<'api>),
     Field(&'a mut Field<'api>),
     TypeAlias(&'a mut TypeAlias<'api>),
-    Type(&'a mut Type),
+    Type(&'a mut TypeRef),
 }
 
 pub trait FindEntity<'api> {

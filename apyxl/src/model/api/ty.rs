@@ -5,19 +5,20 @@ use anyhow::Result;
 
 use crate::model::{Entity, EntityId};
 
-/// A type within the language or API. Types other than [Type::Api] are assumed to always
+/// A type within the language or API. Types other than [TypeRef::Api] are assumed to always
 /// exist during API validation and can be used by [crate::Generator]s to map to the relevant known
 /// type in the target language without additional setup.
 ///
-/// Arbitrary user-defined types can be added with [Type::User].
+/// Arbitrary user-defined types can be added with [TypeRef::User].
 ///
-/// Types within the parsed API will have the [Type::Api] type, and validation will ensure they
+/// Types within the parsed API will have the [TypeRef::Api] type, and validation will ensure they
 /// exist after the API is built.
 ///
 /// This is generic so that view::Type can provide relevant view types for variants with data.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum BaseType<ApiType, UserTypeName>
+pub enum BaseType<TypeRef, ApiType, UserTypeName>
 where
+    TypeRef: Debug + Clone,
     ApiType: Debug + Clone,
     UserTypeName: Debug + Clone,
 {
@@ -61,23 +62,29 @@ where
 
     /// Reference to another type within the API. This must reference an existing type within
     /// the API when built.
-    Api(ApiType, Semantics),
+    Api(ApiType),
 
     /// An array of the contained type.
-    Array(Box<Self>),
+    Array(Box<TypeRef>),
 
     /// A key-value map.
     Map {
-        key: Box<Self>,
-        value: Box<Self>,
+        key: Box<TypeRef>,
+        value: Box<TypeRef>,
     },
 
     /// An optional type, i.e. a type that also includes whether it is set or not.
     /// Sometimes called a nullable type.
-    Optional(Box<Self>),
+    Optional(Box<TypeRef>),
 }
 pub type UserTypeName = String;
-pub type Type = BaseType<EntityId, UserTypeName>;
+pub type Type = BaseType<TypeRef, EntityId, UserTypeName>;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TypeRef {
+    pub value: Type,
+    pub semantics: Semantics,
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Semantics {
@@ -86,7 +93,42 @@ pub enum Semantics {
     Mut,
 }
 
-impl<E: Debug + Clone, U: Debug + Clone> BaseType<E, U> {
+impl TypeRef {
+    pub fn new(value: Type, semantics: Semantics) -> Self {
+        Self { value, semantics }
+    }
+
+    pub fn new_api(value: &str, semantics: Semantics) -> Result<Self> {
+        Ok(Self {
+            value: Type::new_api(value)?,
+            semantics,
+        })
+    }
+
+    pub fn new_array(ty: TypeRef, semantics: Semantics) -> Self {
+        Self::new(Type::Array(Box::new(ty)), semantics)
+    }
+
+    pub fn new_map(key_ty: TypeRef, value_ty: TypeRef, semantics: Semantics) -> Self {
+        Self::new(
+            Type::Map {
+                key: Box::new(key_ty),
+                value: Box::new(value_ty),
+            },
+            semantics,
+        )
+    }
+
+    pub fn new_optional(ty: TypeRef, semantics: Semantics) -> Self {
+        Self::new(Type::Optional(Box::new(ty)), semantics)
+    }
+
+    pub fn is_primitive(&self) -> bool {
+        self.value.is_primitive()
+    }
+}
+
+impl<T: Debug + Clone, E: Debug + Clone, U: Debug + Clone> BaseType<T, E, U> {
     pub fn is_primitive(&self) -> bool {
         match self {
             BaseType::Bool
@@ -110,7 +152,7 @@ impl<E: Debug + Clone, U: Debug + Clone> BaseType<E, U> {
             BaseType::String
             | BaseType::Bytes
             | BaseType::User(_)
-            | BaseType::Api(_, _)
+            | BaseType::Api(_)
             | BaseType::Array(_)
             | BaseType::Map { .. }
             | BaseType::Optional(_) => false,
@@ -119,35 +161,35 @@ impl<E: Debug + Clone, U: Debug + Clone> BaseType<E, U> {
 }
 
 impl Type {
-    pub fn new_api(value: &str, semantics: Semantics) -> Result<Self> {
-        Ok(Self::Api(EntityId::try_from(value)?, semantics))
+    pub fn new_api(value: &str) -> Result<Self> {
+        Ok(Self::Api(EntityId::try_from(value)?))
     }
 
-    pub fn api(&self) -> Option<(&EntityId, Semantics)> {
-        if let Type::Api(id, semantics) = self {
-            Some((id, *semantics))
+    pub fn api(&self) -> Option<&EntityId> {
+        if let Self::Api(id) = &self {
+            Some(id)
         } else {
             None
         }
     }
 
-    pub fn new_array(ty: Self) -> Self {
-        Type::Array(Box::new(ty))
+    pub fn new_array(ty: TypeRef) -> Self {
+        Self::Array(Box::new(ty))
     }
 
-    pub fn new_map(key_ty: Self, value_ty: Self) -> Self {
-        Type::Map {
+    pub fn new_map(key_ty: TypeRef, value_ty: TypeRef) -> Self {
+        Self::Map {
             key: Box::new(key_ty),
             value: Box::new(value_ty),
         }
     }
 
-    pub fn new_optional(ty: Self) -> Self {
-        Type::Optional(Box::new(ty))
+    pub fn new_optional(ty: TypeRef) -> Self {
+        Self::Optional(Box::new(ty))
     }
 }
 
-impl<'api> FindEntity<'api> for Type {
+impl<'api> FindEntity<'api> for TypeRef {
     fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
         if id.is_empty() {
             Some(Entity::Type(self))

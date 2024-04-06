@@ -39,7 +39,7 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{EntityId, Semantics, Type};
+    use crate::model::{EntityId, Semantics, Type, TypeRef};
     use crate::parser::rust::ty_alias;
     use crate::parser::rust::visibility::Visibility;
     use crate::parser::test_util::wrap_test_err;
@@ -55,7 +55,10 @@ mod tests {
         assert_eq!(visibility, Visibility::Public);
         assert_eq!(
             alias.target_ty,
-            Type::Api(EntityId::new_unqualified("pkg.SomeType"), Semantics::Value)
+            TypeRef::new(
+                Type::Api(EntityId::new_unqualified("pkg.SomeType")),
+                Semantics::Value
+            )
         );
         Ok(())
     }
@@ -68,7 +71,7 @@ mod tests {
             .map_err(wrap_test_err)?;
         assert_eq!(alias.name, "OtherName");
         assert_eq!(visibility, Visibility::Private);
-        assert_eq!(alias.target_ty, Type::U32);
+        assert_eq!(alias.target_ty, TypeRef::new(Type::U32, Semantics::Value));
         Ok(())
     }
 }

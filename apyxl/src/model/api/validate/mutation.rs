@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::model::{Api, EntityId, Type};
+use crate::model::{Api, EntityId, TypeRef};
 
 /// Used to separate validation of the api from mutation. Validation functions can return a
 /// [Mutation] if during validation they want to make a change.
@@ -13,7 +13,7 @@ pub enum Mutation {
 }
 
 impl Mutation {
-    pub fn new_qualify_type(entity_id: EntityId, new_ty: Type) -> Self {
+    pub fn new_qualify_type(entity_id: EntityId, new_ty: TypeRef) -> Self {
         Mutation::QualifyType(qualify_type::Data { entity_id, new_ty })
     }
 
@@ -29,12 +29,12 @@ pub mod qualify_type {
     use anyhow::{anyhow, Result};
 
     use crate::model::entity::{EntityMut, FindEntity};
-    use crate::model::{Api, EntityId, Type};
+    use crate::model::{Api, EntityId, TypeRef};
 
     #[derive(Debug)]
     pub struct Data {
         pub entity_id: EntityId,
-        pub new_ty: Type,
+        pub new_ty: TypeRef,
     }
 
     pub fn execute(api: &mut Api, data: Data) -> Result<()> {
@@ -72,7 +72,7 @@ mod tests {
 
         use crate::model::validate::mutation::qualify_type;
         use crate::model::validate::Mutation;
-        use crate::model::{EntityId, Type};
+        use crate::model::{EntityId, Semantics, Type, TypeRef};
         use crate::test_util::executor::TestExecutor;
 
         #[test]
@@ -82,7 +82,7 @@ mod tests {
                 field: SomeType
             }
             "#;
-            let new_ty = Type::Bool;
+            let new_ty = TypeRef::new(Type::Bool, Semantics::Value);
             let mut exe = TestExecutor::new(data);
             let mut api = exe.api();
             Mutation::QualifyType(qualify_type::Data {
@@ -110,7 +110,7 @@ mod tests {
             }
             "#,
                 "dto.field",
-                Type::Bool,
+                TypeRef::new(Type::Bool, Semantics::Value),
             );
             assert!(result.is_err());
         }
@@ -124,12 +124,12 @@ mod tests {
             }
             "#,
                 "i.dont.exist",
-                Type::Bool,
+                TypeRef::new(Type::Bool, Semantics::Value),
             );
             assert!(result.is_err());
         }
 
-        fn run_test(data: &str, id: &str, new_ty: Type) -> Result<()> {
+        fn run_test(data: &str, id: &str, new_ty: TypeRef) -> Result<()> {
             let mut exe = TestExecutor::new(data);
             let mut api = exe.api();
             Mutation::QualifyType(qualify_type::Data {

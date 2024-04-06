@@ -15,6 +15,7 @@ pub use rpc::Rpc;
 pub use ty::BaseType;
 pub use ty::Semantics;
 pub use ty::Type;
+pub use ty::TypeRef;
 pub use ty::UserTypeName;
 pub use ty_alias::TypeAlias;
 pub use validate::ValidationError;

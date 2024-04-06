@@ -6,7 +6,7 @@ use itertools::Itertools;
 use thiserror::Error;
 
 pub use crate::model::validate::mutation::Mutation;
-use crate::model::{entity, Api, EntityId, EntityType, Field, Type, UNDEFINED_NAMESPACE};
+use crate::model::{entity, Api, EntityId, EntityType, Field, Type, TypeRef, UNDEFINED_NAMESPACE};
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError {
@@ -398,41 +398,46 @@ pub fn ty_alias_target_type(api: &Api, namespace_id: EntityId) -> Vec<Validation
         .collect_vec()
 }
 
-/// Returns a [Type] with all [EntityId]s qualified, recursively. If an [EntityId] does not exist
+/// Returns a [TypeRef] with all [EntityId]s qualified, recursively. If an [EntityId] does not exist
 /// in the `api`, it returns the [EntityId] which could not be qualified as an error.
-/// If there are no [EntityId]s in the [Type] (i.e. it's all primitives), returns Ok(None).
-fn qualify_type(api: &Api, namespace_id: &EntityId, ty: &Type) -> Result<Option<Type>, EntityId> {
+/// If there are no [EntityId]s in the [TypeRef] (i.e. it's all primitives), returns Ok(None).
+fn qualify_type(
+    api: &Api,
+    namespace_id: &EntityId,
+    ty: &TypeRef,
+) -> Result<Option<TypeRef>, EntityId> {
     // This fn is recursive to support nested types like `Vec<EnumA, Map<EnumB, Vec<DtoA>>>`
     // It digs into the [Type] `ty` until it runs into a [Type::Api] that has an [EntityId] to
     // be qualified and returns the qualified version. On the way back up the stack each [Type]
     // will wrap the result in its own enum variant so that by the time we reach the top, it has
     // the same structure as the input type `ty`.
-    match ty {
-        Type::Api(id, semantics) => {
+    match &ty.value {
+        Type::Api(id) => {
             let qualified_id = api
                 .find_qualified_type_relative(namespace_id, id)
                 .ok_or(id.clone())?;
-            return Ok(Some(Type::Api(qualified_id, *semantics)));
+            return Ok(Some(TypeRef::new(Type::Api(qualified_id), ty.semantics)));
         }
 
         Type::Array(ty) => {
             return qualify_type(api, namespace_id, ty)
-                .map(|opt| opt.map(|ty| Type::Array(Box::new(ty))))
+                .map(|opt| opt.map(|arr_ty| TypeRef::new_array(arr_ty, ty.semantics)))
         }
 
         Type::Optional(ty) => {
             return qualify_type(api, namespace_id, ty)
-                .map(|opt| opt.map(|ty| Type::Optional(Box::new(ty))))
+                .map(|opt| opt.map(|opt_ty| TypeRef::new_optional(opt_ty, ty.semantics)))
         }
 
         Type::Map { key, value } => {
             let key_ty = qualify_type(api, namespace_id, key)?;
             let value_ty = qualify_type(api, namespace_id, value)?;
             return if key_ty.is_some() || value_ty.is_some() {
-                Ok(Some(Type::Map {
-                    key: key_ty.map(Box::new).unwrap_or(key.clone()),
-                    value: value_ty.map(Box::new).unwrap_or(value.clone()),
-                }))
+                Ok(Some(TypeRef::new_map(
+                    key_ty.unwrap_or((**key).clone()),
+                    value_ty.unwrap_or((**value).clone()),
+                    ty.semantics,
+                )))
             } else {
                 Ok(None)
             };
@@ -555,12 +560,17 @@ mod tests {
 
     mod qualify_type {
         use crate::model::validate::qualify_type;
-        use crate::model::{EntityId, Semantics, Type};
+        use crate::model::{EntityId, Semantics, Type, TypeRef};
         use crate::test_util::executor::TestExecutor;
 
         #[test]
         fn primitive() {
-            run_test("", &EntityId::default(), &Type::String, None);
+            run_test(
+                "",
+                &EntityId::default(),
+                &TypeRef::new(Type::String, Semantics::Value),
+                None,
+            );
         }
 
         #[test]
@@ -568,8 +578,11 @@ mod tests {
             run_test(
                 "mod ns { struct dto {} }",
                 &EntityId::default(),
-                &Type::Api(EntityId::new_unqualified("ns.dto"), Semantics::Value),
-                Some(Type::new_api("ns.d:dto", Semantics::Value).unwrap()),
+                &TypeRef::new(
+                    Type::Api(EntityId::new_unqualified("ns.dto")),
+                    Semantics::Value,
+                ),
+                Some(TypeRef::new_api("ns.d:dto", Semantics::Value).unwrap()),
             );
         }
 
@@ -578,7 +591,10 @@ mod tests {
             run_test(
                 "",
                 &EntityId::default(),
-                &Type::new_array(Type::String),
+                &TypeRef::new_array(
+                    TypeRef::new(Type::String, Semantics::Value),
+                    Semantics::Value,
+                ),
                 None,
             );
         }
@@ -588,12 +604,16 @@ mod tests {
             run_test(
                 "mod ns { struct dto {} }",
                 &EntityId::default(),
-                &Type::new_array(Type::Api(
-                    EntityId::new_unqualified("ns.dto"),
+                &TypeRef::new_array(
+                    TypeRef::new(
+                        Type::Api(EntityId::new_unqualified("ns.dto")),
+                        Semantics::Value,
+                    ),
                     Semantics::Value,
-                )),
-                Some(Type::new_array(
-                    Type::new_api("ns.d:dto", Semantics::Value).unwrap(),
+                ),
+                Some(TypeRef::new_array(
+                    TypeRef::new_api("ns.d:dto", Semantics::Value).unwrap(),
+                    Semantics::Value,
                 )),
             );
         }
@@ -603,7 +623,10 @@ mod tests {
             run_test(
                 "",
                 &EntityId::default(),
-                &Type::new_optional(Type::String),
+                &TypeRef::new_optional(
+                    TypeRef::new(Type::String, Semantics::Value),
+                    Semantics::Value,
+                ),
                 None,
             );
         }
@@ -613,12 +636,16 @@ mod tests {
             run_test(
                 "mod ns { struct dto {} }",
                 &EntityId::default(),
-                &Type::new_optional(Type::Api(
-                    EntityId::new_unqualified("ns.dto"),
+                &TypeRef::new_optional(
+                    TypeRef::new(
+                        Type::Api(EntityId::new_unqualified("ns.dto")),
+                        Semantics::Value,
+                    ),
                     Semantics::Value,
-                )),
-                Some(Type::new_optional(
-                    Type::new_api("ns.d:dto", Semantics::Value).unwrap(),
+                ),
+                Some(TypeRef::new_optional(
+                    TypeRef::new_api("ns.d:dto", Semantics::Value).unwrap(),
+                    Semantics::Value,
                 )),
             );
         }
@@ -628,7 +655,11 @@ mod tests {
             run_test(
                 "",
                 &EntityId::default(),
-                &Type::new_map(Type::String, Type::String),
+                &TypeRef::new_map(
+                    TypeRef::new(Type::String, Semantics::Value),
+                    TypeRef::new(Type::String, Semantics::Value),
+                    Semantics::Value,
+                ),
                 None,
             );
         }
@@ -645,13 +676,21 @@ mod tests {
                 }
                 "#,
                 &EntityId::default(),
-                &Type::new_map(
-                    Type::Api(EntityId::new_unqualified("ns0.ns1.en"), Semantics::Value),
-                    Type::Api(EntityId::new_unqualified("ns0.dto"), Semantics::Value),
+                &TypeRef::new_map(
+                    TypeRef::new(
+                        Type::Api(EntityId::new_unqualified("ns0.ns1.en")),
+                        Semantics::Value,
+                    ),
+                    TypeRef::new(
+                        Type::Api(EntityId::new_unqualified("ns0.dto")),
+                        Semantics::Value,
+                    ),
+                    Semantics::Value,
                 ),
-                Some(Type::new_map(
-                    Type::new_api("ns0.ns1.e:en", Semantics::Value).unwrap(),
-                    Type::new_api("ns0.d:dto", Semantics::Value).unwrap(),
+                Some(TypeRef::new_map(
+                    TypeRef::new_api("ns0.ns1.e:en", Semantics::Value).unwrap(),
+                    TypeRef::new_api("ns0.d:dto", Semantics::Value).unwrap(),
+                    Semantics::Value,
                 )),
             );
         }
@@ -668,14 +707,28 @@ mod tests {
                 }
                 "#,
                 &EntityId::default(),
-                &Type::new_array(Type::new_map(
-                    Type::Api(EntityId::new_unqualified("ns0.ns1.en"), Semantics::Value),
-                    Type::Api(EntityId::new_unqualified("ns0.dto"), Semantics::Value),
+                &TypeRef::new_array(
+                    TypeRef::new_map(
+                        TypeRef::new(
+                            Type::Api(EntityId::new_unqualified("ns0.ns1.en")),
+                            Semantics::Value,
+                        ),
+                        TypeRef::new(
+                            Type::Api(EntityId::new_unqualified("ns0.dto")),
+                            Semantics::Value,
+                        ),
+                        Semantics::Value,
+                    ),
+                    Semantics::Value,
+                ),
+                Some(TypeRef::new_array(
+                    TypeRef::new_map(
+                        TypeRef::new_api("ns0.ns1.e:en", Semantics::Value).unwrap(),
+                        TypeRef::new_api("ns0.d:dto", Semantics::Value).unwrap(),
+                        Semantics::Value,
+                    ),
+                    Semantics::Value,
                 )),
-                Some(Type::new_array(Type::new_map(
-                    Type::new_api("ns0.ns1.e:en", Semantics::Value).unwrap(),
-                    Type::new_api("ns0.d:dto", Semantics::Value).unwrap(),
-                ))),
             );
         }
 
@@ -684,7 +737,10 @@ mod tests {
             run_test_err(
                 "",
                 &EntityId::default(),
-                &Type::Api(EntityId::new_unqualified("dto"), Semantics::Value),
+                &TypeRef::new(
+                    Type::Api(EntityId::new_unqualified("dto")),
+                    Semantics::Value,
+                ),
             );
         }
 
@@ -693,18 +749,25 @@ mod tests {
             run_test_err(
                 "",
                 &EntityId::default(),
-                &Type::new_array(Type::new_map(
-                    Type::String,
-                    Type::Api(EntityId::new_unqualified("dto"), Semantics::Value),
-                )),
+                &TypeRef::new_array(
+                    TypeRef::new_map(
+                        TypeRef::new(Type::String, Semantics::Value),
+                        TypeRef::new(
+                            Type::Api(EntityId::new_unqualified("dto")),
+                            Semantics::Value,
+                        ),
+                        Semantics::Value,
+                    ),
+                    Semantics::Value,
+                ),
             );
         }
 
         fn run_test(
             data: &str,
             namespace_id: &EntityId,
-            unqualified: &Type,
-            expected: Option<Type>,
+            unqualified: &TypeRef,
+            expected: Option<TypeRef>,
         ) {
             let mut exe = TestExecutor::new(data);
             let api = exe.api();
@@ -712,7 +775,7 @@ mod tests {
             assert_eq!(qualified, expected);
         }
 
-        fn run_test_err(data: &str, namespace_id: &EntityId, unqualified: &Type) {
+        fn run_test_err(data: &str, namespace_id: &EntityId, unqualified: &TypeRef) {
             let mut exe = TestExecutor::new(data);
             let api = exe.api();
             assert!(qualify_type(&api, namespace_id, unqualified).is_err());

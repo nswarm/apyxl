@@ -6,7 +6,7 @@ use dyn_clone::DynClone;
 use crate::model;
 use crate::model::entity::ToEntity;
 use crate::model::EntityType;
-use crate::view::{Attributes, Transforms, Type};
+use crate::view::{Attributes, Transforms, TypeRef};
 
 /// A single type alias within an [Api].
 /// Wraps [model::TypeAlias].
@@ -38,8 +38,8 @@ impl<'v, 'a> TypeAlias<'v, 'a> {
         name
     }
 
-    pub fn target_ty(&self) -> Type {
-        Type::new(&self.target.target_ty, &self.xforms.entity_id)
+    pub fn target_ty(&self) -> TypeRef {
+        TypeRef::new(&self.target.target_ty, &self.xforms.entity_id)
     }
 
     pub fn attributes(&self) -> Attributes {

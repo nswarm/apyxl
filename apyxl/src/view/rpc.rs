@@ -6,7 +6,7 @@ use dyn_clone::DynClone;
 use crate::model;
 use crate::model::entity::ToEntity;
 use crate::model::EntityType;
-use crate::view::{Attributes, Field, Transforms, Type};
+use crate::view::{Attributes, Field, Transforms, TypeRef};
 
 /// A single Remote Procedure Call (RPC) within an [Api].
 /// Wraps [model::Rpc].
@@ -60,11 +60,11 @@ impl<'v, 'a> Rpc<'v, 'a> {
             })
     }
 
-    pub fn return_type(&self) -> Option<Type> {
+    pub fn return_type(&self) -> Option<TypeRef> {
         self.target
             .return_type
             .as_ref()
-            .map(|target| Type::new(target, &self.xforms.entity_id))
+            .map(|target| TypeRef::new(target, &self.xforms.entity_id))
     }
 
     pub fn attributes(&self) -> Attributes {

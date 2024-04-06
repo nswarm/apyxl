@@ -15,7 +15,7 @@ pub struct Config {
 }
 
 /// When the `parse` string is seen by a [crate::parser::Parser], it is mapped to a
-/// [crate::model::Type::User] variant with the value `name`.
+/// [crate::model::TypeRef::User] variant with the value `name`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserType {
     pub parse: String,

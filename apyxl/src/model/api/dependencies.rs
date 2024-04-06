@@ -96,7 +96,7 @@ impl Dependencies {
             let from_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
             let from = *self.node(&from_id).unwrap();
             for field in &dto.fields {
-                self.add_edge(from, namespace_id, &field.ty);
+                self.add_edge(from, namespace_id, &field.ty.value);
             }
             if let Some(namespace) = &dto.namespace {
                 self.add_edges_recursively(namespace, &from_id);
@@ -107,10 +107,10 @@ impl Dependencies {
             let from_id = namespace_id.child(EntityType::Rpc, rpc.name).unwrap();
             let from = *self.node(&from_id).unwrap();
             for param in &rpc.params {
-                self.add_edge(from, namespace_id, &param.ty);
+                self.add_edge(from, namespace_id, &param.ty.value);
             }
             if let Some(return_type) = &rpc.return_type {
-                self.add_edge(from, namespace_id, return_type);
+                self.add_edge(from, namespace_id, &return_type.value);
             }
         }
 
@@ -119,7 +119,7 @@ impl Dependencies {
                 .child(EntityType::TypeAlias, alias.name)
                 .unwrap();
             let from = *self.node(&from_id).unwrap();
-            self.add_edge(from, namespace_id, &alias.target_ty);
+            self.add_edge(from, namespace_id, &alias.target_ty.value);
         }
 
         for child in namespace.namespaces() {
@@ -183,13 +183,13 @@ impl Dependencies {
             | Type::Bytes
             | Type::User(_) => (),
 
-            Type::Api(entity_id, _) => self.add_edge_relative(from, namespace_id, entity_id),
+            Type::Api(entity_id) => self.add_edge_relative(from, namespace_id, entity_id),
 
-            Type::Array(ty) | Type::Optional(ty) => self.add_edge(from, namespace_id, ty),
+            Type::Array(ty) | Type::Optional(ty) => self.add_edge(from, namespace_id, &ty.value),
 
             Type::Map { key, value } => {
-                self.add_edge(from, namespace_id, key);
-                self.add_edge(from, namespace_id, value);
+                self.add_edge(from, namespace_id, &key.value);
+                self.add_edge(from, namespace_id, &value.value);
             }
         }
     }

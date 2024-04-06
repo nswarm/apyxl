@@ -1,11 +1,11 @@
 use crate::model::entity::{EntityMut, FindEntity};
-use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Type};
+use crate::model::{entity, Attributes, Entity, EntityId, EntityType, TypeRef};
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Field<'a> {
     pub name: &'a str,
-    pub ty: Type,
+    pub ty: TypeRef,
     pub attributes: Attributes<'a>,
 }
 
