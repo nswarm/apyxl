@@ -23,6 +23,12 @@ impl<'v> EntityId<'v> {
         Self { target, xforms }
     }
 
+    // The raw underlying EntityId. Only use this if trying to find something in the actual
+    // model API.
+    pub fn target(&self) -> &model::EntityId {
+        self.target
+    }
+
     /// The path through other entities in the [Api] to get to the referred to entity. This will
     /// typically be a path through the hierarchy of [NamespaceChild], but can also refer to
     /// sub-child items like [Dto] fields or [Rpc] parameters.
