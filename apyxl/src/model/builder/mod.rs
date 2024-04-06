@@ -689,7 +689,7 @@ mod tests {
 
         mod devirtualize_namespaces {
             use crate::model::builder::tests::build_from_input;
-            use crate::model::{EntityId, ValidationError};
+            use crate::model::EntityId;
             use crate::test_util::executor::TestExecutor;
 
             #[test]

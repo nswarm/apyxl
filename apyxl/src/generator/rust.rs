@@ -65,12 +65,12 @@ fn write_imports<P: AsRef<Path>>(chunk_relative_paths: &[P], o: &mut dyn Output)
         .sorted()
         .dedup();
     for id in ids {
-        o.write_str("// use crate::")?;
+        o.write("// use crate::")?;
         for component in id.component_names() {
-            o.write_str(&component)?;
-            o.write_str("::")?;
+            o.write(&component)?;
+            o.write("::")?;
         }
-        o.write_str("*;")?;
+        o.write("*;")?;
         o.newline()?;
     }
     Ok(())
@@ -79,13 +79,13 @@ fn write_imports<P: AsRef<Path>>(chunk_relative_paths: &[P], o: &mut dyn Output)
 fn write_namespace(namespace: Namespace, o: &mut Indented) -> Result<()> {
     write_attributes(&namespace.attributes(), o)?;
 
-    o.write_str("pub mod ")?;
-    o.write_str(&namespace.name())?;
+    o.write("pub mod ")?;
+    o.write(&namespace.name())?;
 
     if namespace.is_empty() {
-        o.write(';')?;
+        o.write_char(';')?;
     } else {
-        o.write(' ')?;
+        o.write_char(' ')?;
         write_block_start(o)?;
         write_namespace_contents(namespace, o)?;
         write_block_end(o)?;
@@ -125,11 +125,11 @@ fn write_namespace_contents(namespace: Namespace, o: &mut Indented) -> Result<()
 fn write_alias(alias: TypeAlias, o: &mut Indented) -> Result<()> {
     write_attributes(&alias.attributes(), o)?;
 
-    o.write_str("pub type ")?;
-    o.write_str(&alias.name())?;
-    o.write_str(" = ")?;
+    o.write("pub type ")?;
+    o.write(&alias.name())?;
+    o.write(" = ")?;
     write_type(alias.target_ty(), o)?;
-    o.write(';')?;
+    o.write_char(';')?;
     o.newline()?;
 
     Ok(())
@@ -148,9 +148,9 @@ fn write_dto(dto: Dto, o: &mut Indented) -> Result<()> {
     write_block_end(o)?;
 
     if let Some(ns) = dto.namespace() {
-        o.write_str("impl ")?;
-        o.write_str(&dto.name())?;
-        o.write_str(" {")?;
+        o.write("impl ")?;
+        o.write(&dto.name())?;
+        o.write(" {")?;
 
         o.indent(1);
         for rpc in ns.rpcs() {
@@ -159,7 +159,7 @@ fn write_dto(dto: Dto, o: &mut Indented) -> Result<()> {
         }
         o.indent(-1);
 
-        o.write('}')?;
+        o.write_char('}')?;
         o.newline()?;
     }
 
@@ -169,10 +169,10 @@ fn write_dto(dto: Dto, o: &mut Indented) -> Result<()> {
 fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {
     write_attributes(&rpc.attributes(), o)?;
 
-    o.write_str("pub fn ")?;
-    o.write_str(&rpc.name())?;
+    o.write("pub fn ")?;
+    o.write(&rpc.name())?;
 
-    o.write('(')?;
+    o.write_char('(')?;
     o.indent(1);
     for field in rpc.params() {
         o.newline()?;
@@ -184,23 +184,23 @@ fn write_rpc(rpc: Rpc, o: &mut Indented) -> Result<()> {
         o.newline()?;
     }
 
-    o.write(')')?;
+    o.write_char(')')?;
 
     if let Some(return_type) = rpc.return_type() {
-        o.write_str(" -> ")?;
+        o.write(" -> ")?;
         write_type(return_type, o)?;
     }
 
-    o.write_str(" {}")?;
+    o.write(" {}")?;
     o.newline()
 }
 
 fn write_enum(en: Enum, o: &mut Indented) -> Result<()> {
     write_attributes(&en.attributes(), o)?;
 
-    o.write_str("pub enum ")?;
-    o.write_str(&en.name())?;
-    o.write(' ')?;
+    o.write("pub enum ")?;
+    o.write(&en.name())?;
+    o.write_char(' ')?;
     write_block_start(o)?;
 
     for value in en.values() {
@@ -214,49 +214,49 @@ fn write_enum(en: Enum, o: &mut Indented) -> Result<()> {
 fn write_enum_value(value: EnumValue, o: &mut dyn Output) -> Result<()> {
     write_attributes(&value.attributes(), o)?;
 
-    o.write_str(&value.name())?;
-    o.write_str(" = ")?;
-    o.write_str(&value.number().to_string())?;
-    o.write(',')
+    o.write(&value.name())?;
+    o.write(" = ")?;
+    o.write(&value.number().to_string())?;
+    o.write_char(',')
 }
 
 fn write_dto_start(dto: Dto, o: &mut Indented) -> Result<()> {
-    o.write_str("pub struct ")?;
-    o.write_str(&dto.name())?;
-    o.write(' ')?;
+    o.write("pub struct ")?;
+    o.write(&dto.name())?;
+    o.write_char(' ')?;
     write_block_start(o)
 }
 
 fn write_block_start(o: &mut Indented) -> Result<()> {
-    o.write_str("{")?;
+    o.write("{")?;
     o.indent(1);
     o.newline()
 }
 
 fn write_block_end(o: &mut Indented) -> Result<()> {
     o.indent(-1);
-    o.write_str("}")?;
+    o.write("}")?;
     o.newline()
 }
 
 fn write_field(field: Field, o: &mut dyn Output) -> Result<()> {
     if field.name() == "self" {
         if let InnerType::User(ty) = field.ty().inner() {
-            o.write_str(ty)?;
+            o.write(ty)?;
         } else {
             return Err(anyhow!("'self' param _must_ be a User type"));
         }
     } else {
         write_param(field, o)?;
     }
-    o.write(',')
+    o.write_char(',')
 }
 
 fn write_param(field: Field, o: &mut dyn Output) -> Result<()> {
     write_attributes(&field.attributes(), o)?;
 
-    o.write_str(&field.name())?;
-    o.write_str(": ")?;
+    o.write(&field.name())?;
+    o.write(": ")?;
     write_type(field.ty(), o)
 }
 
@@ -269,8 +269,8 @@ fn write_attributes(attributes: &Attributes, o: &mut dyn Output) -> Result<()> {
 fn write_comments(comments: &[Comment], o: &mut dyn Output) -> Result<()> {
     util::write_joined(comments, "\n", o, |comment, o| {
         for line in comment.lines() {
-            o.write_str("// ")?;
-            o.write_str(line)?;
+            o.write("// ")?;
+            o.write(line)?;
             o.newline()?;
         }
         Ok(())
@@ -282,11 +282,11 @@ fn write_user_attributes(user_attributes: &[attributes::User], o: &mut dyn Outpu
     if user_attributes.is_empty() {
         return Ok(());
     }
-    o.write_str("#[")?;
+    o.write("#[")?;
     util::write_joined(user_attributes, ", ", o, |attr, o| {
         write_user_attribute(attr.name.as_ref(), &attr.data, o)
     })?;
-    o.write(']')?;
+    o.write_char(']')?;
     o.newline()?;
     Ok(())
 }
@@ -296,22 +296,22 @@ fn write_user_attribute(
     data: &[attributes::UserData],
     o: &mut dyn Output,
 ) -> Result<()> {
-    o.write_str(name)?;
+    o.write(name)?;
     if data.is_empty() {
         return Ok(());
     }
-    o.write('(')?;
+    o.write_char('(')?;
     util::write_joined(data, ", ", o, |data, o| {
         match data.key {
             None => {}
             Some(key) => {
-                o.write_str(key)?;
-                o.write_str(" = ")?;
+                o.write(key)?;
+                o.write(" = ")?;
             }
         }
-        o.write_str(data.value)
+        o.write(data.value)
     })?;
-    o.write(')')?;
+    o.write_char(')')?;
     Ok(())
 }
 
@@ -321,27 +321,27 @@ fn write_type(ty: Type, o: &mut dyn Output) -> Result<()> {
 
 fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
     match ty {
-        InnerType::Bool => o.write_str("bool"),
-        InnerType::U8 => o.write_str("u8"),
-        InnerType::U16 => o.write_str("u16"),
-        InnerType::U32 => o.write_str("u32"),
-        InnerType::U64 => o.write_str("u64"),
-        InnerType::U128 => o.write_str("u128"),
-        InnerType::USIZE => o.write_str("usize"),
-        InnerType::I8 => o.write_str("i8"),
-        InnerType::I16 => o.write_str("i16"),
-        InnerType::I32 => o.write_str("i32"),
-        InnerType::I64 => o.write_str("i64"),
-        InnerType::I128 => o.write_str("i128"),
-        InnerType::F8 => o.write_str("f8"),
-        InnerType::F16 => o.write_str("f16"),
-        InnerType::F32 => o.write_str("f32"),
-        InnerType::F64 => o.write_str("f64"),
-        InnerType::F128 => o.write_str("f128"),
-        InnerType::String => o.write_str("String"),
-        InnerType::Bytes => o.write_str("Vec<u8>"),
+        InnerType::Bool => o.write("bool"),
+        InnerType::U8 => o.write("u8"),
+        InnerType::U16 => o.write("u16"),
+        InnerType::U32 => o.write("u32"),
+        InnerType::U64 => o.write("u64"),
+        InnerType::U128 => o.write("u128"),
+        InnerType::USIZE => o.write("usize"),
+        InnerType::I8 => o.write("i8"),
+        InnerType::I16 => o.write("i16"),
+        InnerType::I32 => o.write("i32"),
+        InnerType::I64 => o.write("i64"),
+        InnerType::I128 => o.write("i128"),
+        InnerType::F8 => o.write("f8"),
+        InnerType::F16 => o.write("f16"),
+        InnerType::F32 => o.write("f32"),
+        InnerType::F64 => o.write("f64"),
+        InnerType::F128 => o.write("f128"),
+        InnerType::String => o.write("String"),
+        InnerType::Bytes => o.write("Vec<u8>"),
         // For the sake of example, just write the user type name.
-        InnerType::User(s) => o.write_str(s),
+        InnerType::User(s) => o.write(s),
         InnerType::Api(id, semantics) => write_entity_id(id, semantics, o),
         InnerType::Array(ty) => write_vec(*ty, o),
         InnerType::Map { key, value } => write_map(*key, *value, o),
@@ -352,7 +352,7 @@ fn write_inner_type(ty: InnerType, o: &mut dyn Output) -> Result<()> {
 fn write_entity_id(entity_id: EntityId, semantics: Semantics, o: &mut dyn Output) -> Result<()> {
     // Fully qualify everything by crate.
     write_semantics(semantics, o)?;
-    o.write_str("crate::")?;
+    o.write("crate::")?;
     util::write_joined_str(
         &entity_id.path().iter().map(|s| s.as_ref()).collect_vec(),
         "::",
@@ -363,29 +363,29 @@ fn write_entity_id(entity_id: EntityId, semantics: Semantics, o: &mut dyn Output
 fn write_semantics(semantics: Semantics, o: &mut dyn Output) -> Result<()> {
     match semantics {
         Semantics::Value => Ok(()),
-        Semantics::Ref => o.write('&'),
-        Semantics::Mut => o.write_str("&mut "),
+        Semantics::Ref => o.write_char('&'),
+        Semantics::Mut => o.write("&mut "),
     }
 }
 
 fn write_vec(ty: InnerType, o: &mut dyn Output) -> Result<()> {
-    o.write_str("Vec<")?;
+    o.write("Vec<")?;
     write_inner_type(ty, o)?;
-    o.write('>')
+    o.write_char('>')
 }
 
 fn write_map(key: InnerType, value: InnerType, o: &mut dyn Output) -> Result<()> {
-    o.write_str("HashMap<")?;
+    o.write("HashMap<")?;
     write_inner_type(key, o)?;
-    o.write_str(", ")?;
+    o.write(", ")?;
     write_inner_type(value, o)?;
-    o.write('>')
+    o.write_char('>')
 }
 
 fn write_option(ty: InnerType, o: &mut dyn Output) -> Result<()> {
-    o.write_str("Option<")?;
+    o.write("Option<")?;
     write_inner_type(ty, o)?;
-    o.write('>')
+    o.write_char('>')
 }
 
 #[cfg(test)]

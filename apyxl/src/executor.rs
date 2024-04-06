@@ -317,7 +317,7 @@ mod tests {
                 .dtos()
                 .map(|dto| dto.name().to_string())
                 .collect::<Vec<String>>();
-            output.write_str(&dto_names.join(&self.delimiter))?;
+            output.write(&dto_names.join(&self.delimiter))?;
             Ok(())
         }
     }

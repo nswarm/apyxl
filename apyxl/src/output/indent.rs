@@ -6,7 +6,7 @@ use std::fmt::{Debug, Formatter};
 
 /// Indented wraps an existing output and keeps track of current indentation level.
 ///
-/// After each [Output::newline], a "pending" newline will be held until the next [Output::write]
+/// After each [Output::newline], a "pending" newline will be held until the next [Output::write_char]
 /// call at which point the indentation will be applied before the new characters. This allows more
 /// intuitive usage of [Indented::indent], in particular: the order in which you call [Output::newline]
 /// and [Indented::indent] does not matter.
@@ -63,7 +63,7 @@ impl<'a> Indented<'_> {
         }
         self.has_pending_indent = false;
         for _ in 0..self.depth {
-            self.output.write_str(self.indent)?;
+            self.output.write(self.indent)?;
         }
         Ok(())
     }
@@ -80,14 +80,14 @@ impl Output for Indented<'_> {
         self.output.write_chunk(chunk)
     }
 
-    fn write_str(&mut self, data: &str) -> Result<()> {
-        self.write_pending_indent()?;
-        self.output.write_str(data)
-    }
-
-    fn write(&mut self, data: char) -> Result<()> {
+    fn write(&mut self, data: &str) -> Result<()> {
         self.write_pending_indent()?;
         self.output.write(data)
+    }
+
+    fn write_char(&mut self, data: char) -> Result<()> {
+        self.write_pending_indent()?;
+        self.output.write_char(data)
     }
 
     fn newline(&mut self) -> Result<()> {
@@ -131,7 +131,7 @@ mod tests {
         let mut output = Buffer::default();
         let mut indent = Indented::new(&mut output, "  ");
         indent.indent(2);
-        indent.write('x')?;
+        indent.write_char('x')?;
         assert_eq!(output.to_string(), "    x");
         Ok(())
     }
@@ -141,7 +141,7 @@ mod tests {
         let mut output = Buffer::default();
         let mut indent = Indented::new(&mut output, "  ");
         indent.indent(2);
-        indent.write_str("xx")?;
+        indent.write("xx")?;
         assert_eq!(output.to_string(), "    xx");
         Ok(())
     }
@@ -151,9 +151,9 @@ mod tests {
         let mut output = Buffer::default();
         let mut indent = Indented::new(&mut output, "  ");
         indent.indent(2);
-        indent.write_str("x")?;
+        indent.write("x")?;
         // If indent is _not_ reset, this will apply indent again.
-        indent.write_str("x")?;
+        indent.write("x")?;
         assert_eq!(output.to_string(), "    xx");
         Ok(())
     }
@@ -164,7 +164,7 @@ mod tests {
         let mut indent = Indented::new(&mut output, "  ");
         indent.indent(2);
         indent.newline()?;
-        indent.write('x')?;
+        indent.write_char('x')?;
         assert_eq!(output.to_string(), "\n    x");
         Ok(())
     }
@@ -175,7 +175,7 @@ mod tests {
         let mut indent = Indented::new(&mut output, "  ");
         indent.newline()?;
         indent.indent(2);
-        indent.write('x')?;
+        indent.write_char('x')?;
         assert_eq!(output.to_string(), "\n    x");
         Ok(())
     }

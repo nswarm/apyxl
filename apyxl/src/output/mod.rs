@@ -17,7 +17,7 @@ pub trait Output: Debug {
     /// Start a new chunk. This should be used to acquire new resources for writing the chunk
     /// data such as opening a file.
     fn write_chunk(&mut self, chunk: &chunk::Chunk) -> Result<()>;
-    fn write_str(&mut self, data: &str) -> Result<()>;
-    fn write(&mut self, data: char) -> Result<()>;
+    fn write(&mut self, data: &str) -> Result<()>;
+    fn write_char(&mut self, data: char) -> Result<()>;
     fn newline(&mut self) -> Result<()>;
 }

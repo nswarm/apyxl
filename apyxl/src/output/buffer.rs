@@ -25,12 +25,12 @@ impl Output for Buffer {
         Ok(())
     }
 
-    fn write_str(&mut self, data: &str) -> Result<()> {
+    fn write(&mut self, data: &str) -> Result<()> {
         self.data.push_str(data);
         Ok(())
     }
 
-    fn write(&mut self, data: char) -> Result<()> {
+    fn write_char(&mut self, data: char) -> Result<()> {
         self.data.push(data);
         Ok(())
     }
@@ -48,12 +48,12 @@ impl Output for String {
         Ok(())
     }
 
-    fn write_str(&mut self, data: &str) -> Result<()> {
+    fn write(&mut self, data: &str) -> Result<()> {
         self.push_str(data);
         Ok(())
     }
 
-    fn write(&mut self, data: char) -> Result<()> {
+    fn write_char(&mut self, data: char) -> Result<()> {
         self.push(data);
         Ok(())
     }
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn write_str() -> Result<()> {
         let mut output = Buffer::default();
-        output.write_str("asdf")?;
+        output.write("asdf")?;
         assert_eq!(output.to_string(), "asdf");
         Ok(())
     }
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn write_char() -> Result<()> {
         let mut output = Buffer::default();
-        output.write(':')?;
+        output.write_char(':')?;
         assert_eq!(output.to_string(), ":");
         Ok(())
     }
@@ -89,9 +89,9 @@ mod tests {
     #[test]
     fn write_appends() -> Result<()> {
         let mut output = Buffer::default();
-        output.write_str("abc")?;
-        output.write('d')?;
-        output.write_str("efg")?;
+        output.write("abc")?;
+        output.write_char('d')?;
+        output.write("efg")?;
         assert_eq!(output.to_string(), "abcdefg");
         Ok(())
     }

@@ -3,6 +3,7 @@ pub use api::*;
 pub use builder::Builder;
 pub use chunk::Chunk;
 pub use metadata::Metadata;
+use std::collections::HashMap;
 
 pub mod api;
 pub mod builder;
@@ -15,6 +16,7 @@ pub struct Model<'a> {
     api: Api<'a>,
     metadata: Metadata,
     dependencies: Dependencies,
+    ty_aliases: HashMap<TypeAlias>,
 }
 
 impl<'a> Model<'a> {

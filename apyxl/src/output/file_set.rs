@@ -49,14 +49,14 @@ impl Output for FileSet {
         Ok(())
     }
 
-    fn write_str(&mut self, data: &str) -> Result<()> {
+    fn write(&mut self, data: &str) -> Result<()> {
         if let Some((_, file)) = &mut self.current {
             file.write_all(data.as_bytes())?;
         }
         Ok(())
     }
 
-    fn write(&mut self, data: char) -> Result<()> {
+    fn write_char(&mut self, data: char) -> Result<()> {
         if let Some((_, file)) = &mut self.current {
             file.write_all(&[data as u8])?;
         }
@@ -64,7 +64,7 @@ impl Output for FileSet {
     }
 
     fn newline(&mut self) -> Result<()> {
-        self.write('\n')
+        self.write_char('\n')
     }
 }
 
@@ -143,7 +143,7 @@ mod tests {
                 ];
                 for chunk in chunks {
                     output.write_chunk(&chunk)?;
-                    output.write_str(
+                    output.write(
                         &chunk
                             .relative_file_path
                             .unwrap()
@@ -187,8 +187,8 @@ mod tests {
         let mut output = FileSet::new(root.path())?;
         let chunk = Chunk::with_relative_file_path(root.path().join("file"));
         output.write_chunk(&chunk)?;
-        output.write_str("content")?;
-        output.write('!')?;
+        output.write("content")?;
+        output.write_char('!')?;
         assert_eq!(fs::read_to_string(root.path().join("file"))?, "content!");
         Ok(())
     }
@@ -197,8 +197,8 @@ mod tests {
     fn write_without_current_chunk_is_ignored() -> Result<()> {
         let root = tempdir()?;
         let mut output = FileSet::new(root.path())?;
-        assert!(output.write_str("content").is_ok());
-        assert!(output.write('!').is_ok());
+        assert!(output.write("content").is_ok());
+        assert!(output.write_char('!').is_ok());
         Ok(())
     }
 }

@@ -18,12 +18,12 @@ impl Output for StdOut {
         Ok(())
     }
 
-    fn write_str(&mut self, data: &str) -> Result<()> {
+    fn write(&mut self, data: &str) -> Result<()> {
         let _ = stdout().write(data.as_bytes())?;
         Ok(())
     }
 
-    fn write(&mut self, data: char) -> Result<()> {
+    fn write_char(&mut self, data: char) -> Result<()> {
         let _ = stdout().write(&[data as u8])?;
         Ok(())
     }

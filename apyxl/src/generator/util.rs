@@ -9,9 +9,7 @@ pub fn write_joined_str(
     separator: &str,
     o: &mut dyn Output,
 ) -> anyhow::Result<()> {
-    write_joined(components, separator, o, |component, o| {
-        o.write_str(component)
-    })
+    write_joined(components, separator, o, |component, o| o.write(component))
 }
 
 /// Writes the `components` joined with `separator` without unnecessary allocations.
@@ -27,7 +25,7 @@ where
     let mut first = true;
     for component in components {
         if !first {
-            o.write_str(separator)?;
+            o.write(separator)?;
         }
         first = false;
         write_component(component, o)?;
