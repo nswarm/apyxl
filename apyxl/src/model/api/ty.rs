@@ -86,6 +86,38 @@ pub enum Semantics {
     Mut,
 }
 
+impl<E: Debug + Clone, U: Debug + Clone> BaseType<E, U> {
+    pub fn is_primitive(&self) -> bool {
+        match self {
+            BaseType::Bool
+            | BaseType::U8
+            | BaseType::U16
+            | BaseType::U32
+            | BaseType::U64
+            | BaseType::U128
+            | BaseType::USIZE
+            | BaseType::I8
+            | BaseType::I16
+            | BaseType::I32
+            | BaseType::I64
+            | BaseType::I128
+            | BaseType::F8
+            | BaseType::F16
+            | BaseType::F32
+            | BaseType::F64
+            | BaseType::F128 => true,
+
+            BaseType::String
+            | BaseType::Bytes
+            | BaseType::User(_)
+            | BaseType::Api(_, _)
+            | BaseType::Array(_)
+            | BaseType::Map { .. }
+            | BaseType::Optional(_) => false,
+        }
+    }
+}
+
 impl Type {
     pub fn new_api(value: &str, semantics: Semantics) -> Result<Self> {
         Ok(Self::Api(EntityId::try_from(value)?, semantics))
