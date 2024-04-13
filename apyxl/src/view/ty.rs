@@ -51,6 +51,7 @@ impl<'v> TypeRef<'v> {
             model::Type::F32 => Type::F32,
             model::Type::F64 => Type::F64,
             model::Type::F128 => Type::F128,
+            model::Type::StringView => Type::StringView,
             model::Type::String => Type::String,
             model::Type::Bytes => Type::Bytes,
             model::Type::User(name) => Type::User(name),

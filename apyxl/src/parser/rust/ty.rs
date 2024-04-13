@@ -32,9 +32,8 @@ pub fn parser(config: &Config) -> impl Parser<&str, TypeRef, Error> {
             just("f32").map(|_| Type::F32),
             just("f64").map(|_| Type::F64),
             just("f128").map(|_| Type::F128),
-            just("String").map(|_| Type::String),
             just("Vec<u8>").map(|_| Type::Bytes),
-            just("str").map(|_| Type::String),
+            just("str").map(|_| Type::StringView),
             just("String").map(|_| Type::String),
             just("[u8]").map(|_| Type::Bytes),
         ))
@@ -236,13 +235,15 @@ mod tests {
             "&mut String",
             TypeRef::new(Type::String, Semantics::Mut)
         );
+
+        test!(str, "&str", TypeRef::new(Type::StringView, Semantics::Ref));
+
         test!(
             bytes_mut,
             "&mut Vec<u8>",
             TypeRef::new(Type::Bytes, Semantics::Mut)
         );
 
-        test!(str, "&str", TypeRef::new(Type::String, Semantics::Ref));
         test!(
             bytes_slice,
             "&[u8]",

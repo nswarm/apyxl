@@ -179,6 +179,7 @@ impl Dependencies {
             | Type::F32
             | Type::F64
             | Type::F128
+            | Type::StringView
             | Type::String
             | Type::Bytes
             | Type::User(_) => (),

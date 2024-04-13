@@ -48,6 +48,7 @@ where
 
     // Strings.
     String,
+    StringView,
 
     // Arbitrary sequence of bytes.
     Bytes,
@@ -147,7 +148,8 @@ impl<T: Debug + Clone, E: Debug + Clone, U: Debug + Clone> BaseType<T, E, U> {
             | BaseType::F16
             | BaseType::F32
             | BaseType::F64
-            | BaseType::F128 => true,
+            | BaseType::F128
+            | BaseType::StringView => true,
 
             BaseType::String
             | BaseType::Bytes

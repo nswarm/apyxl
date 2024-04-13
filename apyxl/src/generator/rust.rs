@@ -339,6 +339,7 @@ fn write_inner_type(ty: TypeRef, o: &mut dyn Output) -> Result<()> {
         Type::F32 => o.write("f32"),
         Type::F64 => o.write("f64"),
         Type::F128 => o.write("f128"),
+        Type::StringView => o.write("&str"),
         Type::String => o.write("String"),
         Type::Bytes => o.write("Vec<u8>"),
         // For the sake of example, just write the user type name.
