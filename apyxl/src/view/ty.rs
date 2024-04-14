@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::model;
 use crate::model::Semantics;
-use crate::view::{EntityId, EntityIdTransform};
+use crate::view::{EntityId, EntityIdTransform, Namespace};
 
 pub type Type<'v, 'a> = model::BaseType<TypeRef<'v>, EntityId<'v>, &'a str>;
 
@@ -30,6 +30,44 @@ impl<'v> TypeRef<'v> {
 
     pub fn semantics(&self) -> Semantics {
         self.target.semantics
+    }
+
+    pub fn is_primitive(&self, api: &Namespace) -> bool {
+        match &self.value() {
+            Type::Api(api_ty) => {
+                if let Some(ty) = api.find_ty_alias(api_ty.target()) {
+                    ty.target_ty().is_primitive(api)
+                } else {
+                    false
+                }
+            }
+
+            Type::Bool
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::U128
+            | Type::USIZE
+            | Type::I8
+            | Type::I16
+            | Type::I32
+            | Type::I64
+            | Type::I128
+            | Type::F8
+            | Type::F16
+            | Type::F32
+            | Type::F64
+            | Type::F128
+            | Type::StringView => true,
+
+            Type::String
+            | Type::Bytes
+            | Type::User(_)
+            | Type::Array(_)
+            | Type::Map { .. }
+            | Type::Optional(_) => false,
+        }
     }
 
     fn model_to_view_ty<'a>(&'a self, ty: &'a model::TypeRef) -> Type {

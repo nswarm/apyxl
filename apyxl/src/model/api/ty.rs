@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::model::entity::{EntityMut, FindEntity};
 use anyhow::Result;
 
-use crate::model::{Entity, EntityId};
+use crate::model::{Entity, EntityId, Namespace};
 
 /// A type within the language or API. Types other than [TypeRef::Api] are assumed to always
 /// exist during API validation and can be used by [crate::Generator]s to map to the relevant known
@@ -124,41 +124,8 @@ impl TypeRef {
         Self::new(Type::Optional(Box::new(ty)), semantics)
     }
 
-    pub fn is_primitive(&self) -> bool {
-        self.value.is_primitive()
-    }
-}
-
-impl<T: Debug + Clone, E: Debug + Clone, U: Debug + Clone> BaseType<T, E, U> {
-    pub fn is_primitive(&self) -> bool {
-        match self {
-            BaseType::Bool
-            | BaseType::U8
-            | BaseType::U16
-            | BaseType::U32
-            | BaseType::U64
-            | BaseType::U128
-            | BaseType::USIZE
-            | BaseType::I8
-            | BaseType::I16
-            | BaseType::I32
-            | BaseType::I64
-            | BaseType::I128
-            | BaseType::F8
-            | BaseType::F16
-            | BaseType::F32
-            | BaseType::F64
-            | BaseType::F128
-            | BaseType::StringView => true,
-
-            BaseType::String
-            | BaseType::Bytes
-            | BaseType::User(_)
-            | BaseType::Api(_)
-            | BaseType::Array(_)
-            | BaseType::Map { .. }
-            | BaseType::Optional(_) => false,
-        }
+    pub fn is_primitive(&self, api: &Namespace) -> bool {
+        self.value.is_primitive(api)
     }
 }
 
@@ -188,6 +155,44 @@ impl Type {
 
     pub fn new_optional(ty: TypeRef) -> Self {
         Self::Optional(Box::new(ty))
+    }
+
+    pub fn is_primitive(&self, api: &Namespace) -> bool {
+        match self {
+            Type::Api(api_ty) => {
+                if let Some(ty) = api.find_ty_alias(api_ty) {
+                    ty.target_ty.is_primitive(api)
+                } else {
+                    false
+                }
+            }
+
+            Type::Bool
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::U128
+            | Type::USIZE
+            | Type::I8
+            | Type::I16
+            | Type::I32
+            | Type::I64
+            | Type::I128
+            | Type::F8
+            | Type::F16
+            | Type::F32
+            | Type::F64
+            | Type::F128
+            | Type::StringView => true,
+
+            Type::String
+            | Type::Bytes
+            | Type::User(_)
+            | Type::Array(_)
+            | Type::Map { .. }
+            | Type::Optional(_) => false,
+        }
     }
 }
 
