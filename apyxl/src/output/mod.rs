@@ -3,11 +3,13 @@ use std::fmt::Debug;
 
 use crate::model::chunk;
 pub use buffer::Buffer;
+pub use chunk_buffer::ChunkBuffer;
 pub use file_set::FileSet;
 pub use indent::Indented;
 pub use stdout::StdOut;
 
 mod buffer;
+mod chunk_buffer;
 mod file_set;
 mod indent;
 mod stdout;
