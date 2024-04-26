@@ -75,6 +75,11 @@ impl ApyxlParser for Rust {
 }
 
 fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
+    let multi_import = text::ident()
+        .separated_by(just(',').padded())
+        .at_least(1)
+        .collect::<Vec<_>>()
+        .delimited_by(just('{').padded(), just('}').padded());
     util::keyword_ex("pub")
         .then(text::whitespace().at_least(1))
         .or_not()
@@ -82,10 +87,16 @@ fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
         .then(text::whitespace().at_least(1))
         .then(
             text::ident()
-                .or(just("*"))
-                .separated_by(just("::"))
-                .at_least(1),
+                .then(just("::"))
+                .repeated()
+                .collect::<Vec<_>>(),
         )
+        .then(choice((
+            // ignoring these early so they're all the same out type for the choice.
+            multi_import.ignored(),
+            text::ident().ignored(),
+            just("*").ignored(),
+        )))
         .then(just(';'))
         .ignored()
 }
@@ -306,6 +317,11 @@ mod tests {
         #[test]
         fn wildcard() -> Result<()> {
             run_test("use a::b::c::*;")
+        }
+
+        #[test]
+        fn multi() -> Result<()> {
+            run_test("use a::b::c::{asd, efg, xyz};")
         }
 
         fn run_test(input: &str) -> Result<()> {
