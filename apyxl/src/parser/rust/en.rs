@@ -3,8 +3,8 @@ use chumsky::prelude::*;
 use crate::model::{Attributes, Enum, EnumValue, EnumValueNumber};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, visibility};
-use crate::parser::{comment, util};
+use crate::parser::rust::{attributes, comment, visibility};
+use crate::parser::util;
 
 const INVALID_ENUM_NUMBER: EnumValueNumber = EnumValueNumber::MAX;
 
@@ -16,7 +16,7 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just('{').padded(), just('}').padded());
-    comment::multi_comment()
+    comment::multi()
         .then(attributes::attributes().padded())
         .then(visibility::parser())
         .then_ignore(prefix)
@@ -45,7 +45,7 @@ fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
             str::parse::<EnumValueNumber>(s)
                 .map_err(|_| chumsky::error::Error::<&'a str>::expected_found(None, None, span))
         }));
-    comment::multi_comment()
+    comment::multi()
         .then(attributes::attributes().padded())
         .then(text::ident())
         .then(number.or_not())

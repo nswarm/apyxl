@@ -3,12 +3,12 @@ use chumsky::prelude::*;
 use crate::model::{Attributes, TypeAlias};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, ty, visibility};
-use crate::parser::{comment, util, Config};
+use crate::parser::rust::{attributes, comment, ty, visibility};
+use crate::parser::{util, Config};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (TypeAlias, Visibility), Error> {
     let prefix = util::keyword_ex("type").then(text::whitespace().at_least(1));
-    comment::multi_comment()
+    comment::multi()
         .padded()
         .then(attributes::attributes().padded())
         .then(visibility::parser())

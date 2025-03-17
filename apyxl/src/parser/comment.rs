@@ -6,10 +6,11 @@ use chumsky::{text, IterParser, Parser};
 use crate::model::Comment;
 use crate::parser::error::Error;
 
-/// Parses a block comment starting with `/*` and ending with `*/`. The entire contents will be
+/// Parses a block comment starting with `start` and ending with `end`. The entire contents will be
 /// a single element in the vec. This also does not currently handle indentation very well, so the
 /// indentation from the source will be present in the comment data.
 ///
+/// With start=just("/*"), end=just("*/")
 /// ```
 /// /*
 /// i am
@@ -19,13 +20,16 @@ use crate::parser::error::Error;
 /// ```
 /// would result in
 /// `vec!["i am\n    a multiline\ncomment"]`
-pub fn block_comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
+pub fn block_comment<'a>(
+    start: impl Parser<'a, &'a str, &'a str, Error<'a>>,
+    end: impl Parser<'a, &'a str, &'a str, Error<'a>> + Clone,
+) -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
     any()
-        .and_is(just("*/").not())
+        .and_is(end.clone().not())
         .repeated()
         .slice()
         .map(&str::trim)
-        .delimited_by(just("/*"), just("*/"))
+        .delimited_by(start, end)
         .map(|s| {
             if !s.is_empty() {
                 Comment::from(vec![s])
@@ -35,9 +39,10 @@ pub fn block_comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
         })
 }
 
-/// Parses a line comment where each line starts with `//`. Each line is an element in the returned
-/// vec without the prefixed `//`, including all padding and empty lines.
+/// Parses a line comment where each line starts with `start`. Each line is an element in the returned
+/// vec without the prefixed `start`, including all padding and empty lines.
 ///
+/// With start=just("//")
 /// ```
 /// // i am
 /// //     a multiline
@@ -46,9 +51,9 @@ pub fn block_comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
 /// ```
 /// would result in
 /// `vec!["i am", "    a multiline", "comment", ""]`
-pub fn line_comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
+pub fn line_comment<'a>(start: impl Parser<'a, &'a str, &'a str, Error<'a>>) -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
     let text = any().and_is(just('\n').not()).repeated().slice();
-    let line_start = just("//").then(just(' ').or_not());
+    let line_start = start.then(just(' ').or_not());
     let line = text::inline_whitespace()
         .then(line_start)
         .ignore_then(text)
@@ -61,32 +66,41 @@ pub fn line_comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
 }
 
 /// Parses a single line or block comment group. Each line is an element in the returned vec.
-pub fn comment<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
-    choice((line_comment(), block_comment()))
+pub fn single<'a>(
+    line: impl Parser<'a, &'a str, &'a str, Error<'a>>,
+    block_start: impl Parser<'a, &'a str, &'a str, Error<'a>>,
+    block_end: impl Parser<'a, &'a str, &'a str, Error<'a>> + Clone,
+) -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
+    choice((line_comment(line), block_comment(block_start, block_end)))
 }
 
-/// Parses zero or more [comment]s into a Vec.
-pub fn multi_comment<'a>() -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> {
-    comment().padded().repeated().collect::<Vec<_>>()
+/// Parses zero or more [single]s into a Vec.
+pub fn multi<'a>(
+    line: impl Parser<'a, &'a str, &'a str, Error<'a>>,
+    block_start: impl Parser<'a, &'a str, &'a str, Error<'a>>,
+    block_end: impl Parser<'a, &'a str, &'a str, Error<'a>> + Clone,
+) -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> {
+    single(line, block_start, block_end).padded().repeated().collect::<Vec<_>>()
 }
 
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
     use chumsky::Parser;
-
+    use chumsky::prelude::just;
     use crate::model::Comment;
-    use crate::parser::comment::{comment, multi_comment};
+    use crate::parser::comment;
+    use crate::parser::error::Error;
     use crate::parser::test_util::wrap_test_err;
 
     #[test]
     fn empty_comment_err() {
-        assert!(comment().parse("").into_result().is_err());
+        assert!(single().parse("").into_result().is_err());
     }
 
     #[test]
     fn line_comment() -> Result<()> {
-        let value = comment()
+        let value = single()
             .parse("// line comment\n")
             .into_result()
             .map_err(wrap_test_err)?;
@@ -96,7 +110,7 @@ mod tests {
 
     #[test]
     fn line_comment_multi_with_spacing() -> Result<()> {
-        let value = comment()
+        let value = single()
             .parse(
                 r#"//
                 // line one
@@ -116,7 +130,7 @@ mod tests {
 
     #[test]
     fn block_comment() -> Result<()> {
-        let value = comment()
+        let value = single()
             .parse("/* block comment */")
             .into_result()
             .map_err(wrap_test_err)?;
@@ -126,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_multi_comment() -> Result<()> {
-        let value = multi_comment()
+        let value = multi()
             .parse(
                 r#"
                     /* line one */
@@ -151,5 +165,13 @@ mod tests {
             ]
         );
         Ok(())
+    }
+
+    fn single<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
+        comment::single(just("//"), just("/*"), just("*/"))
+    }
+
+    fn multi<'a>() -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> {
+        comment::multi(just("//"), just("/*"), just("*/"))
     }
 }

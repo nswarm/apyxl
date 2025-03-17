@@ -4,8 +4,8 @@ use itertools::Itertools;
 use crate::model::{Attributes, Dto, Field};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, ty, visibility};
-use crate::parser::{comment, util, Config};
+use crate::parser::rust::{attributes, comment, ty, visibility};
+use crate::parser::{util, Config};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
     let prefix = util::keyword_ex("struct").then(text::whitespace().at_least(1));
@@ -17,7 +17,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
             just('}').ignored(),
         )),
     );
-    comment::multi_comment()
+    comment::multi()
         .padded()
         .then(attributes::attributes().padded())
         .then(visibility::parser())
@@ -48,7 +48,7 @@ fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
     let field = text::ident()
         .then_ignore(just(':').padded())
         .then(ty::parser(config));
-    comment::multi_comment()
+    comment::multi()
         .then(attributes::attributes().padded())
         .then(visibility::parser())
         .then(field)
