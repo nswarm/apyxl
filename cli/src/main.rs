@@ -48,6 +48,9 @@ fn add_generator<I: apyxl::Input, P: apyxl::Parser>(
     mut exe: apyxl::Executor<I, P>,
 ) -> Result<apyxl::Executor<I, P>> {
     exe = exe.generator(generator_name.create_impl());
+    if config.dry_run {
+        return Ok(exe.output(apyxl::output::StdOut::default()));
+    }
     for output_config in &config.output {
         if output_config.generator != generator_name {
             continue;
@@ -122,6 +125,7 @@ mod tests {
             output_root: Default::default(),
             output: vec![],
             stdout: vec![],
+            dry_run: false,
         }
     }
 }
