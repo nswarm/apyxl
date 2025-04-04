@@ -2,6 +2,7 @@ use anyhow::Result;
 
 pub use config::*;
 pub use rust::Rust;
+pub use csharp::CSharp;
 
 use crate::input::Input;
 use crate::model;
@@ -13,6 +14,7 @@ mod comment;
 mod config;
 mod error;
 mod rust;
+mod csharp;
 mod util;
 
 pub trait Parser {

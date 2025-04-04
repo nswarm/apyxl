@@ -1,0 +1,219 @@
+use std::borrow::Cow;
+
+use anyhow::{anyhow, Result};
+use chumsky::prelude::*;
+use log::debug;
+
+use crate::model::{Api, UNDEFINED_NAMESPACE};
+use crate::parser::error::Error;
+use crate::parser::{error, util, Config};
+use crate::Parser as ApyxlParser;
+use crate::{model, Input};
+
+mod attributes;
+mod comment;
+mod dto;
+mod en;
+mod expr_block;
+mod namespace;
+mod rpc;
+mod ty;
+mod ty_alias;
+mod visibility;
+
+#[derive(Default)]
+pub struct CSharp {}
+
+impl ApyxlParser for CSharp {
+    fn parse<'a, I: Input + 'a>(
+        &self,
+        config: &'a Config,
+        input: &'a mut I,
+        builder: &mut model::Builder<'a>,
+    ) -> Result<()> {
+        for (chunk, data) in input.chunks() {
+            debug!("parsing chunk {:?}", chunk.relative_file_path);
+
+            let imports = comment::multi()
+                .then(using())
+                .padded()
+                .repeated()
+                .collect::<Vec<_>>();
+
+            let children = imports
+                .ignore_then(
+                    namespace::children(config, namespace::parser(config), end().ignored())
+                        .padded(),
+                )
+                .then_ignore(end())
+                .parse(data)
+                .into_result()
+                .map_err(|errs| {
+                    let return_err = anyhow!("errors encountered while parsing: {:?}", &errs);
+                    error::report_errors(chunk, data, errs.clone());
+                    return_err
+                })?;
+
+            builder.merge_from_chunk(
+                Api {
+                    name: Cow::Borrowed(UNDEFINED_NAMESPACE),
+                    children,
+                    attributes: Default::default(),
+                    is_virtual: false,
+                },
+                chunk,
+            );
+        }
+
+        Ok(())
+    }
+}
+
+fn using<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
+    util::keyword_ex("using")
+        .then(text::whitespace().at_least(1))
+        .then(
+            text::ident()
+                .separated_by(just("."))
+                .collect::<Vec<_>>(),
+        )
+        .then(just(';'))
+        .ignored()
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+
+    use crate::model::{Builder, Comment, UNDEFINED_NAMESPACE};
+    use crate::parser::Config;
+    use crate::test_util::executor::TEST_CONFIG;
+    use crate::{input, parser, Parser as ApyxlParser};
+
+    #[test]
+    fn root_namespace() -> Result<()> {
+
+        // todo
+        //
+        // // zzz
+        // const ignored: &[&str] = &["zz", "xx"];
+        // // alias comment
+        // type private_alias = u32;
+        // // alias comment
+        // pub type alias = u32;
+        //      (inside class) void method() {}
+        // pub const asjkdhflakjshdg ignored var;
+        let mut input = input::Buffer::new(
+            r#"
+        // comment
+        using asdf;
+        // comment
+        // comment
+        using asdf.x.y.z;
+        public class dto {
+            public void method() {}
+        }
+        private struct private_dto {}
+        namespace SomeNamespace {}
+        namespace Some.Other.Namespace {}
+        enum private_en {}
+        public enum en {}
+        /// rpc comment
+        public void rpc() {}
+        private void private_rpc() {}
+        // end comment ignored
+        "#,
+        );
+        let mut builder = Builder::default();
+        parser::CSharp::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
+        let model = builder.build().unwrap();
+        assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
+        assert!(model.api().dto("dto").is_some(), "dto");
+        assert!(model.api().rpc("rpc").is_some(), "rpc");
+        assert!(model.api().en("en").is_some(), "en");
+        // assert!(model.api().ty_alias("alias").is_some(), "alias");
+        assert!(model.api().namespace("SomeNamespace").is_some(), "SomeNamespace");
+        assert!(model.api().dto("private_dto").is_some(), "private_dto");
+        assert!(model.api().rpc("private_rpc").is_some(), "private_rpc");
+        assert!(model.api().en("private_en").is_some(), "private_en");
+        // assert!(
+        //     model.api().ty_alias("private_alias").is_some(),
+        //     "private_alias"
+        // );
+        assert!(
+            model.api().dto("dto").unwrap().namespace.is_some(),
+            "dto scope namespace"
+        );
+        assert!(
+            model
+                .api()
+                .dto("dto")
+                .unwrap()
+                .namespace
+                .as_ref()
+                .unwrap()
+                .rpc("method")
+                .is_some(),
+            "dto scope rpc"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn disabled_parse_private() -> Result<()> {
+        let mut input = input::Buffer::new(
+            r#"
+        public enum en {}
+        enum ignored_en {}
+        public struct dto {
+            // rpc comment
+            public void rpc() {}
+            private void ignored_rpc() {}
+        }
+        struct ignored_dto {
+            public void ignored_rpc() {}
+        }
+        "#,
+        );
+        let mut builder = Builder::default();
+        let config = Config {
+            enable_parse_private: false,
+            ..Default::default()
+        };
+        parser::CSharp::default().parse(&config, &mut input, &mut builder)?;
+        let model = builder.build().unwrap();
+        assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
+        let dto = model.api().dto("dto");
+        assert!(dto.is_some());
+        let dto_ns = dto.unwrap().namespace.as_ref().expect("dto namespace");
+        assert!(dto_ns.rpc("rpc").is_some());
+        assert!(dto_ns.rpc("ignored_rpc").is_none());
+        assert!(model.api().en("en").is_some());
+        assert!(model.api().dto("ignored_dto").is_none());
+        assert!(model.api().en("ignored_en").is_none());
+        Ok(())
+    }
+
+    mod using_decl {
+        use crate::model::Builder;
+        use crate::test_util::executor::TEST_CONFIG;
+        use crate::{input, parser, Parser};
+        use anyhow::Result;
+
+        #[test]
+        fn import() -> Result<()> {
+            run_test("using asd;")
+        }
+
+        #[test]
+        fn namespaced() -> Result<()> {
+            run_test("using a.b.c.d;")
+        }
+
+        fn run_test(input: &str) -> Result<()> {
+            let mut input = input::Buffer::new(input);
+            let mut builder = Builder::default();
+            parser::CSharp::default().parse(&TEST_CONFIG, &mut input, &mut builder)
+        }
+    }
+}

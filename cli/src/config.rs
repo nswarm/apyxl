@@ -2,6 +2,8 @@ use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
 use itertools::Itertools;
 use std::path::PathBuf;
+use apyxl::Input;
+use apyxl::model::Builder;
 
 #[derive(Parser, Debug)]
 #[command(name = "apyxl", author, version, about)]
@@ -49,11 +51,23 @@ pub struct Config {
     /// Every generator name in the list will generate to stdout in addition to other outputs.
     #[arg(long)]
     pub stdout: Vec<GeneratorName>,
+
+    /// All generators will use stdout output only.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(ValueEnum, Copy, Clone, Debug)]
 pub enum ParserName {
+    #[clap(name = "rust")]
     Rust,
+    #[clap(name = "csharp")]
+    CSharp,
+}
+
+pub enum ParserImpl {
+    Rust(apyxl::parser::Rust),
+    CSharp(apyxl::parser::CSharp),
 }
 
 #[derive(ValueEnum, Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -81,10 +95,19 @@ fn parse_output(arg: &str) -> Result<Output> {
 }
 
 impl ParserName {
-    // todo this won't work, must return the same concrete type...
-    pub fn create_impl(&self) -> impl apyxl::Parser {
+    pub fn create_impl(&self) -> ParserImpl {
         match self {
-            ParserName::Rust => apyxl::parser::Rust::default(),
+            ParserName::Rust => ParserImpl::Rust(apyxl::parser::Rust::default()),
+            ParserName::CSharp => ParserImpl::CSharp(apyxl::parser::CSharp::default()),
+        }
+    }
+}
+
+impl apyxl::Parser for ParserImpl {
+    fn parse<'a, I: Input + 'a>(&self, config: &'a apyxl::parser::Config, input: &'a mut I, builder: &mut Builder<'a>) -> Result<()> {
+        match self {
+            ParserImpl::Rust(p) => p.parse(config, input, builder),
+            ParserImpl::CSharp(p) => p.parse(config, input, builder),
         }
     }
 }

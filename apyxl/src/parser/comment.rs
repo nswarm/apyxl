@@ -87,7 +87,7 @@ pub fn multi<'a>(
 mod tests {
     use anyhow::Result;
     use chumsky::Parser;
-    use chumsky::prelude::just;
+    use chumsky::prelude::{choice, just};
     use crate::model::Comment;
     use crate::parser::comment;
     use crate::parser::error::Error;
@@ -102,6 +102,16 @@ mod tests {
     fn line_comment() -> Result<()> {
         let value = single()
             .parse("// line comment\n")
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(value, Comment::unowned(&["line comment"]));
+        Ok(())
+    }
+
+    #[test]
+    fn line_comment_alt() -> Result<()> {
+        let value = single()
+            .parse("/// line comment\n")
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(value, Comment::unowned(&["line comment"]));
@@ -147,8 +157,8 @@ mod tests {
                     // line two
                     // line three
 
-                    // line four
-                    /* line five */
+                    /// line four
+                    /** line five */
                     /* line six */
                 "#,
             )
@@ -167,11 +177,25 @@ mod tests {
         Ok(())
     }
 
+    fn line<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+        choice((
+            just("///"),
+            just("//"),
+        ))
+    }
+
+    fn begin<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
+        choice((
+            just("/**"),
+            just("/*"),
+        ))
+    }
+
     fn single<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
-        comment::single(just("//"), just("/*"), just("*/"))
+        comment::single(line(), begin(), just("*/"))
     }
 
     fn multi<'a>() -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> {
-        comment::multi(just("//"), just("/*"), just("*/"))
+        comment::multi(line(), begin(), just("*/"))
     }
 }
