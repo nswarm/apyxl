@@ -73,6 +73,7 @@ pub enum ParserImpl {
 #[derive(ValueEnum, Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum GeneratorName {
     Rust,
+    Markdown,
 }
 
 #[derive(Clone, Debug)]
@@ -116,6 +117,7 @@ impl GeneratorName {
     pub fn create_impl(&self) -> Box<dyn apyxl::Generator> {
         match self {
             GeneratorName::Rust => Box::new(apyxl::generator::Rust::default()),
+            GeneratorName::Markdown => Box::new(apyxl::generator::Markdown::default()),
         }
     }
 }
