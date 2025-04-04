@@ -1,10 +1,13 @@
 using X;
 using X.Y.Z;
 
-public class Outside {
-    public int hi;
+/// A class outside the namespace.
+public class OutsideClass {
+    /// integer variable of this class
+    public int integerVar = 5;
 }
 
+/// This namespace has a comment!
 namespace A {
 
     public enum SomeEnum {

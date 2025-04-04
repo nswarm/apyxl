@@ -1,11 +1,9 @@
 use chumsky::prelude::*;
 use itertools::Itertools;
-use std::borrow::Cow;
 
-use crate::model::{Attributes, Dto, Field, Namespace, NamespaceChild, Rpc};
-use crate::parser::csharp::namespace::const_var;
+use crate::model::{Attributes, Dto, Field, Namespace, Rpc};
 use crate::parser::csharp::visibility::Visibility;
-use crate::parser::csharp::{attributes, comment, rpc, ty, ty_alias, visibility};
+use crate::parser::csharp::{attributes, comment, rpc, ty, visibility};
 use crate::parser::error::Error;
 use crate::parser::{util, Config};
 
