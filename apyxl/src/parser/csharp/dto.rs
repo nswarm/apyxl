@@ -307,7 +307,53 @@ mod tests {
 
     #[test]
     fn rpc() -> Result<()> {
-        todo!("nyi") ------- //  next :)
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                struct StructName {
+                    private void rpc() {}
+                    public int other_rpc() {}
+                }
+                "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert!(dto.namespace.is_some());
+        let namespace = dto.namespace.as_ref().unwrap();
+        assert_eq!(namespace.children.len(), 2);
+        assert!(namespace.rpc("rpc").is_some());
+        assert!(namespace.rpc("other_rpc").is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn mixed_rpc_dto() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                struct StructName {
+                    private void rpc() {}
+                    int field0 = 1;
+                    string field1 = "asbcd";
+                    public int other_rpc() {}
+                    string field2 = SomeSuper.Complex().default("var");
+                }
+                "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.fields.len(), 3);
+        assert_eq!(dto.fields[0].name, "field0");
+        assert_eq!(dto.fields[1].name, "field1");
+        assert_eq!(dto.fields[2].name, "field2");
+        assert!(dto.namespace.is_some());
+        let namespace = dto.namespace.as_ref().unwrap();
+        assert_eq!(namespace.children.len(), 2);
+        assert!(namespace.rpc("rpc").is_some());
+        assert!(namespace.rpc("other_rpc").is_some());
+        Ok(())
     }
 
     #[test]
