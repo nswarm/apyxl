@@ -6,9 +6,9 @@ use itertools::Itertools;
 use crate::model::{Attributes, Namespace, NamespaceChild};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, dto, en, rpc, ty_alias, visibility};
+use crate::parser::rust::{attributes, comment, dto, en, rpc, ty_alias, visibility};
 use crate::parser::util::keyword_ex;
-use crate::parser::{comment, Config};
+use crate::parser::Config;
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Error> {
     recursive(|nested| {
@@ -16,7 +16,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Err
         let name = text::ident();
         let body = children(config, nested.clone(), just('}').ignored())
             .delimited_by(just('{').padded(), just('}').padded());
-        comment::multi_comment()
+        comment::multi()
             .then(attributes::attributes().padded())
             .then(visibility::parser())
             .then_ignore(prefix)
@@ -66,11 +66,11 @@ pub fn children<'a>(
     .repeated()
     .collect::<Vec<_>>()
     .map(|v| v.into_iter().flatten().collect_vec())
-    .then_ignore(comment::multi_comment())
+    .then_ignore(comment::multi())
 }
 
 pub fn const_var<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
-    comment::multi_comment()
+    comment::multi()
         .then(visibility::parser())
         .then(just("const"))
         .then(any().and_is(none_of(";")).repeated().slice())
@@ -97,7 +97,7 @@ pub fn impl_block(config: &Config) -> impl Parser<&str, Namespace, Error> {
     .collect::<Vec<_>>()
     .map(|v| v.into_iter().flatten().collect_vec());
 
-    comment::multi_comment()
+    comment::multi()
         .padded()
         .then_ignore(prefix)
         .then(text::ident())

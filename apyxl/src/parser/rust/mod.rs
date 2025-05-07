@@ -6,11 +6,12 @@ use log::debug;
 
 use crate::model::{Api, UNDEFINED_NAMESPACE};
 use crate::parser::error::Error;
-use crate::parser::{comment, error, util, Config};
+use crate::parser::{error, util, Config};
 use crate::{model, Input};
 use crate::{rust_util, Parser as ApyxlParser};
 
 mod attributes;
+mod comment;
 mod dto;
 mod en;
 mod expr_block;
@@ -38,7 +39,7 @@ impl ApyxlParser for Rust {
                 }
             }
 
-            let imports = comment::multi_comment()
+            let imports = comment::multi()
                 .then(use_decl())
                 .padded()
                 .repeated()

@@ -1,8 +1,8 @@
 use crate::model::{Attributes, Field, Rpc, Semantics, Type, TypeRef};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, expr_block, ty, visibility};
-use crate::parser::{comment, util, Config};
+use crate::parser::rust::{attributes, comment, expr_block, ty, visibility};
+use crate::parser::{util, Config};
 use chumsky::prelude::*;
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
@@ -16,7 +16,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
         )),
     );
     let return_type = just("->").ignore_then(ty::parser(config).padded());
-    comment::multi_comment()
+    comment::multi()
         .then(attributes::attributes().padded())
         .then(visibility::parser())
         .then_ignore(prefix)
@@ -67,7 +67,7 @@ fn param(config: &Config) -> impl Parser<&str, Field, Error> {
     let field = text::ident()
         .then_ignore(just(':').padded())
         .then(ty::parser(config));
-    comment::multi_comment()
+    comment::multi()
         .then(attributes::attributes().padded())
         .then(field.or(self_param))
         .map(|((comments, user), (name, ty))| Field {

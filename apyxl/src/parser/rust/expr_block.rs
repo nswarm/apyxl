@@ -1,7 +1,7 @@
 use crate::model::Comment;
-use crate::parser::comment;
 use crate::parser::error::Error;
 use chumsky::prelude::*;
+use crate::parser::rust::comment;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExprBlock<'a> {
@@ -14,7 +14,7 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
     let body = none_of("{}").repeated().at_least(1).slice().map(&str::trim);
     recursive(|nested| {
         choice((
-            comment::comment().boxed().padded().map(ExprBlock::Comment),
+            comment::single().boxed().padded().map(ExprBlock::Comment),
             nested.map(ExprBlock::Nested),
             body.map(ExprBlock::Body),
         ))
