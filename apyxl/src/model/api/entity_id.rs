@@ -313,6 +313,9 @@ impl EntityId {
     }
 
     fn fail_qualified(&self, name: &str) {
+        if self.is_empty() {
+            return;
+        }
         assert!(
             !self.is_qualified(),
             "EntityId: do not call '{}' on a qualified EntityId",
@@ -321,6 +324,9 @@ impl EntityId {
     }
 
     fn fail_unqualified(&self, name: &str) {
+        if self.is_empty() {
+            return;
+        }
         assert!(
             self.is_qualified(),
             "EntityId: do not call '{}' on an unqualified EntityId",

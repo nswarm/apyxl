@@ -1,12 +1,15 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
+use chumsky::container::Container;
 use chumsky::prelude::*;
 use log::debug;
 
-use crate::model::{Api, UNDEFINED_NAMESPACE};
-use crate::parser::error::Error;
-use crate::parser::{error, util, Config};
+use crate::model::{Api, EntityId, Namespace, NamespaceChild, Type, TypeRef, UNDEFINED_NAMESPACE};
+use crate::parser::rust::import::Import;
+use crate::parser::{error, Config};
 use crate::{model, Input};
 use crate::{rust_util, Parser as ApyxlParser};
 
@@ -15,6 +18,7 @@ mod comment;
 mod dto;
 mod en;
 mod expr_block;
+mod import;
 mod namespace;
 mod rpc;
 mod ty;
@@ -31,22 +35,18 @@ impl ApyxlParser for Rust {
         input: &'a mut I,
         builder: &mut model::Builder<'a>,
     ) -> Result<()> {
+        let mut chunked_apis = Vec::new();
+        let mut all_entity_ids = HashSet::<EntityId>::default();
         for (chunk, data) in input.chunks() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
-            if let Some(file_path) = &chunk.relative_file_path {
-                for component in rust_util::path_to_entity_id(file_path).component_names() {
-                    builder.enter_namespace(component)
-                }
-            }
 
             let imports = comment::multi()
-                .then(use_decl())
-                .padded()
+                .ignore_then(import::parser().padded())
                 .repeated()
                 .collect::<Vec<_>>();
 
-            let children = imports
-                .ignore_then(
+            let (imports, children) = imports
+                .then(
                     namespace::children(config, namespace::parser(config), end().ignored())
                         .padded(),
                 )
@@ -59,15 +59,54 @@ impl ApyxlParser for Rust {
                     return_err
                 })?;
 
-            builder.merge_from_chunk(
-                Api {
-                    name: Cow::Borrowed(UNDEFINED_NAMESPACE),
-                    children,
-                    attributes: Default::default(),
-                    is_virtual: false,
-                },
-                chunk,
+            let api = Api {
+                name: Cow::Borrowed(UNDEFINED_NAMESPACE),
+                children,
+                attributes: Default::default(),
+                is_virtual: false,
+            };
+
+            // Keep track of all EntityIds in this chunk for use in blanket imports.
+            let chunk_entity_id = chunk
+                .relative_file_path
+                .as_ref()
+                .map(|file_path| rust_util::path_to_entity_id(file_path))
+                .unwrap_or(EntityId::default());
+            collect_entity_ids(&api, chunk_entity_id, &mut all_entity_ids);
+
+            chunked_apis.push((chunk, api, imports));
+        }
+
+        // Necessary to separate API parsing from merging to builder so that we have the complete
+        // API available to qualify imported types. Otherwise, we wouldn't be able to resolve
+        // blanket imports like `use a::b::*`.
+
+        for (chunk, mut api, mut imports) in chunked_apis {
+            if let Some(file_path) = &chunk.relative_file_path {
+                for component in rust_util::path_to_entity_id(file_path).component_names() {
+                    builder.enter_namespace(component)
+                }
+            }
+
+            debug!(
+                "applying imports to chunk {:?}...",
+                chunk.relative_file_path
             );
+
+            let mut local_entity_ids = HashSet::new();
+            collect_entity_ids(&api, EntityId::default(), &mut local_entity_ids);
+
+            sort_imports(&mut imports);
+            apply_imports(
+                &all_entity_ids,
+                &local_entity_ids,
+                EntityId::default(),
+                &mut api,
+                &imports,
+            )?;
+
+            debug!("merging chunk {:?}...", chunk.relative_file_path);
+            builder.merge_from_chunk(api, chunk);
             builder.clear_namespace();
         }
 
@@ -75,31 +114,204 @@ impl ApyxlParser for Rust {
     }
 }
 
-fn use_decl<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
-    let multi_import = text::ident()
-        .separated_by(just(',').padded())
-        .at_least(1)
-        .collect::<Vec<_>>()
-        .delimited_by(just('{').padded(), just('}').padded());
-    util::keyword_ex("pub")
-        .then(text::whitespace().at_least(1))
-        .or_not()
-        .then(util::keyword_ex("use"))
-        .then(text::whitespace().at_least(1))
-        .then(
-            text::ident()
-                .then(just("::"))
-                .repeated()
-                .collect::<Vec<_>>(),
-        )
-        .then(choice((
-            // ignoring these early so they're all the same out type for the choice.
-            multi_import.ignored(),
-            text::ident().ignored(),
-            just("*").ignored(),
-        )))
-        .then(just(';'))
-        .ignored()
+fn sort_imports(imports: &mut [Import]) {
+    // Sort single/multi before blanket as they take priority.
+    imports.sort_by(|a, b| match (a, b) {
+        (Import::Single(_), Import::Blanket(_)) | (Import::Multi(_), Import::Blanket(_)) => {
+            Ordering::Less
+        }
+        (Import::Blanket(_), Import::Single(_)) | (Import::Blanket(_), Import::Multi(_)) => {
+            Ordering::Greater
+        }
+        _ => Ordering::Equal,
+    });
+}
+
+fn collect_entity_ids(ns: &Namespace, id: EntityId, set: &mut HashSet<EntityId>) {
+    for child in &ns.children {
+        let id = id.child_unqualified(child.name());
+        set.push(id.clone());
+        if let NamespaceChild::Namespace(ns) = child {
+            collect_entity_ids(ns, id, set);
+        }
+    }
+}
+
+fn apply_imports(
+    all_entity_ids: &HashSet<EntityId>,
+    local_entity_ids: &HashSet<EntityId>,
+    namespace_id: EntityId,
+    namespace: &mut Namespace,
+    imports: &[Import],
+) -> Result<()> {
+    // Also add ids from this portion of the hierarchy tree in order to catch multi nested ids
+    // referencing less nested types, for example:
+    // mod a {
+    //   type Id = u32;
+    //   mod b {
+    //     struct Entity {
+    //       id: Id; // this references the Id inside 'a' even though it's not qualified.
+    //     }
+    //   }
+    // }
+    let mut local_entity_ids = local_entity_ids.clone();
+    collect_entity_ids(namespace, EntityId::default(), &mut local_entity_ids);
+
+    for dto in namespace.dtos_mut() {
+        for field in &mut dto.fields {
+            apply_imports_to_type(
+                all_entity_ids,
+                &local_entity_ids,
+                &namespace_id,
+                &mut field.ty,
+                imports,
+            )?;
+        }
+    }
+
+    for rpc in namespace.rpcs_mut() {
+        for param in &mut rpc.params {
+            apply_imports_to_type(
+                all_entity_ids,
+                &local_entity_ids,
+                &namespace_id,
+                &mut param.ty,
+                imports,
+            )?;
+        }
+        if let Some(return_ty) = &mut rpc.return_type {
+            apply_imports_to_type(
+                all_entity_ids,
+                &local_entity_ids,
+                &namespace_id,
+                return_ty,
+                imports,
+            )?;
+        }
+    }
+
+    for alias in namespace.ty_aliases_mut() {
+        apply_imports_to_type(
+            all_entity_ids,
+            &local_entity_ids,
+            &namespace_id,
+            &mut alias.target_ty,
+            imports,
+        )?;
+    }
+
+    // note: enums have no type refs.
+
+    for ns in namespace.namespaces_mut() {
+        apply_imports(
+            all_entity_ids,
+            &local_entity_ids,
+            namespace_id.child_unqualified(&ns.name),
+            ns,
+            imports,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn apply_imports_to_type(
+    all_entity_ids: &HashSet<EntityId>,
+    local_entity_ids: &HashSet<EntityId>,
+    namespace_id: &EntityId,
+    ty: &mut TypeRef,
+    imports: &[Import],
+) -> Result<()> {
+    match &mut ty.value {
+        Type::Bool
+        | Type::U8
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::U128
+        | Type::USIZE
+        | Type::I8
+        | Type::I16
+        | Type::I32
+        | Type::I64
+        | Type::I128
+        | Type::F8
+        | Type::F16
+        | Type::F32
+        | Type::F64
+        | Type::F128
+        | Type::String
+        | Type::StringView
+        | Type::Bytes
+        | Type::User(_) => {}
+
+        Type::Array(ty) => {
+            apply_imports_to_type(all_entity_ids, local_entity_ids, namespace_id, ty, imports)?
+        }
+        Type::Optional(ty) => {
+            apply_imports_to_type(all_entity_ids, local_entity_ids, namespace_id, ty, imports)?
+        }
+        Type::Map { key, value } => {
+            apply_imports_to_type(all_entity_ids, local_entity_ids, namespace_id, key, imports)?;
+            apply_imports_to_type(
+                all_entity_ids,
+                local_entity_ids,
+                namespace_id,
+                value,
+                imports,
+            )?;
+        }
+        Type::Api(id) => {
+            if !local_entity_ids.contains(id) {
+                for import in imports {
+                    if let Some(qualified) = qualify_by_import(all_entity_ids, import, id)? {
+                        *id = qualified;
+                        break;
+                    }
+                }
+            }
+        }
+    };
+    Ok(())
+}
+
+fn qualify_by_import(
+    all_entity_ids: &HashSet<EntityId>,
+    import: &Import,
+    id: &mut EntityId,
+) -> Result<Option<EntityId>> {
+    match import {
+        Import::Single(import) => {
+            if let Some(qualified) = qualify_by_import_id(import, id)? {
+                return Ok(Some(qualified));
+            }
+        }
+        Import::Multi(imports) => {
+            for import in imports {
+                if let Some(qualified) = qualify_by_import_id(import, id)? {
+                    return Ok(Some(qualified));
+                }
+            }
+        }
+        Import::Blanket(import) => {
+            let qualified = import.concat(id)?;
+            if all_entity_ids.contains(&qualified) {
+                return Ok(Some(qualified));
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn qualify_by_import_id(import: &EntityId, id: &EntityId) -> Result<Option<EntityId>> {
+    match (import.component_names().last(), id.component_names().next()) {
+        (Some(import_end), Some(id_start)) if import_end == id_start => {
+            let qualified = import.parent().unwrap().concat(id)?;
+            return Ok(Some(qualified));
+        }
+        _ => {}
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -294,41 +506,468 @@ mod tests {
         }
     }
 
-    mod use_decl {
-        use crate::model::Builder;
+    mod imports {
+        use crate::model::{Builder, Chunk, EntityId, Model};
         use crate::test_util::executor::TEST_CONFIG;
         use crate::{input, parser, Parser};
-        use anyhow::Result;
+        use anyhow::{anyhow, Result};
+
+        #[test]
+        fn dto_field() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::Id;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "test.Entity", "ns:a.a:Id")
+        }
+
+        #[test]
+        fn rpc_param() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::Id;
+            fn rpc(id: Id) {}
+            "#;
+
+            run_chunked_test(&[("a", a), ("test", test)], |model| {
+                let actual = model
+                    .api()
+                    .find_rpc(&EntityId::new_unqualified("test.rpc"))
+                    .unwrap()
+                    .params[0]
+                    .ty
+                    .value
+                    .api()
+                    .unwrap();
+
+                let expected = EntityId::try_from("ns:a.a:Id").unwrap();
+                assert_eq!(
+                    expected, *actual,
+                    "expected: {}, actual: {}",
+                    expected, actual
+                );
+                Ok(())
+            })
+        }
+
+        #[test]
+        fn rpc_return_ty() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::Id;
+            fn rpc() -> Id {}
+            "#;
+
+            run_chunked_test(&[("a", a), ("test", test)], |model| {
+                let actual = model
+                    .api()
+                    .find_rpc(&EntityId::new_unqualified("test.rpc"))
+                    .unwrap()
+                    .return_type
+                    .as_ref()
+                    .ok_or(anyhow!("no return type"))?
+                    .value
+                    .api()
+                    .unwrap();
+
+                let expected = EntityId::try_from("ns:a.a:Id").unwrap();
+                assert_eq!(
+                    expected, *actual,
+                    "expected: {}, actual: {}",
+                    expected, actual
+                );
+                Ok(())
+            })
+        }
+
+        #[test]
+        fn ty_alias() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::Id;
+            type MyId = Id;
+            "#;
+
+            run_chunked_test(&[("a", a), ("test", test)], |model| {
+                let actual = model
+                    .api()
+                    .find_ty_alias(&EntityId::new_unqualified("test.MyId"))
+                    .unwrap()
+                    .target_ty
+                    .value
+                    .api()
+                    .unwrap();
+
+                let expected = EntityId::try_from("ns:a.a:Id").unwrap();
+                assert_eq!(
+                    expected, *actual,
+                    "expected: {}, actual: {}",
+                    expected, actual
+                );
+                Ok(())
+            })
+        }
 
         #[test]
         fn private() -> Result<()> {
-            run_test("use asd;")
+            let root = "type Id = u32;";
+            let test = r#"
+            use crate::Id;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(&[("mod.rs", root), ("test", test)], "test.Entity", "a:Id")
         }
 
         #[test]
         fn public() -> Result<()> {
-            run_test("pub use asd;")
+            let root = "pub type Id = u32;";
+            let test = r#"
+            pub use crate::Id;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(&[("mod.rs", root), ("test", test)], "test.Entity", "a:Id")
         }
 
         #[test]
-        fn namespaced() -> Result<()> {
-            run_test("use a::b::c::d;")
+        fn namespaced_full() -> Result<()> {
+            let a = "mod b { mod c { type Id = u32; } }";
+            let test = r#"
+            use crate::a::b::c::Id;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("test", test)],
+                "test.Entity",
+                "ns:a.ns:b.ns:c.a:Id",
+            )
         }
 
         #[test]
-        fn wildcard() -> Result<()> {
-            run_test("use a::b::c::*;")
+        fn namespace() -> Result<()> {
+            let a = "mod b { mod c { type Id = u32; } }";
+            let test = r#"
+            use crate::a::b::c;
+            struct Entity {
+                id: c::Id
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("test", test)],
+                "test.Entity",
+                "ns:a.ns:b.ns:c.a:Id",
+            )
         }
 
         #[test]
         fn multi() -> Result<()> {
-            run_test("use a::b::c::{asd, efg, xyz};")
+            let a = r#"
+            mod b {
+                struct Xyz {}
+                mod c {
+                    type Id = u32;
+                    struct Abc {}
+                }
+            }
+            "#;
+            let test = r#"
+            use a::b::c::{Abc, Id};
+            use a::b::{Xyz};
+            struct Entity {
+                abc: Abc,
+                id: Id,
+                xyz: Xyz
+            }
+            "#;
+
+            let mut input = input::ChunkBuffer::new();
+            input.add_chunk(Chunk::with_relative_file_path("a"), a);
+            input.add_chunk(Chunk::with_relative_file_path("test"), test);
+
+            let mut builder = Builder::default();
+            parser::Rust::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
+            let model = builder.build().unwrap();
+
+            let assert = |i: usize, expected: &str| {
+                let actual = model
+                    .api()
+                    .find_dto(&EntityId::new_unqualified("test.Entity"))
+                    .unwrap()
+                    .fields[i]
+                    .ty
+                    .value
+                    .api()
+                    .unwrap();
+
+                let expected = EntityId::try_from(expected).unwrap();
+                assert_eq!(
+                    expected, *actual,
+                    "expected: {}, actual {}",
+                    expected, actual
+                );
+            };
+
+            assert(0, "ns:a.ns:b.ns:c.d:Abc");
+            assert(1, "ns:a.ns:b.ns:c.a:Id");
+            assert(2, "ns:a.ns:b.d:Xyz");
+            Ok(())
         }
 
-        fn run_test(input: &str) -> Result<()> {
-            let mut input = input::Buffer::new(input);
+        #[test]
+        fn blanket() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::*;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "test.Entity", "ns:a.a:Id")
+        }
+
+        #[test]
+        fn blanket_with_namespace() -> Result<()> {
+            let a = "";
+            let b = "mod c { mod d { type Id = u32; } }";
+            let test = r#"
+            use a::*;
+            use b::c::*;
+            struct Entity {
+                id: d::Id,
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("b", b), ("test", test)],
+                "test.Entity",
+                "ns:b.ns:c.ns:d.a:Id",
+            )
+        }
+
+        #[test]
+        fn explicit_override_blanket() -> Result<()> {
+            let a = "type Id = u32;";
+            let b = "type Id = u32;";
+            let test = r#"
+            use a::*;
+            use b;
+            struct Entity {
+                id: b::Id,
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("b", b), ("test", test)],
+                "test.Entity",
+                "ns:b.a:Id",
+            )
+        }
+
+        #[test]
+        fn local_override_blanket() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::*;
+            type Id = u32;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "test.Entity", "ns:test.a:Id")
+        }
+
+        #[test]
+        fn nested_local_override_blanket() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::*;
+            type Id = u32;
+            mod b {
+                struct Entity {
+                    id: Id,
+                }
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "test.b.Entity", "ns:test.a:Id")
+        }
+
+        #[test]
+        fn extra_nested_local_override_blanket() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::*;
+            mod b {
+                type Id = u32;
+                mod c {
+                    struct Entity {
+                        id: Id,
+                    }
+                }
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("test", test)],
+                "test.b.c.Entity",
+                "ns:test.ns:b.a:Id",
+            )
+        }
+
+        #[test]
+        fn single_always_before_blanket() -> Result<()> {
+            let a = "type Id = u32;";
+            let b = "type Id = u32;";
+
+            // Try with both orders. If one fails we're not handling single before blanket.
+
+            let test = r#"
+            use b::Id;
+            use a::*;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("b", b), ("test", test)],
+                "test.Entity",
+                "ns:b.a:Id",
+            )?;
+
+            let test = r#"
+            use a::*;
+            use b::Id;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("b", b), ("test", test)],
+                "test.Entity",
+                "ns:b.a:Id",
+            )
+        }
+
+        #[test]
+        fn multi_always_before_blanket() -> Result<()> {
+            let a = "type Id = u32;";
+            let b = "type Id = u32;";
+
+            // Try with both orders. If one fails we're not handling multi before blanket.
+
+            let test = r#"
+            use b::{Id};
+            use a::*;
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("b", b), ("test", test)],
+                "test.Entity",
+                "ns:b.a:Id",
+            )?;
+
+            let test = r#"
+            use a::*;
+            use b::{Id};
+            struct Entity {
+                id: Id,
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("b", b), ("test", test)],
+                "test.Entity",
+                "ns:b.a:Id",
+            )
+        }
+
+        #[test]
+        fn local_sibling_nested_no_override_blanket() -> Result<()> {
+            let a = "type Id = u32;";
+            let test = r#"
+            use a::*;
+            mod b {
+                type Id = u32;
+            }
+            mod c {
+                struct Entity {
+                    id: Id,
+                }
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "test.c.Entity", "ns:a.a:Id")
+        }
+
+        #[test]
+        fn explicit_sibling_nested_override_blanket() -> Result<()> {
+            let a = r#"
+            mod b {
+                type Id = u32;
+            }
+            "#;
+            let test = r#"
+            use a::*;
+            mod b {
+                type Id = u32;
+            }
+            mod c {
+                struct Entity {
+                    id: b::Id,
+                }
+            }
+            "#;
+            run_dto_chunked_test(
+                &[("a", a), ("test", test)],
+                "test.c.Entity",
+                "ns:test.ns:b.a:Id",
+            )
+        }
+
+        fn run_chunked_test(
+            inputs: &[(&str, &str)],
+            assertions: impl FnOnce(&Model) -> Result<()>,
+        ) -> Result<()> {
+            let mut input = input::ChunkBuffer::new();
+            for (path, data) in inputs {
+                input.add_chunk(Chunk::with_relative_file_path(path), data);
+            }
             let mut builder = Builder::default();
-            parser::Rust::default().parse(&TEST_CONFIG, &mut input, &mut builder)
+            parser::Rust::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
+            let model = builder.build().unwrap();
+
+            assertions(&model)?;
+            Ok(())
+        }
+
+        fn run_dto_chunked_test(
+            inputs: &[(&str, &str)],
+            dto_id: &str,
+            expected_entity_id: &str,
+        ) -> Result<()> {
+            run_chunked_test(inputs, |model| {
+                let actual = model
+                    .api()
+                    .find_dto(&EntityId::new_unqualified(dto_id))
+                    .unwrap()
+                    .fields[0]
+                    .ty
+                    .value
+                    .api()
+                    .unwrap();
+
+                let expected = EntityId::try_from(expected_entity_id)?;
+                assert_eq!(
+                    expected, *actual,
+                    "expected: {}, actual: {}",
+                    expected, actual
+                );
+                Ok(())
+            })
         }
     }
 }

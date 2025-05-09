@@ -227,7 +227,7 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
 /// use in generators. Note that this should be called before devirtualizing namespaces
 /// otherwise it will miss namespaces owned by dtos.
 fn populate_entity_id_attributes(namespace: &mut Namespace, ns_id: &EntityId) {
-    populate_entity_id_for_namespace_children(namespace, &ns_id);
+    populate_entity_id_for_namespace_children(namespace, ns_id);
     namespace.namespaces_mut().for_each(|ns| {
         let ns_child_type = if ns.is_virtual {
             EntityType::Dto

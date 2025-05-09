@@ -2,9 +2,9 @@ use std::borrow::Cow;
 
 use itertools::Itertools;
 
-use crate::model::{Attributes, Dto, EntityId, Enum, Rpc, TypeAlias};
 use crate::model::api::entity::{Entity, EntityType, ToEntity};
 use crate::model::entity::{EntityMut, FindEntity};
+use crate::model::{Attributes, Dto, EntityId, Enum, Rpc, TypeAlias};
 
 /// A named, nestable wrapper for a set of API entities.
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -540,9 +540,9 @@ fn unqualified_namespace(id: &EntityId) -> EntityId {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::model::{Api, chunk, EntityId, Namespace};
-    use crate::test_util::{test_dto, test_namespace, test_rpc};
+    use crate::model::{chunk, Api, EntityId, Namespace};
     use crate::test_util::executor::TestExecutor;
+    use crate::test_util::{test_dto, test_namespace, test_rpc};
 
     #[test]
     fn merge() {
@@ -621,7 +621,7 @@ mod tests {
 
     mod add_get {
         use crate::model::api::namespace::tests::{complex_api, complex_namespace};
-        use crate::test_util::{NAMES, test_dto, test_rpc};
+        use crate::test_util::{test_dto, test_rpc, NAMES};
 
         #[test]
         fn dto() {
@@ -694,7 +694,7 @@ mod tests {
 
         use crate::model::api::namespace::tests::{complex_api, complex_namespace};
         use crate::model::EntityId;
-        use crate::test_util::{NAMES, test_dto, test_namespace, test_rpc};
+        use crate::test_util::{test_dto, test_namespace, test_rpc, NAMES};
 
         #[test]
         fn dto() {

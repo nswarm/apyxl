@@ -100,26 +100,27 @@ pub trait ToEntity {
 // Keep these in line with [EntityId] documentation.
 #[rustfmt::skip]
 pub mod subtype {
-    pub const NAMESPACE: &str =       "namespace";
-    pub const NAMESPACE_SHORT: &str = "n";
-    pub const DTO: &str =             "dto";
-    pub const DTO_SHORT: &str =       "d";
-    pub const RPC: &str =             "rpc";
-    pub const RPC_SHORT: &str =       "r";
-    pub const ENUM: &str =            "enum";
-    pub const ENUM_MED: &str =        "en";
-    pub const ENUM_SHORT: &str =      "e";
-    pub const FIELD: &str =           "field";
-    pub const FIELD_SHORT: &str =     "f";
-    pub const PARAM: &str =           "param";
-    pub const PARAM_SHORT: &str =     "p";
-    pub const TY: &str =              "ty";
-    pub const RETURN_TY: &str =       "return_ty";
-    pub const TY_ALIAS: &str =        "alias";
-    pub const TY_ALIAS_SHORT: &str =  "a";
-    pub const TY_ALIAS_TARGET: &str = "target_ty";
+    pub const NAMESPACE: &str =             "namespace";
+    pub const NAMESPACE_SHORTISH: &str =    "ns";
+    pub const NAMESPACE_SHORT: &str =       "n";
+    pub const DTO: &str =                   "dto";
+    pub const DTO_SHORT: &str =             "d";
+    pub const RPC: &str =                   "rpc";
+    pub const RPC_SHORT: &str =             "r";
+    pub const ENUM: &str =                  "enum";
+    pub const ENUM_MED: &str =              "en";
+    pub const ENUM_SHORT: &str =            "e";
+    pub const FIELD: &str =                 "field";
+    pub const FIELD_SHORT: &str =           "f";
+    pub const PARAM: &str =                 "param";
+    pub const PARAM_SHORT: &str =           "p";
+    pub const TY: &str =                    "ty";
+    pub const RETURN_TY: &str =             "return_ty";
+    pub const TY_ALIAS: &str =              "alias";
+    pub const TY_ALIAS_SHORT: &str =        "a";
+    pub const TY_ALIAS_TARGET: &str =       "target_ty";
 
-    pub const NAMESPACE_ALL: &[&str] = &[NAMESPACE, NAMESPACE_SHORT];
+    pub const NAMESPACE_ALL: &[&str] = &[NAMESPACE, NAMESPACE_SHORTISH, NAMESPACE_SHORT];
     pub const DTO_ALL: &[&str] = &[DTO, DTO_SHORT];
     pub const RPC_ALL: &[&str] = &[RPC, RPC_SHORT];
     pub const ENUM_ALL: &[&str] = &[ENUM, ENUM_MED, ENUM_SHORT];

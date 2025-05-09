@@ -70,7 +70,7 @@ impl<'v> TypeRef<'v> {
         }
     }
 
-    fn model_to_view_ty<'a>(&'a self, ty: &'a model::TypeRef) -> Type {
+    fn model_to_view_ty<'a>(&'a self, ty: &'a model::TypeRef) -> Type<'a, 'a> {
         match &ty.value {
             model::Type::Bool => Type::Bool,
             model::Type::U8 => Type::U8,
@@ -94,12 +94,12 @@ impl<'v> TypeRef<'v> {
             model::Type::Bytes => Type::Bytes,
             model::Type::User(name) => Type::User(name),
             model::Type::Api(id) => Type::Api(EntityId::new(id, self.xforms)),
-            model::Type::Array(array_ty) => Type::Array(Box::new(self.nested(&**array_ty))),
+            model::Type::Array(array_ty) => Type::Array(Box::new(self.nested(array_ty))),
             model::Type::Map { key, value } => Type::Map {
-                key: Box::new(self.nested(&**key)),
-                value: Box::new(self.nested(&**value)),
+                key: Box::new(self.nested(key)),
+                value: Box::new(self.nested(value)),
             },
-            model::Type::Optional(ty) => Type::Optional(Box::new(self.nested(&**ty))),
+            model::Type::Optional(ty) => Type::Optional(Box::new(self.nested(ty))),
         }
     }
 }

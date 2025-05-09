@@ -35,7 +35,7 @@ impl<'a> Attributes<'a> {
         self.merge_chunks(other.chunk);
         self.merge_comments(other.comments);
         self.merge_user(other.user);
-        // Note: entity_id should typically be equivalent, but in the case where its not it
+        // Note: entity_id should typically be equivalent, but in the case where it's not it
         // makes sense to keep the current entity_id.
     }
 
