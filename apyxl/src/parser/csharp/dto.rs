@@ -37,6 +37,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
         .padded()
         .then(attributes::attributes().padded())
         .then(visibility::parser())
+        .then_ignore(util::keyword_ex("static").padded().or_not())
         .then_ignore(prefix)
         .then(name)
         .then(children)
@@ -148,6 +149,22 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.fields.len(), 0);
+        assert_eq!(visibility, Visibility::Public);
+        Ok(())
+    }
+
+    #[test]
+    fn public_static() -> Result<()> {
+        let (dto, visibility) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            public static class ClassName {}
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "ClassName");
         assert_eq!(dto.fields.len(), 0);
         assert_eq!(visibility, Visibility::Public);
         Ok(())
@@ -290,16 +307,18 @@ mod tests {
                     int field0 = 1;
                     string field1 = "asbcd";
                     string field2 = SomeSuper.Complex().default("var");
+                    public static STRING = "blah";
                 }
                 "#,
             )
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(dto.name, "StructName");
-        assert_eq!(dto.fields.len(), 3);
+        assert_eq!(dto.fields.len(), 4);
         assert_eq!(dto.fields[0].name, "field0");
         assert_eq!(dto.fields[1].name, "field1");
         assert_eq!(dto.fields[2].name, "field2");
+        assert_eq!(dto.fields[3].name, "STRING");
         Ok(())
     }
 
