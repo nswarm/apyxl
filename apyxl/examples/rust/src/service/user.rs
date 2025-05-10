@@ -1,6 +1,8 @@
 use crate::service::social;
 use std::collections::HashMap;
 
+type SpecialId = u32;
+
 #[derive(Default)]
 pub struct User {
     id: Id,
@@ -17,11 +19,15 @@ pub struct User {
     special_id: SpecialId,
 }
 
+#[derive(Default)]
 pub enum Presence {
+    #[default]
     Offline,
     Online,
     Invalid = 999,
 }
+
+// todo impl Default for Presence
 
 #[derive(Default)]
 pub struct Display {

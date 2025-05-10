@@ -4,9 +4,9 @@ use chumsky::prelude::*;
 use itertools::Itertools;
 
 use crate::model::{Attributes, Namespace, NamespaceChild};
-use crate::parser::error::Error;
 use crate::parser::csharp::visibility::Visibility;
 use crate::parser::csharp::{attributes, comment, dto, en, rpc, ty_alias, visibility};
+use crate::parser::error::Error;
 use crate::parser::util::keyword_ex;
 use crate::parser::Config;
 
@@ -22,19 +22,17 @@ pub fn parser(config: &Config) -> impl Parser<&str, Namespace, Error> {
             .then(name)
             .then(body)
             .map(|(((comments, user), name), children)| {
-                (
-                    Namespace {
-                        // todo this needs to return nested set of namespaces, not a namespace w/ name glommed together...
-                        name: Cow::Owned(name.join(".")),
-                        children,
-                        attributes: Attributes {
-                            comments,
-                            user,
-                            ..Default::default()
-                        },
-                        is_virtual: false,
-                    }
-                )
+                (Namespace {
+                    // todo this needs to return nested set of namespaces, not a namespace w/ name glommed together...
+                    name: Cow::Owned(name.join(".")),
+                    children,
+                    attributes: Attributes {
+                        comments,
+                        user,
+                        ..Default::default()
+                    },
+                    is_virtual: false,
+                })
             })
             .boxed()
     })
@@ -279,12 +277,32 @@ mod tests {
 
         #[test]
         fn public_const() -> Result<()> {
-            run_test("pub const ASDF: &[&str] = &[\"zz\", \"xx\"];")
+            run_test("public const string ASDF = \"blah\"")
+        }
+
+        #[test]
+        fn public_static() -> Result<()> {
+            run_test("public const string ASDF = \"blah\"")
+        }
+
+        #[test]
+        fn public_static_const() -> Result<()> {
+            run_test("public const string ASDF = \"blah\"")
         }
 
         #[test]
         fn private_const() -> Result<()> {
-            run_test("const ASDF: &[&str] = &[\"zz\", \"xx\"];")
+            run_test("private const ASDF = \"blah\"")
+        }
+
+        #[test]
+        fn public_static() -> Result<()> {
+            run_test("public static string ASDF = \"blah\"")
+        }
+
+        #[test]
+        fn private_static_const() -> Result<()> {
+            run_test("private static const ASDF = \"blah\"")
         }
 
         fn run_test(input: &'static str) -> Result<()> {

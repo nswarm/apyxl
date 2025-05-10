@@ -25,7 +25,7 @@ impl<'v> TypeRef<'v> {
     }
 
     pub fn value(&self) -> Type {
-        self.model_to_view_ty(&self.target)
+        self.model_to_view_ty(self.target)
     }
 
     pub fn semantics(&self) -> Semantics {
