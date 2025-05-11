@@ -34,7 +34,7 @@ use crate::model::api::entity::EntityType;
 /// In this example:
 ///     `ns:namespace1.ns:namespace2.dto:DtoName.field:field_name.ty`
 ///     `namespace1`        a [crate::model::Namespace]
-///     `namespace2`        another [crate::model::Namespace] (inside of `namespace1`)
+///     `namespace2`        another [crate::model::Namespace] (inside `namespace1`)
 ///     `dto:DtoName`       a [crate::model::Dto] called `DtoName`
 ///     `field:field_name`  a [crate::model::Field] within the [crate::model::Dto] called `field_name`
 ///     `ty`                the [crate::model::TypeRef] of the [crate::model::Field] ("nameless" - see below)
@@ -55,6 +55,7 @@ use crate::model::api::entity::EntityType;
 ///                                `r`, `rpc`:                [crate::model::Rpc],
 ///                                `e`, `enum`, `en`:         [crate::model::Enum],
 ///                                `a`, `alias`:              [crate::model::TypeAlias],
+///                                `f`, `field`:              [crate::model::Field],
 ///     [crate::model::Dto]:       `f`, `field`:              [crate::model::Field],
 ///                                `d`, `dto`:                [crate::model::Dto],
 ///                                `r`, `rpc`:                [crate::model::Rpc],
@@ -371,7 +372,7 @@ impl Display for EntityId {
                     path.push(format!("{}:{}", entity::subtype::TY_ALIAS, component.name))
                 }
             }
-            last_component = Some(&component);
+            last_component = Some(component);
         }
         write!(f, "{}", path.join("."))
     }
@@ -594,23 +595,21 @@ mod tests {
         fn child_subtype() {
             let id = EntityId::try_from("a.b").unwrap();
             let dto = id.child(EntityType::Dto, "c").unwrap();
-            let field = dto.child(EntityType::Field, "d").unwrap();
-            let ty = field.child(EntityType::Type, "ty").unwrap();
+            let dto_field = dto.child(EntityType::Field, "d").unwrap();
+            let ty = dto_field.child(EntityType::Type, "ty").unwrap();
             let alias = id.child(EntityType::TypeAlias, "c").unwrap();
+            let field = id.child(EntityType::Field, "f").unwrap();
             let target = alias.child(EntityType::Type, "target_ty").unwrap();
             assert_eq!(dto, EntityId::try_from("a.b.dto:c").unwrap());
-            assert_eq!(field, EntityId::try_from("a.b.dto:c.field:d").unwrap());
+            assert_eq!(dto_field, EntityId::try_from("a.b.dto:c.field:d").unwrap());
             assert_eq!(ty, EntityId::try_from("a.b.dto:c.field:d.ty").unwrap());
             assert_eq!(alias, EntityId::try_from("a.b.alias:c").unwrap());
+            assert_eq!(field, EntityId::try_from("a.b.field:f").unwrap());
             assert_eq!(target, EntityId::try_from("a.b.alias:c.target_ty").unwrap());
         }
 
         #[test]
         fn child_invalid_subtype() {
-            assert!(EntityId::try_from("ns")
-                .unwrap()
-                .child(EntityType::Field, "x")
-                .is_err());
             assert!(EntityId::try_from("ns")
                 .unwrap()
                 .child(EntityType::Type, "x")

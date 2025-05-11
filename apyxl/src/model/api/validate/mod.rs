@@ -34,22 +34,25 @@ pub enum ValidationError {
     #[error("Invalid enum value name at '{0}', index {1}. Enum value names cannot be empty.")]
     InvalidEnumValueName(EntityId, usize),
 
+    #[error("Invalid field type at '{0}'. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
+    InvalidFieldType(EntityId, EntityId),
+
     #[error(
         "Invalid field type '{0}::{1}', index {2}. Type '{3}' must be a valid DTO, enum, or type alias in the API."
     )]
-    InvalidFieldType(EntityId, String, usize, EntityId),
+    InvalidFieldOrParamType(EntityId, String, usize, EntityId),
 
     #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
     InvalidRpcReturnType(EntityId, EntityId),
 
-    #[error("Invalid target type for TypeAlias {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
+    #[error("Invalid target type for type alias {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
     InvalidTypeAliasTargetType(EntityId, EntityId),
 
-    #[error("Duplicate DTO or enum definition: '{0}'")]
+    #[error("Duplicate DTO, enum, or type alias definition: '{0}'")]
     DuplicateDtoOrEnumOrAlias(EntityId),
 
-    #[error("Duplicate RPC definition: '{0}'")]
-    DuplicateRpc(EntityId),
+    #[error("Duplicate RPC or field definition: '{0}'")]
+    DuplicateRpcOrField(EntityId),
 
     #[error("Duplicate enum value name within enum '{1}': '{0}'")]
     DuplicateEnumValue(EntityId, String),
@@ -97,17 +100,18 @@ pub fn no_duplicate_dto_enum_alias(api: &Api, namespace_id: EntityId) -> Vec<Val
         .collect_vec()
 }
 
-pub fn no_duplicate_rpcs(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
-    api.find_namespace(&namespace_id)
-        .expect("namespace must exist in api")
-        .rpcs()
-        .duplicates_by(|rpc| rpc.name)
-        .map(|rpc| {
-            Err(ValidationError::DuplicateRpc(
-                namespace_id
-                    .to_qualified_namespaces()
-                    .child(EntityType::Rpc, rpc.name)
-                    .unwrap(),
+pub fn no_duplicate_rpc_or_field(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+    let namespace = api
+        .find_namespace(&namespace_id)
+        .expect("namespace must exist in api");
+    let rpc_names = namespace.rpcs().map(|rpc| rpc.name);
+    let field_names = namespace.fields().map(|field| field.name);
+    rpc_names
+        .chain(field_names)
+        .duplicates()
+        .map(|name| {
+            Err(ValidationError::DuplicateRpcOrField(
+                namespace_id.to_unqualified().child_unqualified(name),
             ))
         })
         .collect_vec()
@@ -304,7 +308,7 @@ pub fn dto_field_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .dtos()
         .flat_map(|dto| {
             let dto_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
-            field_types(api, &dto.fields, namespace_id.clone(), dto_id)
+            field_list_types(api, &dto.fields, namespace_id.clone(), dto_id)
         })
         .collect_vec()
 }
@@ -315,7 +319,7 @@ pub fn rpc_param_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .rpcs()
         .flat_map(|rpc| {
             let rpc_id = namespace_id.child(EntityType::Rpc, rpc.name).unwrap();
-            field_types(api, &rpc.params, namespace_id.clone(), rpc_id)
+            field_list_types(api, &rpc.params, namespace_id.clone(), rpc_id)
         })
         .collect_vec()
 }
@@ -343,7 +347,8 @@ pub fn rpc_return_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResu
         .collect_vec()
 }
 
-pub fn field_types<'a, 'b: 'a>(
+/// Field contained as a list inside other Entities like Dto fields or Rpc params.
+pub fn field_list_types<'a, 'b: 'a>(
     api: &'b Api<'a>,
     fields: &[Field],
     namespace_id: EntityId,
@@ -361,12 +366,33 @@ pub fn field_types<'a, 'b: 'a>(
                 .unwrap();
             match qualify_type(api, &namespace_id, &field.ty) {
                 Ok(Some(qualified_ty)) => Ok(Some(Mutation::new_qualify_type(ty_id, qualified_ty))),
-                Err(err_entity_id) => Err(ValidationError::InvalidFieldType(
+                Err(err_entity_id) => Err(ValidationError::InvalidFieldOrParamType(
                     parent_entity_id.clone(),
                     field.name.to_string(),
                     i,
                     err_entity_id,
                 )),
+                _ => Ok(None),
+            }
+        })
+        .collect_vec()
+}
+
+/// Top level fields inside a namespace.
+pub fn field_types<'a, 'b: 'a>(api: &'b Api<'a>, namespace_id: EntityId) -> Vec<ValidationResult> {
+    api.find_namespace(&namespace_id)
+        .expect("namespace must exist in api")
+        .fields()
+        .map(|field| {
+            let field_id = namespace_id.child(EntityType::Field, field.name).unwrap();
+            let ty_id = field_id
+                .child(EntityType::Type, entity::subtype::TY)
+                .unwrap();
+            match qualify_type(api, &namespace_id, &field.ty) {
+                Ok(Some(qualified_ty)) => Ok(Some(Mutation::new_qualify_type(ty_id, qualified_ty))),
+                Err(err_entity_id) => {
+                    Err(ValidationError::InvalidFieldType(field_id, err_entity_id))
+                }
                 _ => Ok(None),
             }
         })
@@ -783,8 +809,8 @@ mod tests {
         }
     }
 
-    mod field_types {
-        use crate::model::api::validate::field_types;
+    mod field_list_types {
+        use crate::model::api::validate::field_list_types;
         use crate::model::EntityId;
         use crate::test_util::executor::TestExecutor;
 
@@ -953,7 +979,7 @@ mod tests {
             let mut exe = TestExecutor::new(input_data);
             let api = exe.api();
 
-            assert!(field_types(
+            assert!(field_list_types(
                 &api,
                 &api.find_dto(source_dto)
                     .expect("couldn't find source dto")

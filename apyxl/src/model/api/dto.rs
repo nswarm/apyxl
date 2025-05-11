@@ -1,6 +1,7 @@
 use crate::model::api::entity::ToEntity;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Attributes, Entity, EntityId, EntityType, Field, Namespace};
+use crate::model::attributes::AttributesHolder;
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -26,6 +27,12 @@ impl<'a> Dto<'a> {
 impl ToEntity for Dto<'_> {
     fn to_entity(&self) -> Entity {
         Entity::Dto(self)
+    }
+}
+
+impl AttributesHolder for Dto<'_> {
+    fn attributes(&self) -> &Attributes {
+        &self.attributes
     }
 }
 

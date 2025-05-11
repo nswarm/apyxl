@@ -16,8 +16,8 @@ pub use ty::*;
 pub use ty_alias::*;
 
 use crate::model;
-use crate::model::Chunk;
 use crate::model::chunk::ChunkFilter;
+use crate::model::Chunk;
 
 mod attributes;
 mod dto;
@@ -46,7 +46,7 @@ pub struct Model<'v, 'a> {
 pub struct Transforms {
     namespace: Vec<Box<dyn NamespaceTransform>>,
     dto: Vec<Box<dyn DtoTransform>>,
-    dto_field: Vec<Box<dyn FieldTransform>>,
+    field: Vec<Box<dyn FieldTransform>>,
     rpc: Vec<Box<dyn RpcTransform>>,
     rpc_param: Vec<Box<dyn FieldTransform>>,
     en: Vec<Box<dyn EnumTransform>>,
@@ -147,7 +147,7 @@ pub(crate) trait Transformer: Sized {
     }
 
     fn with_field_transform(mut self, xform: impl FieldTransform + 'static) -> Self {
-        self.xforms().dto_field.push(Box::new(xform));
+        self.xforms().field.push(Box::new(xform));
         self
     }
 
@@ -175,7 +175,7 @@ impl Transforms {
         self.dto.iter()
     }
     pub fn dto_field(&self) -> impl Iterator<Item = &Box<dyn FieldTransform>> {
-        self.dto_field.iter()
+        self.field.iter()
     }
     pub fn rpc(&self) -> impl Iterator<Item = &Box<dyn RpcTransform>> {
         self.rpc.iter()
@@ -199,11 +199,11 @@ mod tests {
     use std::borrow::Cow;
 
     use crate::model;
-    use crate::view::{
-        DtoTransform, EntityIdTransform, EnumTransform, EnumValueTransform,
-        FieldTransform, NamespaceTransform, RpcTransform,
-    };
     use crate::view::ty_alias::TypeAliasTransform;
+    use crate::view::{
+        DtoTransform, EntityIdTransform, EnumTransform, EnumValueTransform, FieldTransform,
+        NamespaceTransform, RpcTransform,
+    };
 
     #[derive(Default, Debug, Clone)]
     pub struct TestRenamer {}

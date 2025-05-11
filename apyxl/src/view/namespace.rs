@@ -7,7 +7,7 @@ use crate::model;
 use crate::model::entity::ToEntity;
 use crate::model::EntityType;
 use crate::view::ty_alias::TypeAlias;
-use crate::view::{Attributes, Dto, Enum, Rpc, Transforms};
+use crate::view::{Attributes, Dto, Enum, Field, Rpc, Transforms};
 
 /// A named, nestable wrapper for a set of API entities.
 /// Wraps [model::Namespace].
@@ -24,6 +24,7 @@ pub enum NamespaceChild<'v, 'a> {
     Rpc(Rpc<'v, 'a>),
     Enum(Enum<'v, 'a>),
     TypeAlias(TypeAlias<'v, 'a>),
+    Field(Field<'v, 'a>),
     Namespace(Namespace<'v, 'a>),
 }
 
@@ -59,6 +60,12 @@ pub trait NamespaceTransform: Debug + DynClone {
     fn filter_ty_alias(&self, _: &model::TypeAlias) -> bool {
         true
     }
+
+    /// `true`: included.
+    /// `false`: excluded.
+    fn filter_field(&self, _: &model::Field) -> bool {
+        true
+    }
 }
 
 dyn_clone::clone_trait_object!(NamespaceTransform);
@@ -66,14 +73,20 @@ dyn_clone::clone_trait_object!(NamespaceTransform);
 impl<'v, 'a> NamespaceChild<'v, 'a> {
     pub fn new(target: &'v model::NamespaceChild<'a>, xforms: &'v Transforms) -> Self {
         match target {
-            model::NamespaceChild::Dto(target) => NamespaceChild::Dto(Dto::new(target, &xforms)),
+            model::NamespaceChild::Dto(target) => NamespaceChild::Dto(Dto::new(target, xforms)),
             model::NamespaceChild::Namespace(target) => {
-                NamespaceChild::Namespace(Namespace::new(target, &xforms))
+                NamespaceChild::Namespace(Namespace::new(target, xforms))
             }
-            model::NamespaceChild::Enum(target) => NamespaceChild::Enum(Enum::new(target, &xforms)),
-            model::NamespaceChild::Rpc(target) => NamespaceChild::Rpc(Rpc::new(target, &xforms)),
+            model::NamespaceChild::Enum(target) => NamespaceChild::Enum(Enum::new(target, xforms)),
+            model::NamespaceChild::Rpc(target) => NamespaceChild::Rpc(Rpc::new(target, xforms)),
+            model::NamespaceChild::Field(target) => NamespaceChild::Field(Field::new(
+                target,
+                &xforms.field,
+                &xforms.entity_id,
+                &xforms.attr,
+            )),
             model::NamespaceChild::TypeAlias(target) => {
-                NamespaceChild::TypeAlias(TypeAlias::new(target, &xforms))
+                NamespaceChild::TypeAlias(TypeAlias::new(target, xforms))
             }
         }
     }
@@ -84,6 +97,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             NamespaceChild::Rpc(rpc) => rpc.name(),
             NamespaceChild::Enum(en) => en.name(),
             NamespaceChild::TypeAlias(alias) => alias.name(),
+            NamespaceChild::Field(field) => field.name(),
             NamespaceChild::Namespace(namespace) => namespace.name(),
         }
     }
@@ -94,6 +108,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             NamespaceChild::Rpc(rpc) => rpc.attributes(),
             NamespaceChild::Enum(en) => en.attributes(),
             NamespaceChild::TypeAlias(alias) => alias.attributes(),
+            NamespaceChild::Field(field) => field.attributes(),
             NamespaceChild::Namespace(namespace) => namespace.attributes(),
         }
     }
@@ -104,6 +119,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
             NamespaceChild::Rpc(rpc) => rpc.entity_type(),
             NamespaceChild::Enum(en) => en.entity_type(),
             NamespaceChild::TypeAlias(alias) => alias.entity_type(),
+            NamespaceChild::Field(field) => field.entity_type(),
             NamespaceChild::Namespace(namespace) => namespace.entity_type(),
         }
     }
@@ -240,8 +256,9 @@ impl<'v, 'a> Namespace<'v, 'a> {
             model::NamespaceChild::Dto(value) => self.filter_dto(value),
             model::NamespaceChild::Rpc(value) => self.filter_rpc(value),
             model::NamespaceChild::Enum(value) => self.filter_enum(value),
-            model::NamespaceChild::Namespace(value) => self.filter_namespace(value),
             model::NamespaceChild::TypeAlias(value) => self.filter_ty_alias(value),
+            model::NamespaceChild::Field(field) => self.filter_field(field),
+            model::NamespaceChild::Namespace(value) => self.filter_namespace(value),
         }
     }
 
@@ -270,6 +287,10 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .iter()
             .all(|x| x.filter_ty_alias(alias))
     }
+
+    fn filter_field(&self, field: &model::Field) -> bool {
+        self.xforms.namespace.iter().all(|x| x.filter_field(field))
+    }
 }
 
 #[cfg(test)]
@@ -279,7 +300,7 @@ mod tests {
     use crate::model::EntityId;
     use crate::test_util::executor::TestExecutor;
     use crate::view::tests::{TestFilter, TestRenamer};
-    use crate::view::{NamespaceChild, Transformer};
+    use crate::view::Transformer;
 
     #[test]
     fn name() {
@@ -473,16 +494,7 @@ mod tests {
         let view = model.view().with_namespace_transform(TestFilter {});
         let root = view.api();
 
-        let children = root
-            .children()
-            .map(|v| match v {
-                NamespaceChild::Dto(value) => value.name().to_string(),
-                NamespaceChild::Rpc(value) => value.name().to_string(),
-                NamespaceChild::Enum(value) => value.name().to_string(),
-                NamespaceChild::TypeAlias(value) => value.name().to_string(),
-                NamespaceChild::Namespace(value) => value.name().to_string(),
-            })
-            .collect_vec();
+        let children = root.children().map(|v| v.name().to_string()).collect_vec();
         assert_eq!(
             children,
             vec!["visible", "visible", "visible", "visible", "visible"]

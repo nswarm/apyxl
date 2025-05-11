@@ -144,8 +144,9 @@ impl EntityType {
                 | EntityType::Dto
                 | EntityType::Rpc
                 | EntityType::Enum
-                | EntityType::TypeAlias => true,
-                EntityType::Field | EntityType::Type | EntityType::None => false,
+                | EntityType::TypeAlias
+                | EntityType::Field => true,
+                EntityType::Type | EntityType::None => false,
             },
 
             EntityType::Dto => match ty {

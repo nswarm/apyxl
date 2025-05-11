@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 
 use crate::model;
+use crate::model::entity::ToEntity;
+use crate::model::EntityType;
 use crate::view::{AttributeTransform, Attributes, EntityIdTransform, TypeRef};
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
@@ -42,6 +44,10 @@ impl<'v, 'a> Field<'v, 'a> {
             x.name(&mut name)
         }
         name
+    }
+
+    pub fn entity_type(&self) -> EntityType {
+        self.target.entity_type()
     }
 
     pub fn ty(&self) -> TypeRef {

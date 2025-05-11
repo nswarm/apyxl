@@ -75,6 +75,9 @@ impl Dependencies {
                             .unwrap(),
                     );
                 }
+                NamespaceChild::Field(field) => {
+                    self.add_node(&namespace_id.child(EntityType::Field, field.name).unwrap());
+                }
                 NamespaceChild::Namespace(_) => {}
             }
         }

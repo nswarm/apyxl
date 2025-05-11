@@ -1,4 +1,5 @@
 use crate::model::api::entity::ToEntity;
+use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Attributes, Entity, EntityId};
 
@@ -33,6 +34,12 @@ impl<'a> Enum<'a> {
 impl ToEntity for Enum<'_> {
     fn to_entity(&self) -> Entity {
         Entity::Enum(self)
+    }
+}
+
+impl AttributesHolder for Enum<'_> {
+    fn attributes(&self) -> &Attributes {
+        &self.attributes
     }
 }
 

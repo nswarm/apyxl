@@ -1,6 +1,9 @@
 // feature: file dependencies
 use crate::service;
 
+// feature: namespace-level fields
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 // feature: dto
 pub struct PlatformInfo {
     // feature: primitives

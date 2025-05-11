@@ -1,4 +1,5 @@
 use crate::model;
+use crate::model::{Semantics, Type, TypeRef};
 use std::borrow::Cow;
 
 pub mod executor;
@@ -23,5 +24,28 @@ pub fn test_rpc(i: usize) -> model::Rpc<'static> {
     model::Rpc {
         name: NAMES[i],
         ..Default::default()
+    }
+}
+
+pub fn test_enum(i: usize) -> model::Enum<'static> {
+    model::Enum {
+        name: NAMES[i],
+        ..Default::default()
+    }
+}
+
+pub fn test_ty_alias(i: usize) -> model::TypeAlias<'static> {
+    model::TypeAlias {
+        name: NAMES[i],
+        target_ty: TypeRef::new(Type::U32, Semantics::Value),
+        attributes: Default::default(),
+    }
+}
+
+pub fn test_field(i: usize) -> model::Field<'static> {
+    model::Field {
+        name: NAMES[i],
+        ty: TypeRef::new(Type::U32, Semantics::Value),
+        attributes: Default::default(),
     }
 }

@@ -1,5 +1,6 @@
-use crate::model::entity::{EntityMut, FindEntity};
+use crate::model::entity::{EntityMut, FindEntity, ToEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, TypeRef};
+use crate::model::attributes::AttributesHolder;
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -7,6 +8,18 @@ pub struct Field<'a> {
     pub name: &'a str,
     pub ty: TypeRef,
     pub attributes: Attributes<'a>,
+}
+
+impl ToEntity for Field<'_> {
+    fn to_entity(&self) -> Entity {
+        Entity::Field(self)
+    }
+}
+
+impl AttributesHolder for Field<'_> {
+    fn attributes(&self) -> &Attributes {
+        &self.attributes
+    }
 }
 
 impl<'api> FindEntity<'api> for Field<'api> {
