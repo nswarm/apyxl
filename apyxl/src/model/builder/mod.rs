@@ -128,6 +128,7 @@ impl<'a> Builder<'a> {
 
         let (oks, mut errs): (Vec<_>, Vec<_>) = [
             validate::recurse_api(&self.api, validate::namespace_names),
+            validate::recurse_api(&self.api, validate::field_types),
             validate::recurse_api(&self.api, validate::dto_names),
             validate::recurse_api(&self.api, validate::dto_field_names),
             validate::recurse_api(&self.api, validate::dto_field_names_no_duplicates),
@@ -142,7 +143,7 @@ impl<'a> Builder<'a> {
             validate::recurse_api(&self.api, validate::enum_names),
             validate::recurse_api(&self.api, validate::enum_value_names),
             validate::recurse_api(&self.api, validate::no_duplicate_dto_enum_alias),
-            validate::recurse_api(&self.api, validate::no_duplicate_rpcs),
+            validate::recurse_api(&self.api, validate::no_duplicate_rpc_or_field),
             validate::recurse_api(&self.api, validate::no_duplicate_enum_value_names),
         ]
         .into_iter()
@@ -843,7 +844,7 @@ mod tests {
                 let result = build_from_input(&mut exe);
                 assert_contains_error(
                     &result,
-                    ValidationError::DuplicateRpc(EntityId::try_from("ns.r:rpc").unwrap()),
+                    ValidationError::DuplicateRpcOrField(EntityId::new_unqualified("ns.rpc")),
                 );
             }
 
@@ -861,6 +862,23 @@ mod tests {
                 assert_contains_error(
                     &result,
                     ValidationError::DuplicateDtoOrEnumOrAlias(EntityId::new_unqualified("ns.en")),
+                );
+            }
+
+            #[test]
+            fn fields() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        const field: u32 = 5;
+                        const field: &str = "";
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateRpcOrField(EntityId::new_unqualified("ns.field")),
                 );
             }
 
@@ -933,6 +951,23 @@ mod tests {
                 );
                 let result = build_from_input(&mut exe);
                 assert!(result.is_ok());
+            }
+
+            #[test]
+            fn rpc_field() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        fn thing() {}
+                        const thing: u32 = 5;
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateRpcOrField(EntityId::new_unqualified("ns.thing")),
+                );
             }
         }
 
@@ -1043,7 +1078,7 @@ mod tests {
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidFieldType(
+                    ValidationError::InvalidFieldOrParamType(
                         EntityId::try_from("d:dto").unwrap(),
                         "field1".to_string(),
                         expected_index,
@@ -1150,7 +1185,7 @@ mod tests {
                 let expected_index = 1;
                 assert_contains_error(
                     &result,
-                    ValidationError::InvalidFieldType(
+                    ValidationError::InvalidFieldOrParamType(
                         EntityId::try_from("r:rpc").unwrap(),
                         "param1".to_string(),
                         expected_index,
@@ -1467,6 +1502,25 @@ mod tests {
                 let model = exe.build();
 
                 assert_qualified_ty(&model.api, "ns2.r:rpc.return_ty", "ns0.ns1.enum:dep");
+            }
+
+            #[test]
+            fn field_type() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns0 {
+                        mod ns1 {
+                            enum dep {}
+                        }
+                    }
+                    mod ns2 {
+                        pub const field: ns0::ns1::dep = 0;
+                    }
+                "#,
+                );
+                let model = exe.build();
+
+                assert_qualified_ty(&model.api, "ns2.f:field.ty", "ns0.ns1.enum:dep");
             }
 
             #[test]

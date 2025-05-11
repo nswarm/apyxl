@@ -3,10 +3,10 @@ use std::borrow::Cow;
 use chumsky::prelude::*;
 use itertools::Itertools;
 
-use crate::model::{Attributes, Namespace, NamespaceChild};
+use crate::model::{Attributes, Field, Namespace, NamespaceChild};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
-use crate::parser::rust::{attributes, comment, dto, en, rpc, ty_alias, visibility};
+use crate::parser::rust::{attributes, comment, dto, en, rpc, ty, ty_alias, visibility};
 use crate::parser::util::keyword_ex;
 use crate::parser::Config;
 
@@ -51,9 +51,9 @@ pub fn children<'a>(
         rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
         en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
         ty_alias::parser(config).map(|(c, v)| Some((NamespaceChild::TypeAlias(c), v))),
+        field(config).map(|(c, v)| Some((NamespaceChild::Field(c), v))),
         namespace.map(|(c, v)| Some((NamespaceChild::Namespace(c), v))),
         impl_block(config).map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
-        const_var().map(|_| None),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
@@ -69,14 +69,36 @@ pub fn children<'a>(
     .then_ignore(comment::multi())
 }
 
-pub fn const_var<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
-    comment::multi()
-        .then(visibility::parser())
-        .then(just("const"))
-        .then(any().and_is(none_of(";")).repeated().slice())
-        .then(just(';'))
+fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
+    let end = just(';');
+    let initializer = just('=')
         .padded()
-        .ignored()
+        .then(any().and_is(end.not()).repeated().slice());
+    let field = keyword_ex("const")
+        .ignore_then(text::whitespace().at_least(1))
+        .ignore_then(text::ident())
+        .then_ignore(just(':').padded())
+        .then(ty::parser(config))
+        .then_ignore(initializer)
+        .then_ignore(end.padded());
+    comment::multi()
+        .then(attributes::attributes().padded())
+        .then(visibility::parser())
+        .then(field)
+        .map(|(((comments, user), visibility), (name, ty))| {
+            (
+                Field {
+                    name,
+                    ty,
+                    attributes: Attributes {
+                        comments,
+                        user,
+                        ..Default::default()
+                    },
+                },
+                visibility,
+            )
+        })
 }
 
 // Parses to a 'virtual' namespace that will be merged into the DTO with the same name.
@@ -86,7 +108,7 @@ pub fn impl_block(config: &Config) -> impl Parser<&str, Namespace, Error> {
     let children = choice((
         rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
         ty_alias::parser(config).map(|(c, v)| Some((NamespaceChild::TypeAlias(c), v))),
-        const_var().map(|_| None),
+        field(config).map(|(c, v)| Some((NamespaceChild::Field(c), v))),
     ))
     .recover_with(skip_then_retry_until(any().ignored(), just('}').ignored()))
     .map(|opt| match opt {
@@ -200,6 +222,36 @@ mod tests {
         assert_eq!(namespace.children.len(), 1);
         match &namespace.children[0] {
             NamespaceChild::Dto(dto) => assert_eq!(dto.name, "DtoName"),
+            _ => panic!("wrong child type"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn with_field() -> Result<()> {
+        let (namespace, _) = namespace::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            mod ns {
+                // comment
+                // comment
+                #[attr]
+                pub const field0: &str = "blahh";
+                // comment
+                const field1: &str = "blahh";
+            }
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(namespace.name, "ns");
+        assert_eq!(namespace.children.len(), 2);
+        match &namespace.children[0] {
+            NamespaceChild::Field(field) => assert_eq!(field.name, "field0"),
+            _ => panic!("wrong child type"),
+        }
+        match &namespace.children[1] {
+            NamespaceChild::Field(field) => assert_eq!(field.name, "field1"),
             _ => panic!("wrong child type"),
         }
         Ok(())
@@ -351,6 +403,7 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert!(namespace.is_virtual);
+        assert!(namespace.field("x").is_some());
         assert!(namespace.rpc("rpc").is_some());
         assert!(namespace.ty_alias("T").is_some());
         Ok(())
@@ -379,27 +432,25 @@ mod tests {
         Ok(())
     }
 
-    mod const_var {
-        use crate::parser::rust::namespace;
-        use crate::parser::test_util::wrap_test_err;
-        use anyhow::Result;
-        use chumsky::Parser;
+    #[test]
+    fn pub_field() -> Result<()> {
+        let (field, visibility) = namespace::field(&TEST_CONFIG)
+            .parse(r#"pub const field0: &str = "blahh";"#)
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(field.name, "field0");
+        assert!(matches!(visibility, Visibility::Public));
+        Ok(())
+    }
 
-        #[test]
-        fn public_const() -> Result<()> {
-            run_test("pub const ASDF: &[&str] = &[\"zz\", \"xx\"];")
-        }
-
-        #[test]
-        fn private_const() -> Result<()> {
-            run_test("const ASDF: &[&str] = &[\"zz\", \"xx\"];")
-        }
-
-        fn run_test(input: &'static str) -> Result<()> {
-            namespace::const_var()
-                .parse(input)
-                .into_result()
-                .map_err(wrap_test_err)
-        }
+    #[test]
+    fn private_field() -> Result<()> {
+        let (field, visibility) = namespace::field(&TEST_CONFIG)
+            .parse(r#"const field0: &str = "blahh";"#)
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(field.name, "field0");
+        assert!(matches!(visibility, Visibility::Private));
+        Ok(())
     }
 }

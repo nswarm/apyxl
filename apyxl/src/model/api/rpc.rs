@@ -1,4 +1,5 @@
 use crate::model::api::entity::ToEntity;
+use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Field, TypeRef};
 
@@ -24,6 +25,12 @@ impl<'a> Rpc<'a> {
 impl ToEntity for Rpc<'_> {
     fn to_entity(&self) -> Entity {
         Entity::Rpc(self)
+    }
+}
+
+impl AttributesHolder for Rpc<'_> {
+    fn attributes(&self) -> &Attributes {
+        &self.attributes
     }
 }
 

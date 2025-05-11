@@ -1,3 +1,4 @@
+use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity, ToEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, TypeRef};
 
@@ -12,6 +13,12 @@ pub struct TypeAlias<'a> {
 impl ToEntity for TypeAlias<'_> {
     fn to_entity(&self) -> Entity {
         Entity::TypeAlias(self)
+    }
+}
+
+impl AttributesHolder for TypeAlias<'_> {
+    fn attributes(&self) -> &Attributes {
+        &self.attributes
     }
 }
 

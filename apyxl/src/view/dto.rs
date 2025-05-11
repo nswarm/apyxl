@@ -51,7 +51,7 @@ impl<'v, 'a> Dto<'v, 'a> {
             .map(move |field| {
                 Field::new(
                     field,
-                    &self.xforms.dto_field,
+                    &self.xforms.field,
                     &self.xforms.entity_id,
                     &self.xforms.attr,
                 )

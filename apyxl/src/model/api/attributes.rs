@@ -13,6 +13,10 @@ pub struct Attributes<'a> {
     pub user: Vec<User<'a>>,
 }
 
+pub trait AttributesHolder {
+    fn attributes(&self) -> &Attributes;
+}
+
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Comment<'a> {
     lines: Vec<Cow<'a, str>>,

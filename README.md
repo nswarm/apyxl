@@ -1,8 +1,12 @@
 [![Rust](https://github.com/nswarm/apyxl/actions/workflows/rust.yml/badge.svg)](https://github.com/nswarm/apyxl/actions/workflows/rust.yml)
+
 # apyxl
-apyxl is a command line tool that uses an API defined by an Interface Definition Language (IDL), and generates corresponding API code in many output languages (or other such artifacts).
+
+apyxl is a command line tool that uses an API defined by an Interface Definition Language (IDL), and generates
+corresponding API code in many output languages (or other such artifacts).
 
 Example use cases for apyxl include:
+
 - generating API bindings for SDKs in different languages with the same target API
 - generating cross-language interop code e.g. between a Rust library and a C#
 - generating documentation for an API
@@ -22,6 +26,7 @@ See [Architecture](#architecture) for more depth.
 ## Usage
 
 apyxl can be used in two ways, and has examples for each:
+
 - Command line interface: [examples](examples)
 - Rust library: [examples](apyxl/examples)
 
@@ -30,14 +35,16 @@ apyxl can be used in two ways, and has examples for each:
 ### Parser: Rust
 
 Notes:
+
 - Only parses `pub` definitions unless the parser config `enable_parse_private` is set to `true`.
-- Ignores `use` declarations.
 - Ignores anything inside the body of functions.
 - `self` fn params are parsed as `Type::User("self", <type>)` where `<type>` is one of `self, &self, &mut self`
+- fails to parse lifetimes on references anywhere
 
 ### Generator: Rust
 
 Notes:
+
 - Generates RPCs as functions without bodies.
 
 # Customizing
@@ -46,7 +53,8 @@ apyxl is built to support users writing their own **parsers** and **generators**
 
 ## Writing a Parser
 
-See the [rust parser](apyxl/src/parser/rust) for a complete example using [chumsky](https://github.com/zesterer/chumsky). 
+See the [rust parser](apyxl/src/parser/rust) for a complete example
+using [chumsky](https://github.com/zesterer/chumsky).
 
 apyxl parsers can be written however you want, as long as they implement the trait [Parser](apyxl/src/parser/mod.rs).
 If you're parsing a programming language or IDL, the included library [chumsky](https://github.com/zesterer/chumsky) is
@@ -66,34 +74,38 @@ your Parser implementation.
 This is a list of things to keep in mind when writing a parser.
 
 - Support all relevant [API model structs](apyxl/src/model/api)
-  - Namespaces
-  - DTOs, fields
-  - RPCs, params, return types
-  - Enums
-  - Type aliases
-  - Nested types (e.g. other types inside DTOs)
-  - Imports/includes
-  - Comments (see [Attributes](apyxl/src/model/api/attributes))
-  - Types including primitives, arrays, maps, optionals
-  - [User types](#user-types)
-  - [User attributes](#user-attributes)
+    - Namespaces
+    - Namespace-level fields
+    - DTOs, fields
+    - RPCs, params, return types
+    - Enums
+    - Type aliases
+    - Nested types (e.g. other types inside DTOs)
+    - Imports/includes
+    - Comments (see [Attributes](apyxl/src/model/api/attributes))
+    - Types including primitives, arrays, maps, optionals
+    - [User types](#user-types)
+    - [User attributes](#user-attributes)
 - [Chunks](#api-builder)
 
 ### API Builder
 
-API sources are typically split up into multiple files. **Chunks** are an abstraction around that idea that leave the door
+API sources are typically split up into multiple files. **Chunks** are an abstraction around that idea that leave the
+door
 open to receiving chunks from a source other than files, but you can just think of them as files. :)
 
 The [api::Builder](apyxl/src/model/builder/mod.rs) is a temporary collector for the chunks of your API. Each time you
 finish parsing a chunk, you merge it into the `Builder`.
 
 Once you have finished parsing the entire API, call `Builder::build()`. This method:
+
 - Dedupes namespaces, i.e. creates a unified view of the entire API without chunk divisions
 - [optionally] Prints the full API before validation (See [Debugging Validation Errors](#debugging-validation-errors))
 - Performs a host of validations like checking for duplicate definitions and ensuring all types are valid primitives
-or exist within the API.
+  or exist within the API.
 - Fully qualifies all types within the API.
-- Adds the fully-qualified `entity_id` the `Attributes` of each Entity for access (and transformation) during generation.
+- Adds the fully-qualified `entity_id` the `Attributes` of each Entity for access (and transformation) during
+  generation.
 
 ### User Types
 
@@ -124,6 +136,7 @@ Many languages have a way to specify custom attributes or annotations on various
 generators.
 
 These support various use cases e.g.:
+
 ```rust
 #[name_only, list(a, b, c), map(a=1, b=2, c=3)]
 struct Dto {}
@@ -134,7 +147,7 @@ struct Dto {}
 Parser config is optional configuration that parsers need to accept to support certain built-in features.
 Parser config needs to be implemented individually in each Parser.
 
-Parser config can be supplied to the CLI as a json file. 
+Parser config can be supplied to the CLI as a json file.
 
 See the struct `parser::Config` for more info.
 
@@ -162,7 +175,8 @@ instantiate your Generator implementation.
 ### Views
 
 [Views](apyxl/src/view) are a set of structs that mirror the model, and provide an immutable view into the model. The
-most important difference is that views can be [transformed](#transforms) to alter their view of the model, e.g. by filtering or
+most important difference is that views can be [transformed](#transforms) to alter their view of the model, e.g. by
+filtering or
 applying text casing changes, without modifying the model itself for other generators.
 
 A built-in example of views is `view::Model::api_chunked_iter`, which provides an iterator over a set of views mapped
@@ -191,6 +205,7 @@ anytime you write type, and if it is an alias, write the `TypeAlias::target_ty()
 ### Attributes
 
 Many entities have `Attributes`, which include metadata such as:
+
 - Language-specific attributes or annotations applied within the parsed source
 - Comments associated with the Entity
 - Their full `EntityId` within the API

@@ -56,7 +56,8 @@ impl Api<'_> {
                     let is_dto = namespace.find_dto(find_ty).is_some();
                     let is_enum = namespace.find_enum(find_ty).is_some();
                     let is_alias = namespace.find_ty_alias(find_ty).is_some();
-                    if is_dto || is_enum | is_alias {
+                    let is_field = namespace.find_field(find_ty).is_some();
+                    if is_dto || is_enum | is_alias | is_field {
                         let mut id = iter;
                         let len = find_ty.len();
                         for (i, name) in find_ty.component_names().enumerate() {
@@ -66,8 +67,10 @@ impl Api<'_> {
                                 EntityType::Dto
                             } else if is_enum {
                                 EntityType::Enum
-                            } else {
+                            } else if is_alias {
                                 EntityType::TypeAlias
+                            } else {
+                                EntityType::Field
                             };
                             // unwrap ok: the find^ calls verify it already.
                             id = id.child(ty, name).unwrap();
@@ -76,10 +79,7 @@ impl Api<'_> {
                     }
                 }
             }
-            iter = match iter.parent() {
-                None => return None,
-                Some(id) => id,
-            }
+            iter = iter.parent()?
         }
     }
 }
@@ -197,6 +197,24 @@ mod tests {
             &initial_namespace,
             &find_id,
             Some(EntityId::try_from("ns0.ns1.a:alias").unwrap()),
+        );
+    }
+
+    #[test]
+    fn field_from_ns() {
+        let initial_namespace = EntityId::new_unqualified("ns0");
+        let find_id = EntityId::new_unqualified("ns1.field");
+        run_test(
+            r#"
+            mod ns0 {
+                mod ns1 {
+                    const field: u32 = 5;
+                }
+            }
+            "#,
+            &initial_namespace,
+            &find_id,
+            Some(EntityId::try_from("ns0.ns1.f:field").unwrap()),
         );
     }
 

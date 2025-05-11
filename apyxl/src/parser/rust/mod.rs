@@ -335,12 +335,13 @@ mod tests {
         // rpc comment
         pub fn rpc() {}
         // zzz
-        const ignored: &[&str] = &["zz", "xx"];
+        pub const field: &str = "blah";
         // alias comment
         type private_alias = u32;
         // alias comment
         pub type alias = u32;
         fn private_rpc() {}
+        const private_field: u32 = 5;
         pub enum en {}
         enum private_en {}
         pub struct dto {}
@@ -350,7 +351,6 @@ mod tests {
         struct private_dto {}
         pub mod namespace {}
         mod private_namespace {}
-        pub const asjkdhflakjshdg ignored var;
         // end comment ignored
         "#,
         );
@@ -361,11 +361,16 @@ mod tests {
         assert!(model.api().dto("dto").is_some(), "dto");
         assert!(model.api().rpc("rpc").is_some(), "rpc");
         assert!(model.api().en("en").is_some(), "en");
+        assert!(model.api().field("field").is_some(), "field");
         assert!(model.api().ty_alias("alias").is_some(), "alias");
         assert!(model.api().namespace("namespace").is_some(), "namespace");
         assert!(model.api().dto("private_dto").is_some(), "private_dto");
         assert!(model.api().rpc("private_rpc").is_some(), "private_rpc");
         assert!(model.api().en("private_en").is_some(), "private_en");
+        assert!(
+            model.api().field("private_field").is_some(),
+            "private_field"
+        );
         assert!(
             model.api().ty_alias("private_alias").is_some(),
             "private_alias"

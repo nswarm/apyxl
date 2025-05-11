@@ -3,8 +3,9 @@ use std::borrow::Cow;
 use itertools::Itertools;
 
 use crate::model::api::entity::{Entity, EntityType, ToEntity};
+use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
-use crate::model::{Attributes, Dto, EntityId, Enum, Rpc, TypeAlias};
+use crate::model::{Attributes, Dto, EntityId, Enum, Field, Rpc, TypeAlias};
 
 /// A named, nestable wrapper for a set of API entities.
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -21,6 +22,7 @@ pub struct Namespace<'a> {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum NamespaceChild<'a> {
+    Field(Field<'a>),
     Dto(Dto<'a>),
     Rpc(Rpc<'a>),
     Enum(Enum<'a>),
@@ -34,6 +36,12 @@ impl ToEntity for Namespace<'_> {
     }
 }
 
+impl AttributesHolder for Namespace<'_> {
+    fn attributes(&self) -> &Attributes {
+        &self.attributes
+    }
+}
+
 impl<'api> FindEntity<'api> for Namespace<'api> {
     fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
@@ -43,8 +51,9 @@ impl<'api> FindEntity<'api> for Namespace<'api> {
                 EntityType::Rpc => self.rpc(&name).and_then(|x| x.find_entity(id)),
                 EntityType::Enum => self.en(&name).and_then(|x| x.find_entity(id)),
                 EntityType::TypeAlias => self.ty_alias(&name).and_then(|x| x.find_entity(id)),
+                EntityType::Field => self.field(&name).and_then(|x| x.find_entity(id)),
 
-                EntityType::None | EntityType::Field | EntityType::Type => None,
+                EntityType::None | EntityType::Type => None,
             }
         } else {
             Some(Entity::Namespace(self))
@@ -63,8 +72,9 @@ impl<'api> FindEntity<'api> for Namespace<'api> {
                 EntityType::TypeAlias => {
                     self.ty_alias_mut(&name).and_then(|x| x.find_entity_mut(id))
                 }
+                EntityType::Field => self.field_mut(&name).and_then(|x| x.find_entity_mut(id)),
 
-                EntityType::None | EntityType::Field | EntityType::Type => None,
+                EntityType::None | EntityType::Type => None,
             }
         } else {
             Some(EntityMut::Namespace(self))
@@ -74,7 +84,7 @@ impl<'api> FindEntity<'api> for Namespace<'api> {
 
 impl<'a> Namespace<'a> {
     /// Perform a simple merge of [Namespace] `other` into this [Namespace] by adding all of
-    /// `other`'s children to to this [Namespace]'s children. `other`'s name is ignored. This may
+    /// `other`'s children to this [Namespace]'s children. `other`'s name is ignored. This may
     /// result in duplicate children.
     pub fn merge(&mut self, mut other: Namespace<'a>) {
         self.children.append(&mut other.children);
@@ -107,6 +117,13 @@ impl<'a> Namespace<'a> {
     /// in duplicates.
     pub fn add_ty_alias(&mut self, alias: TypeAlias<'a>) {
         self.children.push(NamespaceChild::TypeAlias(alias));
+    }
+
+    /// Add the [Field] `field` as a child of this [Namespace].
+    /// No validation is performed to ensure the [Field] does not already exist, which may result
+    /// in duplicates.
+    pub fn add_field(&mut self, field: Field<'a>) {
+        self.children.push(NamespaceChild::Field(field));
     }
 
     /// Add the [Namespace] `namespace` as a child of this [Namespace].
@@ -183,6 +200,22 @@ impl<'a> Namespace<'a> {
     pub fn ty_alias_mut(&mut self, name: &str) -> Option<&mut TypeAlias<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::TypeAlias(alias) if alias.name == name => Some(alias),
+            _ => None,
+        })
+    }
+
+    /// Get a [Field] within this [Namespace] by name.
+    pub fn field(&self, name: &str) -> Option<&Field<'a>> {
+        self.children.iter().find_map(|s| match s {
+            NamespaceChild::Field(value) if value.name == name => Some(value),
+            _ => None,
+        })
+    }
+
+    /// Get a mutable [Field] within this [Namespace] by name.
+    pub fn field_mut(&mut self, name: &str) -> Option<&mut Field<'a>> {
+        self.children.iter_mut().find_map(|s| match s {
+            NamespaceChild::Field(value) if value.name == name => Some(value),
             _ => None,
         })
     }
@@ -284,6 +317,28 @@ impl<'a> Namespace<'a> {
     pub fn ty_aliases_mut(&mut self) -> impl Iterator<Item = &mut TypeAlias<'a>> {
         self.children.iter_mut().filter_map(|child| {
             if let NamespaceChild::TypeAlias(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Iterate over all [Field]s within this [Namespace].
+    pub fn fields(&self) -> impl Iterator<Item = &Field<'a>> {
+        self.children.iter().filter_map(|child| {
+            if let NamespaceChild::Field(value) = child {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Iterate over all [Field]s mutably within this [Namespace].
+    pub fn fields_mut(&mut self) -> impl Iterator<Item = &mut Field<'a>> {
+        self.children.iter_mut().filter_map(|child| {
+            if let NamespaceChild::Field(value) = child {
                 Some(value)
             } else {
                 None
@@ -432,6 +487,26 @@ impl<'a> Namespace<'a> {
         }
     }
 
+    /// Find a [Field] by [EntityId] relative to this [Namespace].
+    pub fn find_field(&self, entity_id: &EntityId) -> Option<&Field<'a>> {
+        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.field(&name),
+            _ => None,
+        }
+    }
+
+    /// Find a mutable [Field] by [EntityId] relative to this [Namespace].
+    pub fn find_field_mut(&mut self, entity_id: &EntityId) -> Option<&mut Field<'a>> {
+        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
+        let name = unqualified_name(&entity_id);
+        match (namespace, name) {
+            (Some(namespace), Some(name)) => namespace.field_mut(&name),
+            _ => None,
+        }
+    }
+
     /// Find a [Namespace] by [EntityId] relative to this [Namespace].
     /// If the type ref is empty, this [Namespace] will be returned.
     pub fn find_namespace(&self, entity_id: &EntityId) -> Option<&Namespace<'a>> {
@@ -480,6 +555,7 @@ impl<'a> NamespaceChild<'a> {
             NamespaceChild::Enum(en) => &en.name,
             NamespaceChild::Namespace(namespace) => &namespace.name,
             NamespaceChild::TypeAlias(alias) => &alias.name,
+            NamespaceChild::Field(field) => &field.name,
         }
     }
 
@@ -490,6 +566,7 @@ impl<'a> NamespaceChild<'a> {
             NamespaceChild::Enum(en) => &en.attributes,
             NamespaceChild::Namespace(namespace) => &namespace.attributes,
             NamespaceChild::TypeAlias(alias) => &alias.attributes,
+            NamespaceChild::Field(field) => &field.attributes,
         }
     }
 
@@ -500,6 +577,7 @@ impl<'a> NamespaceChild<'a> {
             NamespaceChild::Enum(en) => &mut en.attributes,
             NamespaceChild::Namespace(namespace) => &mut namespace.attributes,
             NamespaceChild::TypeAlias(alias) => &mut alias.attributes,
+            NamespaceChild::Field(field) => &mut field.attributes,
         }
     }
 
@@ -516,6 +594,7 @@ impl ToEntity for NamespaceChild<'_> {
             NamespaceChild::Enum(en) => en.to_entity(),
             NamespaceChild::Namespace(namespace) => namespace.to_entity(),
             NamespaceChild::TypeAlias(alias) => alias.to_entity(),
+            NamespaceChild::Field(field) => field.to_entity(),
         }
     }
 }
@@ -540,9 +619,12 @@ fn unqualified_namespace(id: &EntityId) -> EntityId {
 mod tests {
     use std::path::PathBuf;
 
+    use crate::model::attributes::AttributesHolder;
     use crate::model::{chunk, Api, EntityId, Namespace};
     use crate::test_util::executor::TestExecutor;
-    use crate::test_util::{test_dto, test_namespace, test_rpc};
+    use crate::test_util::{
+        test_dto, test_enum, test_field, test_namespace, test_rpc, test_ty_alias,
+    };
 
     #[test]
     fn merge() {
@@ -551,6 +633,9 @@ mod tests {
             fn rpc0() {}
             struct dto0 {}
             mod nested0 {}
+            enum en0 {}
+            type alias0 = u32;
+            const field0: u32 = 5;
         "#,
         );
         let mut ns0 = exe0.api();
@@ -560,6 +645,9 @@ mod tests {
             fn rpc1() {}
             struct dto1 {}
             mod nested1 {}
+            enum en1 {}
+            type alias1 = u32;
+            const field1: u32 = 5;
         "#,
         );
         let ns1 = exe1.api();
@@ -568,12 +656,21 @@ mod tests {
         assert_eq!(ns0.dtos().count(), 2);
         assert_eq!(ns0.rpcs().count(), 2);
         assert_eq!(ns0.namespaces().count(), 2);
+        assert_eq!(ns0.enums().count(), 2);
+        assert_eq!(ns0.ty_aliases().count(), 2);
+        assert_eq!(ns0.fields().count(), 2);
         assert!(ns0.dto("dto0").is_some());
-        assert!(ns0.dto("dto1").is_some());
         assert!(ns0.rpc("rpc0").is_some());
-        assert!(ns0.rpc("rpc1").is_some());
         assert!(ns0.namespace("nested0").is_some());
+        assert!(ns0.en("en0").is_some());
+        assert!(ns0.ty_alias("alias0").is_some());
+        assert!(ns0.field("field0").is_some());
+        assert!(ns0.dto("dto1").is_some());
+        assert!(ns0.rpc("rpc1").is_some());
         assert!(ns0.namespace("nested1").is_some());
+        assert!(ns0.en("en1").is_some());
+        assert!(ns0.ty_alias("alias1").is_some());
+        assert!(ns0.field("field1").is_some());
     }
 
     mod take_namespaces {
@@ -621,72 +718,52 @@ mod tests {
 
     mod add_get {
         use crate::model::api::namespace::tests::{complex_api, complex_namespace};
-        use crate::test_util::{test_dto, test_rpc, NAMES};
+        use crate::test_util::{test_dto, test_enum, test_field, test_rpc, test_ty_alias, NAMES};
 
-        #[test]
-        fn dto() {
-            let mut api = complex_api();
-            assert_eq!(api.dto(NAMES[1]), Some(test_dto(1)).as_ref());
-            assert_eq!(api.dto(NAMES[2]), Some(test_dto(2)).as_ref());
-            assert_eq!(api.dto_mut(NAMES[1]), Some(test_dto(1)).as_mut());
-            assert_eq!(api.dto_mut(NAMES[2]), Some(test_dto(2)).as_mut());
+        macro_rules! test {
+            ($name:ident, $get:ident, $get_mut:ident, $create:ident) => {
+                #[test]
+                fn $name() {
+                    let mut api = complex_api();
+                    assert_eq!(api.$get(NAMES[1]), Some($create(1)).as_ref());
+                    assert_eq!(api.$get(NAMES[2]), Some($create(2)).as_ref());
+                    assert_eq!(api.$get_mut(NAMES[1]), Some($create(1)).as_mut());
+                    assert_eq!(api.$get_mut(NAMES[2]), Some($create(2)).as_mut());
+                }
+            };
         }
 
-        #[test]
-        fn rpc() {
-            let mut api = complex_api();
-            assert_eq!(api.rpc(NAMES[1]), Some(test_rpc(1)).as_ref());
-            assert_eq!(api.rpc(NAMES[2]), Some(test_rpc(2)).as_ref());
-            assert_eq!(api.rpc_mut(NAMES[1]), Some(test_rpc(1)).as_mut());
-            assert_eq!(api.rpc_mut(NAMES[2]), Some(test_rpc(2)).as_mut());
-        }
-
-        #[test]
-        fn namespace() {
-            let mut api = complex_api();
-            assert_eq!(api.namespace(NAMES[1]), Some(complex_namespace(1)).as_ref());
-            assert_eq!(api.namespace(NAMES[2]), Some(complex_namespace(2)).as_ref());
-            assert_eq!(
-                api.namespace_mut(NAMES[1]),
-                Some(complex_namespace(1)).as_mut()
-            );
-            assert_eq!(
-                api.namespace_mut(NAMES[2]),
-                Some(complex_namespace(2)).as_mut()
-            );
-        }
+        test!(dto, dto, dto_mut, test_dto);
+        test!(rpc, rpc, rpc_mut, test_rpc);
+        test!(namespace, namespace, namespace_mut, complex_namespace);
+        test!(en, en, en_mut, test_enum);
+        test!(ty_alias, ty_alias, ty_alias_mut, test_ty_alias);
+        test!(field, field, field_mut, test_field);
     }
 
     mod iter {
         use crate::model::api::namespace::tests::{complex_api, complex_namespace};
-        use crate::test_util::{test_dto, test_rpc};
+        use crate::test_util::{test_dto, test_enum, test_field, test_rpc, test_ty_alias};
 
-        #[test]
-        fn dtos() {
-            let api = complex_api();
-            assert_eq!(
-                api.dtos().collect::<Vec<_>>(),
-                vec![&test_dto(1), &test_dto(2)]
-            );
+        macro_rules! test {
+            ($name:ident, $create:ident) => {
+                #[test]
+                fn $name() {
+                    let api = complex_api();
+                    assert_eq!(
+                        api.$name().collect::<Vec<_>>(),
+                        vec![&$create(1), &$create(2)]
+                    );
+                }
+            };
         }
 
-        #[test]
-        fn rpcs() {
-            let api = complex_api();
-            assert_eq!(
-                api.rpcs().collect::<Vec<_>>(),
-                vec![&test_rpc(1), &test_rpc(2)]
-            );
-        }
-
-        #[test]
-        fn namespaces() {
-            let api = complex_api();
-            assert_eq!(
-                api.namespaces().collect::<Vec<_>>(),
-                vec![&complex_namespace(1), &complex_namespace(2)]
-            );
-        }
+        test!(dtos, test_dto);
+        test!(rpcs, test_rpc);
+        test!(namespaces, complex_namespace);
+        test!(enums, test_enum);
+        test!(ty_aliases, test_ty_alias);
+        test!(fields, test_field);
     }
 
     mod find {
@@ -694,37 +771,34 @@ mod tests {
 
         use crate::model::api::namespace::tests::{complex_api, complex_namespace};
         use crate::model::EntityId;
-        use crate::test_util::{test_dto, test_namespace, test_rpc, NAMES};
+        use crate::test_util::{
+            test_dto, test_enum, test_field, test_namespace, test_rpc, test_ty_alias, NAMES,
+        };
 
-        #[test]
-        fn dto() {
-            let mut api = complex_api();
-            let entity_id1 = EntityId::new_unqualified(test_dto(1).name);
-            let entity_id2 = EntityId::new_unqualified(test_dto(2).name);
-            assert_eq!(api.find_dto(&entity_id1), Some(&test_dto(1)));
-            assert_eq!(api.find_dto_mut(&entity_id2), Some(&mut test_dto(2)));
+        macro_rules! test {
+            ($name:ident, $find:ident, $find_mut:ident, $create:ident) => {
+                #[test]
+                fn $name() {
+                    let mut api = complex_api();
+                    let entity_id1 = EntityId::new_unqualified(&$create(1).name);
+                    let entity_id2 = EntityId::new_unqualified(&$create(2).name);
+                    assert_eq!(api.$find(&entity_id1), Some(&$create(1)));
+                    assert_eq!(api.$find_mut(&entity_id2), Some(&mut $create(2)));
+                }
+            };
         }
 
-        #[test]
-        fn rpc() {
-            let mut api = complex_api();
-            let entity_id1 = EntityId::new_unqualified(test_dto(1).name);
-            let entity_id2 = EntityId::new_unqualified(test_dto(2).name);
-            assert_eq!(api.find_rpc(&entity_id1), Some(&test_rpc(1)),);
-            assert_eq!(api.find_rpc_mut(&entity_id2), Some(&mut test_rpc(2)),);
-        }
-
-        #[test]
-        fn namespace() {
-            let mut api = complex_api();
-            let entity_id1 = EntityId::new_unqualified(&complex_namespace(1).name);
-            let entity_id2 = EntityId::new_unqualified(&complex_namespace(2).name);
-            assert_eq!(api.find_namespace(&entity_id1), Some(&complex_namespace(1)));
-            assert_eq!(
-                api.find_namespace_mut(&entity_id2),
-                Some(&mut complex_namespace(2))
-            );
-        }
+        test!(dto, find_dto, find_dto_mut, test_dto);
+        test!(rpc, find_rpc, find_rpc_mut, test_rpc);
+        test!(
+            namespace,
+            find_namespace,
+            find_namespace_mut,
+            complex_namespace
+        );
+        test!(en, find_enum, find_enum_mut, test_enum);
+        test!(ty_alias, find_ty_alias, find_ty_alias_mut, test_ty_alias);
+        test!(field, find_field, find_field_mut, test_field);
 
         #[test]
         fn child() {
@@ -787,9 +861,15 @@ mod tests {
                         mod ns1 {
                             struct dto {}
                             fn rpc() {}
+                            enum en {}
+                            type alias = u32;
+                            const field: u32 = 0;
                         }
                         struct dto {}
                         fn rpc() {}
+                        enum en {}
+                        type alias = u32;
+                        const field: u32 = 0;
                     }
                 "#,
         );
@@ -803,56 +883,41 @@ mod tests {
                     .relative_file_paths
                     .push(expected_chunk.clone())
             });
+        let entity_id = EntityId::new_unqualified("ns0.ns1");
+        let expected = vec![expected_chunk.clone()];
         assert_eq!(
-            api.find_namespace(&EntityId::new_unqualified("ns0.ns1"))
-                .unwrap()
-                .attributes
-                .chunk
-                .as_ref()
-                .unwrap()
-                .relative_file_paths,
-            vec![expected_chunk.clone()]
+            file_paths(api.find_namespace(&entity_id).unwrap()),
+            expected
         );
-        assert_eq!(
-            api.find_dto(&EntityId::new_unqualified("ns0.dto"))
-                .unwrap()
-                .attributes
-                .chunk
-                .as_ref()
-                .unwrap()
-                .relative_file_paths,
-            vec![expected_chunk.clone()]
-        );
-        assert_eq!(
-            api.find_rpc(&EntityId::new_unqualified("ns0.rpc"))
-                .unwrap()
-                .attributes
-                .chunk
-                .as_ref()
-                .unwrap()
-                .relative_file_paths,
-            vec![expected_chunk.clone()]
-        );
-        assert_eq!(
-            api.find_dto(&EntityId::new_unqualified("ns0.ns1.dto"))
-                .unwrap()
-                .attributes
-                .chunk
-                .as_ref()
-                .unwrap()
-                .relative_file_paths,
-            vec![expected_chunk.clone()]
-        );
-        assert_eq!(
-            api.find_rpc(&EntityId::new_unqualified("ns0.ns1.rpc"))
-                .unwrap()
-                .attributes
-                .chunk
-                .as_ref()
-                .unwrap()
-                .relative_file_paths,
-            vec![expected_chunk.clone()]
-        );
+        let entity_id = EntityId::new_unqualified("ns0.dto");
+        assert_eq!(file_paths(api.find_dto(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.ns1.dto");
+        assert_eq!(file_paths(api.find_dto(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.rpc");
+        assert_eq!(file_paths(api.find_rpc(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.ns1.rpc");
+        assert_eq!(file_paths(api.find_rpc(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.en");
+        assert_eq!(file_paths(api.find_enum(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.ns1.en");
+        assert_eq!(file_paths(api.find_enum(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.alias");
+        assert_eq!(file_paths(api.find_ty_alias(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.ns1.alias");
+        assert_eq!(file_paths(api.find_ty_alias(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.field");
+        assert_eq!(file_paths(api.find_field(&entity_id).unwrap()), expected);
+        let entity_id = EntityId::new_unqualified("ns0.ns1.field");
+        assert_eq!(file_paths(api.find_field(&entity_id).unwrap()), expected);
+    }
+
+    fn file_paths(holder: &impl AttributesHolder) -> &[PathBuf] {
+        &holder
+            .attributes()
+            .chunk
+            .as_ref()
+            .unwrap()
+            .relative_file_paths
     }
 
     fn complex_api() -> Api<'static> {
@@ -861,6 +926,12 @@ mod tests {
         api.add_dto(test_dto(2));
         api.add_rpc(test_rpc(1));
         api.add_rpc(test_rpc(2));
+        api.add_enum(test_enum(1));
+        api.add_enum(test_enum(2));
+        api.add_ty_alias(test_ty_alias(1));
+        api.add_ty_alias(test_ty_alias(2));
+        api.add_field(test_field(1));
+        api.add_field(test_field(2));
         api.add_namespace(complex_namespace(1));
         api.add_namespace(complex_namespace(2));
         api
@@ -872,6 +943,12 @@ mod tests {
         namespace.add_dto(test_dto(i + 3));
         namespace.add_rpc(test_rpc(i + 2));
         namespace.add_rpc(test_rpc(i + 3));
+        namespace.add_enum(test_enum(i + 2));
+        namespace.add_enum(test_enum(i + 3));
+        namespace.add_ty_alias(test_ty_alias(i + 2));
+        namespace.add_ty_alias(test_ty_alias(i + 3));
+        namespace.add_field(test_field(i + 2));
+        namespace.add_field(test_field(i + 3));
         namespace.add_namespace(test_namespace(i + 2));
         let mut deep_namespace = test_namespace(i + 3);
         deep_namespace.add_dto(test_dto(5));
