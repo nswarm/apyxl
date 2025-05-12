@@ -12,7 +12,7 @@ mod glob;
 mod stdin;
 
 /// An [Input] wraps some form of data retrieval and translates it to the format
-/// required by an apyxl [crate::Parser].
+/// required by an apyxl [crate].
 ///
 /// [Input] is built around the idea that data will come from a series of [Chunk]s, typically
 /// referring to individual files in a set of input files. [Chunk]s and their associated [Data]

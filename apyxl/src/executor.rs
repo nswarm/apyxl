@@ -9,7 +9,7 @@ use crate::generator::Generator;
 use crate::input::Input;
 use crate::model::ValidationError;
 use crate::output::Output;
-use crate::parser::Parser;
+use crate::Parser;
 use crate::{model, parser};
 
 type OutputPtr = Rc<RefCell<dyn Output>>;
@@ -158,7 +158,7 @@ mod tests {
     use crate::input::Input;
     use crate::model::{Api, Dto, NamespaceChild, UNDEFINED_NAMESPACE};
     use crate::output::Output;
-    use crate::parser::Parser;
+    use crate::Parser;
     use crate::{model, parser, view};
 
     mod execute {

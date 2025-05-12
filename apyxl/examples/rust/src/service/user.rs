@@ -1,8 +1,6 @@
 use crate::service::social;
 use std::collections::HashMap;
 
-type SpecialId = u32;
-
 #[derive(Default)]
 pub struct User {
     id: Id,

@@ -51,7 +51,9 @@ pub fn block_comment<'a>(
 /// ```
 /// would result in
 /// `vec!["i am", "    a multiline", "comment", ""]`
-pub fn line_comment<'a>(start: impl Parser<'a, &'a str, &'a str, Error<'a>>) -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
+pub fn line_comment<'a>(
+    start: impl Parser<'a, &'a str, &'a str, Error<'a>>,
+) -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
     let text = any().and_is(just('\n').not()).repeated().slice();
     let line_start = start.then(just(' ').or_not());
     let line = text::inline_whitespace()
@@ -80,18 +82,21 @@ pub fn multi<'a>(
     block_start: impl Parser<'a, &'a str, &'a str, Error<'a>>,
     block_end: impl Parser<'a, &'a str, &'a str, Error<'a>> + Clone,
 ) -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> {
-    single(line, block_start, block_end).padded().repeated().collect::<Vec<_>>()
+    single(line, block_start, block_end)
+        .padded()
+        .repeated()
+        .collect::<Vec<_>>()
 }
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-    use chumsky::Parser;
-    use chumsky::prelude::{choice, just};
     use crate::model::Comment;
     use crate::parser::comment;
     use crate::parser::error::Error;
     use crate::parser::test_util::wrap_test_err;
+    use anyhow::Result;
+    use chumsky::prelude::{choice, just};
+    use chumsky::Parser;
 
     #[test]
     fn empty_comment_err() {
@@ -178,17 +183,11 @@ mod tests {
     }
 
     fn line<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
-        choice((
-            just("///"),
-            just("//"),
-        ))
+        choice((just("///"), just("//")))
     }
 
     fn begin<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
-        choice((
-            just("/**"),
-            just("/*"),
-        ))
+        choice((just("/**"), just("/*")))
     }
 
     fn single<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {

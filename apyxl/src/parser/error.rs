@@ -1,4 +1,4 @@
-use crate::model::Chunk;
+use crate::parser::model::Chunk;
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Rich;
 use chumsky::extra;

@@ -1,15 +1,13 @@
-use crate::model::{Attributes, Field, Rpc, Semantics, Type, TypeRef};
-use crate::parser::csharp::visibility::Visibility;
-use crate::parser::csharp::{attributes, comment, expr_block, ty, visibility};
-use crate::parser::error::Error;
-use crate::parser::{util, Config};
+use crate::parser::visibility::Visibility;
+use crate::parser::{attributes, comment, expr_block, ty, visibility};
+use apyxl::model::{Attributes, Field, Rpc};
+use apyxl::parser::Config;
+use apyxl::parser::error::Error;
 use chumsky::prelude::*;
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
-    let return_type = choice((
-        just("void").map(|_| None),
-        ty::parser(config).map(|ty| Some(ty)),
-    )).then_ignore(text::whitespace().at_least(1));
+    let return_type = choice((just("void").map(|_| None), ty::parser(config).map(Some)))
+        .then_ignore(text::whitespace().at_least(1));
     let name = text::ident();
     let params = params(config).delimited_by(
         just('(').padded(),
@@ -74,11 +72,11 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{attributes, Comment, Semantics, Type, TypeRef};
-    use crate::parser::csharp::rpc;
-    use crate::parser::csharp::visibility::Visibility;
-    use crate::parser::test_util::wrap_test_err;
-    use crate::test_util::executor::TEST_CONFIG;
+    use crate::parser::rpc;
+    use crate::parser::visibility::Visibility;
+    use apyxl::model::{Comment, attributes};
+    use apyxl::parser::test_util::wrap_test_err;
+    use apyxl::test_util::executor::TEST_CONFIG;
 
     #[test]
     fn empty_fn() -> Result<()> {

@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
+use apyxl::model::Builder;
+use apyxl::Input;
 use clap::{Parser, ValueEnum};
 use itertools::Itertools;
 use std::path::PathBuf;
-use apyxl::Input;
-use apyxl::model::Builder;
 
 #[derive(Parser, Debug)]
 #[command(name = "apyxl", author, version, about)]
@@ -67,7 +67,7 @@ pub enum ParserName {
 
 pub enum ParserImpl {
     Rust(apyxl::parser::Rust),
-    CSharp(apyxl::parser::CSharp),
+    CSharp(csharp::Parser),
 }
 
 #[derive(ValueEnum, Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -99,13 +99,18 @@ impl ParserName {
     pub fn create_impl(&self) -> ParserImpl {
         match self {
             ParserName::Rust => ParserImpl::Rust(apyxl::parser::Rust::default()),
-            ParserName::CSharp => ParserImpl::CSharp(apyxl::parser::CSharp::default()),
+            ParserName::CSharp => ParserImpl::CSharp(csharp::Parser::default()),
         }
     }
 }
 
 impl apyxl::Parser for ParserImpl {
-    fn parse<'a, I: Input + 'a>(&self, config: &'a apyxl::parser::Config, input: &'a mut I, builder: &mut Builder<'a>) -> Result<()> {
+    fn parse<'a, I: Input + 'a>(
+        &self,
+        config: &'a apyxl::parser::Config,
+        input: &'a mut I,
+        builder: &mut Builder<'a>,
+    ) -> Result<()> {
         match self {
             ParserImpl::Rust(p) => p.parse(config, input, builder),
             ParserImpl::CSharp(p) => p.parse(config, input, builder),

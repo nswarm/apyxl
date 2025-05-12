@@ -1,7 +1,7 @@
-use crate::parser::error::Error;
-use crate::parser::{util, Config};
-use chumsky::{text, Parser};
+use apyxl::parser::error::Error;
+use apyxl::parser::{util, Config};
 use chumsky::primitive::choice;
+use chumsky::{text, Parser};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Visibility {
@@ -32,30 +32,28 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Visibility, Error<'a>> {
         util::keyword_ex("private"),
         util::keyword_ex("internal"),
     ))
-        .then_ignore(text::whitespace().at_least(1))
-        .map(|s| match s {
-            "public" => Visibility::Public,
-            "protected" => Visibility::Protected,
-            "private" => Visibility::Private,
-            "internal" => Visibility::Internal,
-            _ => unreachable!(),
-        })
-        .or_not()
-        // None = Private is not technically true, e.g. struct defaults public
-        .map(|o| o.unwrap_or_else(|| Visibility::Private))
+    .then_ignore(text::whitespace().at_least(1))
+    .map(|s| match s {
+        "public" => Visibility::Public,
+        "protected" => Visibility::Protected,
+        "private" => Visibility::Private,
+        "internal" => Visibility::Internal,
+        _ => unreachable!(),
+    })
+    .or_not()
+    // None = Private is not technically true, e.g. struct defaults public
+    .map(|o| o.unwrap_or_else(|| Visibility::Private))
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::visibility;
     use anyhow::Result;
     use chumsky::Parser;
-    use crate::parser::csharp::visibility;
 
     #[test]
     fn requires_whitespace() -> Result<()> {
-        let result = visibility::parser()
-            .parse("public")
-            .into_result();
+        let result = visibility::parser().parse("public").into_result();
         assert!(result.is_err());
         Ok(())
     }

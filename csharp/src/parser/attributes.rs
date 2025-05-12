@@ -1,8 +1,8 @@
 use chumsky::prelude::*;
 use std::borrow::Cow;
 
-use crate::model::attributes;
-use crate::parser::error::Error;
+use apyxl::parser::error::Error;
+use apyxl::model::attributes;
 
 pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, Error<'a>> {
     // todo doesn't quite work for all C# attrs.
@@ -42,10 +42,10 @@ pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, E
 mod tests {
     use chumsky::Parser;
 
-    use crate::model::attributes;
-    use crate::model::attributes::UserData;
-    use crate::parser::csharp::dto;
-    use crate::test_util::executor::TEST_CONFIG;
+    use crate::parser::dto;
+    use apyxl::test_util::executor::TEST_CONFIG;
+    use apyxl::model::attributes;
+    use apyxl::model::attributes::UserData;
 
     #[test]
     fn flags() {

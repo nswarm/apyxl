@@ -4,11 +4,10 @@ use anyhow::{anyhow, Result};
 use chumsky::prelude::*;
 use log::debug;
 
-use crate::model::{Api, UNDEFINED_NAMESPACE};
-use crate::parser::error::Error;
-use crate::parser::{error, util, Config};
-use crate::Parser as ApyxlParser;
-use crate::{model, Input};
+use apyxl::model::{Api, UNDEFINED_NAMESPACE};
+use apyxl::parser::error::Error;
+use apyxl::parser::{error, util, Config};
+use apyxl::{model, Input};
 
 mod attributes;
 mod comment;
@@ -22,9 +21,9 @@ mod ty_alias;
 mod visibility;
 
 #[derive(Default)]
-pub struct CSharp {}
+pub struct CSharpParser {}
 
-impl ApyxlParser for CSharp {
+impl apyxl::Parser for CSharpParser {
     fn parse<'a, I: Input + 'a>(
         &self,
         config: &'a Config,
@@ -72,11 +71,7 @@ impl ApyxlParser for CSharp {
 fn using<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
     util::keyword_ex("using")
         .then(text::whitespace().at_least(1))
-        .then(
-            text::ident()
-                .separated_by(just("."))
-                .collect::<Vec<_>>(),
-        )
+        .then(text::ident().separated_by(just(".")).collect::<Vec<_>>())
         .then(just(';'))
         .ignored()
 }
@@ -85,14 +80,14 @@ fn using<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
 mod tests {
     use anyhow::Result;
 
-    use crate::model::{Builder, Comment, UNDEFINED_NAMESPACE};
-    use crate::parser::Config;
-    use crate::test_util::executor::TEST_CONFIG;
-    use crate::{input, parser, Parser as ApyxlParser};
+    use apyxl::model::{Builder, UNDEFINED_NAMESPACE};
+    use apyxl::parser::Config;
+    use apyxl::test_util::executor::TEST_CONFIG;
+    use apyxl::{input, Parser};
+    use crate::parser::CSharpParser;
 
     #[test]
     fn root_namespace() -> Result<()> {
-
         // todo
         //
         // // zzz
@@ -125,14 +120,17 @@ mod tests {
         "#,
         );
         let mut builder = Builder::default();
-        parser::CSharp::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
+        CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
         let model = builder.build().unwrap();
         assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
         assert!(model.api().dto("dto").is_some(), "dto");
         assert!(model.api().rpc("rpc").is_some(), "rpc");
         assert!(model.api().en("en").is_some(), "en");
         // assert!(model.api().ty_alias("alias").is_some(), "alias");
-        assert!(model.api().namespace("SomeNamespace").is_some(), "SomeNamespace");
+        assert!(
+            model.api().namespace("SomeNamespace").is_some(),
+            "SomeNamespace"
+        );
         assert!(model.api().dto("private_dto").is_some(), "private_dto");
         assert!(model.api().rpc("private_rpc").is_some(), "private_rpc");
         assert!(model.api().en("private_en").is_some(), "private_en");
@@ -180,7 +178,7 @@ mod tests {
             enable_parse_private: false,
             ..Default::default()
         };
-        parser::CSharp::default().parse(&config, &mut input, &mut builder)?;
+        CSharpParser::default().parse(&config, &mut input, &mut builder)?;
         let model = builder.build().unwrap();
         assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
         let dto = model.api().dto("dto");
@@ -195,10 +193,11 @@ mod tests {
     }
 
     mod using_decl {
-        use crate::model::Builder;
-        use crate::test_util::executor::TEST_CONFIG;
-        use crate::{input, parser, Parser};
         use anyhow::Result;
+        use apyxl::model::Builder;
+        use apyxl::test_util::executor::TEST_CONFIG;
+        use apyxl::{input, Parser};
+        use crate::parser::CSharpParser;
 
         #[test]
         fn import() -> Result<()> {
@@ -213,7 +212,7 @@ mod tests {
         fn run_test(input: &str) -> Result<()> {
             let mut input = input::Buffer::new(input);
             let mut builder = Builder::default();
-            parser::CSharp::default().parse(&TEST_CONFIG, &mut input, &mut builder)
+            CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)
         }
     }
 }

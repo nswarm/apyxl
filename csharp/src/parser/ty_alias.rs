@@ -1,10 +1,10 @@
 use chumsky::prelude::*;
 
-use crate::model::{Attributes, TypeAlias};
-use crate::parser::error::Error;
-use crate::parser::csharp::visibility::Visibility;
-use crate::parser::csharp::{attributes, comment, ty, visibility};
-use crate::parser::{util, Config};
+use crate::parser::visibility::Visibility;
+use crate::parser::{attributes, comment, ty, visibility};
+use apyxl::model::{Attributes, TypeAlias};
+use apyxl::parser::error::Error;
+use apyxl::parser::{Config, util};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (TypeAlias, Visibility), Error> {
     let prefix = util::keyword_ex("type").then(text::whitespace().at_least(1));
@@ -39,11 +39,11 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{EntityId, Semantics, Type, TypeRef};
-    use crate::parser::csharp::ty_alias;
-    use crate::parser::csharp::visibility::Visibility;
-    use crate::parser::test_util::wrap_test_err;
-    use crate::test_util::executor::TEST_CONFIG;
+    use crate::parser::ty_alias;
+    use crate::parser::visibility::Visibility;
+    use apyxl::model::{EntityId, Semantics, Type, TypeRef};
+    use apyxl::parser::test_util::wrap_test_err;
+    use apyxl::test_util::executor::TEST_CONFIG;
 
     #[test]
     fn public() -> Result<()> {

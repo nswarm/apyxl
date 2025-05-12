@@ -3,12 +3,12 @@ use std::borrow::Cow;
 use chumsky::prelude::*;
 use itertools::Itertools;
 
-use crate::model::{Attributes, Namespace, NamespaceChild};
-use crate::parser::csharp::visibility::Visibility;
-use crate::parser::csharp::{attributes, comment, dto, en, rpc, ty_alias, visibility};
 use crate::parser::error::Error;
 use crate::parser::util::keyword_ex;
-use crate::parser::Config;
+use crate::parser::visibility::Visibility;
+use crate::parser::{attributes, comment, dto, en, rpc, visibility};
+use apyxl::model::{Attributes, Namespace, NamespaceChild};
+use apyxl::parser::Config;
 
 pub fn parser(config: &Config) -> impl Parser<&str, Namespace, Error> {
     recursive(|nested| {
@@ -22,7 +22,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, Namespace, Error> {
             .then(name)
             .then(body)
             .map(|(((comments, user), name), children)| {
-                (Namespace {
+                Namespace {
                     // todo this needs to return nested set of namespaces, not a namespace w/ name glommed together...
                     name: Cow::Owned(name.join(".")),
                     children,
@@ -32,7 +32,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, Namespace, Error> {
                         ..Default::default()
                     },
                     is_virtual: false,
-                })
+                }
             })
             .boxed()
     })
@@ -81,11 +81,10 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{attributes, Comment, NamespaceChild};
-    use crate::parser::csharp::namespace;
-    use crate::parser::csharp::visibility::Visibility;
-    use crate::parser::test_util::wrap_test_err;
-    use crate::test_util::executor::TEST_CONFIG;
+    use crate::parser::namespace;
+    use apyxl::model::{attributes, Comment, NamespaceChild};
+    use apyxl::parser::test_util::wrap_test_err;
+    use apyxl::test_util::executor::TEST_CONFIG;
 
     #[test]
     fn declaration() -> Result<()> {
@@ -270,39 +269,29 @@ mod tests {
     }
 
     mod const_var {
-        use crate::parser::csharp::namespace;
-        use crate::parser::test_util::wrap_test_err;
+        use crate::parser::namespace;
+        use apyxl::parser::test_util::wrap_test_err;
         use anyhow::Result;
         use chumsky::Parser;
 
         #[test]
         fn public_const() -> Result<()> {
-            run_test("public const string ASDF = \"blah\"")
+            run_test("public const string ASDF = \"blah\";")
         }
 
         #[test]
         fn public_static() -> Result<()> {
-            run_test("public const string ASDF = \"blah\"")
-        }
-
-        #[test]
-        fn public_static_const() -> Result<()> {
-            run_test("public const string ASDF = \"blah\"")
+            run_test("public static string ASDF = \"blah\";")
         }
 
         #[test]
         fn private_const() -> Result<()> {
-            run_test("private const ASDF = \"blah\"")
+            run_test("private const ASDF = \"blah\";")
         }
 
         #[test]
-        fn public_static() -> Result<()> {
-            run_test("public static string ASDF = \"blah\"")
-        }
-
-        #[test]
-        fn private_static_const() -> Result<()> {
-            run_test("private static const ASDF = \"blah\"")
+        fn private_static() -> Result<()> {
+            run_test("private static string ASDF = \"blah\";")
         }
 
         fn run_test(input: &'static str) -> Result<()> {
