@@ -1,0 +1,13 @@
+[package]
+name = "csharp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+apyxl = { workspace = true }
+anyhow = { workspace = true }
+chumsky = { workspace = true }
+ariadne = { workspace = true }
+log = { workspace = true }
+itertools = { workspace = true }
+lazy_static = { workspace = true }

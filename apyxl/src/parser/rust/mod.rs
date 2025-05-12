@@ -1,17 +1,15 @@
-use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::collections::HashSet;
-
 use anyhow::{anyhow, Result};
 use chumsky::container::Container;
 use chumsky::prelude::*;
 use log::debug;
+use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::collections::HashSet;
 
 use crate::model::{Api, EntityId, Namespace, NamespaceChild, Type, TypeRef, UNDEFINED_NAMESPACE};
 use crate::parser::rust::import::Import;
 use crate::parser::{error, Config};
-use crate::{model, Input};
-use crate::{rust_util, Parser as ApyxlParser};
+use crate::{model, rust_util, Input, Parser as ApyxlParser};
 
 mod attributes;
 mod comment;

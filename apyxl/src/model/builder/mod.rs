@@ -199,7 +199,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    #[cfg(test)]
+    /// Extract the api, mainly for tests. Use [`Self::build`] instead.
     pub fn into_api(self) -> Api<'a> {
         self.api
     }

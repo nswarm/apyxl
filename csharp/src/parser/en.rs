@@ -1,10 +1,10 @@
 use chumsky::prelude::*;
 
-use crate::model::{Attributes, Enum, EnumValue, EnumValueNumber};
 use crate::parser::error::Error;
-use crate::parser::csharp::visibility::Visibility;
-use crate::parser::csharp::{attributes, comment, visibility};
-use crate::parser::util;
+use crate::parser::visibility::Visibility;
+use crate::parser::{attributes, comment, visibility};
+use apyxl::model::{Attributes, Enum, EnumValue, EnumValueNumber};
+use apyxl::parser::util;
 
 const INVALID_ENUM_NUMBER: EnumValueNumber = EnumValueNumber::MAX;
 
@@ -76,14 +76,13 @@ fn apply_enum_value_number_defaults(mut values: Vec<EnumValue>) -> Vec<EnumValue
 
 #[cfg(test)]
 mod tests {
-
     mod en_value {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::attributes;
-        use crate::parser::csharp::en::en_value;
-        use crate::parser::test_util::wrap_test_err;
+        use crate::parser::en::en_value;
+        use apyxl::parser::test_util::wrap_test_err;
+        use apyxl::model::attributes;
 
         #[test]
         fn test() -> Result<()> {
@@ -122,10 +121,10 @@ mod tests {
         use anyhow::Result;
         use chumsky::Parser;
 
-        use crate::model::{attributes, Comment, EnumValue, EnumValueNumber};
-        use crate::parser::csharp::en;
-        use crate::parser::csharp::visibility::Visibility;
-        use crate::parser::test_util::wrap_test_err;
+        use crate::parser::en;
+        use crate::parser::visibility::Visibility;
+        use apyxl::parser::test_util::wrap_test_err;
+        use apyxl::model::{Comment, EnumValue, EnumValueNumber, attributes};
 
         #[test]
         fn public() -> Result<()> {

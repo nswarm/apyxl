@@ -1,8 +1,8 @@
 use chumsky::prelude::*;
 
-use crate::model::{EntityId, Semantics, Type, TypeRef};
-use crate::parser::error::Error;
-use crate::parser::Config;
+use apyxl::model::{EntityId, Semantics, Type, TypeRef};
+use apyxl::parser::Config;
+use apyxl::parser::error::Error;
 
 const ALLOWED_TYPE_NAME_CHARS: &str = "_<>";
 
@@ -128,10 +128,10 @@ mod tests {
         use chumsky::Parser;
         use lazy_static::lazy_static;
 
-        use crate::model::{EntityId, Semantics, Type, TypeRef};
-        use crate::parser::csharp::ty;
-        use crate::parser::test_util::wrap_test_err;
-        use crate::parser::{Config, UserType};
+        use crate::parser::ty;
+        use apyxl::model::{EntityId, Semantics, Type, TypeRef};
+        use apyxl::parser::test_util::wrap_test_err;
+        use apyxl::parser::{Config, UserType};
 
         lazy_static! {
             static ref TY_TEST_CONFIG: Config = Config {
@@ -336,8 +336,8 @@ mod tests {
     mod user_ty {
         use chumsky::Parser;
 
-        use crate::parser::csharp::ty::user_ty;
-        use crate::parser::{Config, UserType};
+        use crate::parser::ty::user_ty;
+        use apyxl::parser::{Config, UserType};
 
         #[test]
         fn test() {
@@ -366,8 +366,8 @@ mod tests {
         use chumsky::Parser;
         use itertools::Itertools;
 
-        use crate::parser::csharp::ty::entity_id;
-        use crate::parser::test_util::wrap_test_err;
+        use crate::parser::ty::entity_id;
+        use apyxl::parser::test_util::wrap_test_err;
 
         #[test]
         fn starts_with_underscore() -> Result<()> {

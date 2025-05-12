@@ -1,11 +1,11 @@
 use chumsky::prelude::*;
 use itertools::Itertools;
 
-use crate::model::{Attributes, Dto, Field, Namespace, Rpc};
-use crate::parser::csharp::visibility::Visibility;
-use crate::parser::csharp::{attributes, comment, rpc, ty, visibility};
-use crate::parser::error::Error;
-use crate::parser::{util, Config};
+use apyxl::parser::error::Error;
+use crate::parser::visibility::Visibility;
+use crate::parser::{attributes, comment, rpc, ty, visibility};
+use crate::parser::{Config, util};
+use apyxl::model::{Attributes, Dto, Field, Namespace, Rpc};
 
 // todo maybe just use NamespaceChild?
 enum DtoChild<'a> {
@@ -117,11 +117,11 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{attributes, Comment};
-    use crate::parser::csharp::dto;
-    use crate::parser::csharp::visibility::Visibility;
-    use crate::parser::test_util::wrap_test_err;
-    use crate::test_util::executor::{TEST_CONFIG, TEST_PUB_ONLY_CONFIG};
+    use crate::parser::dto;
+    use crate::parser::visibility::Visibility;
+    use apyxl::test_util::executor::{TEST_CONFIG, TEST_PUB_ONLY_CONFIG};
+    use apyxl::parser::test_util::wrap_test_err;
+    use apyxl::model::{Comment, attributes};
 
     #[test]
     fn private() -> Result<()> {

@@ -7,12 +7,11 @@ use crate::model::{Attributes, Field, Namespace, NamespaceChild};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, comment, dto, en, rpc, ty, ty_alias, visibility};
-use crate::parser::util::keyword_ex;
-use crate::parser::Config;
+use crate::parser::{util, Config};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Error> {
     recursive(|nested| {
-        let prefix = keyword_ex("mod").then(text::whitespace().at_least(1));
+        let prefix = util::keyword_ex("mod").then(text::whitespace().at_least(1));
         let name = text::ident();
         let body = children(config, nested.clone(), just('}').ignored())
             .delimited_by(just('{').padded(), just('}').padded());
@@ -74,7 +73,7 @@ fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
     let initializer = just('=')
         .padded()
         .then(any().and_is(end.not()).repeated().slice());
-    let field = keyword_ex("const")
+    let field = util::keyword_ex("const")
         .ignore_then(text::whitespace().at_least(1))
         .ignore_then(text::ident())
         .then_ignore(just(':').padded())
@@ -103,7 +102,7 @@ fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
 
 // Parses to a 'virtual' namespace that will be merged into the DTO with the same name.
 pub fn impl_block(config: &Config) -> impl Parser<&str, Namespace, Error> {
-    let prefix = keyword_ex("impl").then(text::whitespace().at_least(1));
+    let prefix = util::keyword_ex("impl").then(text::whitespace().at_least(1));
 
     let children = choice((
         rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),

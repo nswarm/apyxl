@@ -1,6 +1,6 @@
-use crate::model::Comment;
-use crate::parser::csharp::comment;
-use crate::parser::error::Error;
+use crate::parser::comment;
+use apyxl::model::Comment;
+use apyxl::parser::error::Error;
 use chumsky::prelude::*;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -29,9 +29,9 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
 mod tests {
     use chumsky::{text, Parser};
 
-    use crate::model::Comment;
-    use crate::parser::csharp::expr_block;
-    use crate::parser::csharp::expr_block::ExprBlock;
+    use crate::parser::expr_block;
+    use crate::parser::expr_block::ExprBlock;
+    use apyxl::model::Comment;
 
     #[test]
     fn complex() {

@@ -1,8 +1,8 @@
-use chumsky::Parser;
+use apyxl::parser::error::Error;
+use apyxl::model::Comment;
+use apyxl::parser::comment;
 use chumsky::prelude::*;
-use crate::model::Comment;
-use crate::parser::comment;
-use crate::parser::error::Error;
+use chumsky::Parser;
 
 pub fn single<'a>() -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
     comment::single(line_start(), block_start(), block_end())
@@ -13,17 +13,11 @@ pub fn multi<'a>() -> impl Parser<'a, &'a str, Vec<Comment<'a>>, Error<'a>> {
 }
 
 fn line_start<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
-    choice((
-        just("///"),
-        just("//"),
-    ))
+    choice((just("///"), just("//")))
 }
 
 fn block_start<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
-    choice((
-        just("/**"),
-        just("/*"),
-    ))
+    choice((just("/**"), just("/*")))
 }
 
 fn block_end<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> + Clone {
