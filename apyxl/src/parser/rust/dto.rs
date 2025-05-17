@@ -32,6 +32,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
                         .into_iter()
                         .filter_map(|(field, visibility)| visibility.filter(field, config))
                         .collect_vec(),
+                    rpcs: vec![],
                     attributes: Attributes {
                         comments,
                         user,
@@ -62,6 +63,7 @@ fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
                         user,
                         ..Default::default()
                     },
+                    is_static: false,
                 },
                 visibility,
             )
@@ -151,6 +153,7 @@ mod tests {
         assert_eq!(dto.fields[0].name, "field0");
         assert_eq!(dto.fields[1].name, "field1");
         assert_eq!(dto.fields[2].name, "field2");
+        assert!(!dto.fields[0].is_static, "field static");
         Ok(())
     }
 

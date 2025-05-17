@@ -6,6 +6,7 @@ use apyxl::model::{Attributes, TypeAlias};
 use apyxl::parser::error::Error;
 use apyxl::parser::{Config, util};
 
+// todo hmmm these only apply within the chunk... hmm...
 pub fn parser(config: &Config) -> impl Parser<&str, (TypeAlias, Visibility), Error> {
     let prefix = util::keyword_ex("type").then(text::whitespace().at_least(1));
     comment::multi()

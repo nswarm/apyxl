@@ -60,6 +60,7 @@ use crate::model::api::entity::EntityType;
 ///                                `d`, `dto`:                [crate::model::Dto],
 ///                                `r`, `rpc`:                [crate::model::Rpc],
 ///                                `a`, `alias`:              [crate::model::TypeAlias],
+///                                `e`, `enum`, `en`:         [crate::model::Enum],
 ///     [crate::model::Rpc]:       `p`, `param`:              [crate::model::Field],
 ///                                `return_ty`:               [crate::model::TypeRef] (nameless),
 ///     [crate::model::Field]:     `ty`:                      [crate::model::TypeRef] (nameless),
@@ -596,15 +597,21 @@ mod tests {
             let id = EntityId::try_from("a.b").unwrap();
             let dto = id.child(EntityType::Dto, "c").unwrap();
             let dto_field = dto.child(EntityType::Field, "d").unwrap();
+            let dto_rpc = dto.child(EntityType::Rpc, "r").unwrap();
+            let dto_enum = dto.child(EntityType::Enum, "e").unwrap();
             let ty = dto_field.child(EntityType::Type, "ty").unwrap();
+            let en = id.child(EntityType::Enum, "e").unwrap();
             let alias = id.child(EntityType::TypeAlias, "c").unwrap();
             let field = id.child(EntityType::Field, "f").unwrap();
             let target = alias.child(EntityType::Type, "target_ty").unwrap();
             assert_eq!(dto, EntityId::try_from("a.b.dto:c").unwrap());
             assert_eq!(dto_field, EntityId::try_from("a.b.dto:c.field:d").unwrap());
+            assert_eq!(dto_rpc, EntityId::try_from("a.b.dto:c.rpc:r").unwrap());
+            assert_eq!(dto_enum, EntityId::try_from("a.b.dto:c.enum:e").unwrap());
             assert_eq!(ty, EntityId::try_from("a.b.dto:c.field:d.ty").unwrap());
             assert_eq!(alias, EntityId::try_from("a.b.alias:c").unwrap());
             assert_eq!(field, EntityId::try_from("a.b.field:f").unwrap());
+            assert_eq!(en, EntityId::try_from("a.b.enum:e").unwrap());
             assert_eq!(target, EntityId::try_from("a.b.alias:c.target_ty").unwrap());
         }
 
@@ -617,10 +624,6 @@ mod tests {
             assert!(EntityId::try_from("dto:x")
                 .unwrap()
                 .child(EntityType::Type, "x")
-                .is_err());
-            assert!(EntityId::try_from("dto:x")
-                .unwrap()
-                .child(EntityType::Enum, "x")
                 .is_err());
             assert!(EntityId::try_from("rpc:x")
                 .unwrap()

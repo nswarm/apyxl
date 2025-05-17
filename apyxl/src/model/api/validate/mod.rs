@@ -54,10 +54,10 @@ pub enum ValidationError {
     #[error("Duplicate RPC or field definition: '{0}'")]
     DuplicateRpcOrField(EntityId),
 
-    #[error("Duplicate enum value name within enum '{1}': '{0}'")]
+    #[error("Duplicate enum value name within enum '{0}': '{1}'")]
     DuplicateEnumValue(EntityId, String),
 
-    #[error("Duplicate field name within entity '{1}': '{0}'")]
+    #[error("Duplicate field name within entity '{0}': '{1}'")]
     DuplicateFieldName(EntityId, String),
 }
 
@@ -503,7 +503,7 @@ fn qualify_type(
 pub(crate) fn recurse_api<'a, 'b, Action>(api: &'b Api<'a>, action: Action) -> Vec<ValidationResult>
 where
     'b: 'a,
-    Action: Copy + Fn(&'b Api<'a>, EntityId) -> Vec<ValidationResult>,
+    Action: Clone + Fn(&'b Api<'a>, EntityId) -> Vec<ValidationResult>,
 {
     recurse_namespaces(api, EntityId::default(), action)
 }
@@ -515,11 +515,20 @@ fn recurse_namespaces<'a, 'b, Action>(
 ) -> Vec<ValidationResult>
 where
     'b: 'a,
-    Action: Copy + Fn(&'b Api<'a>, EntityId) -> Vec<ValidationResult>,
+    Action: Clone + Fn(&'b Api<'a>, EntityId) -> Vec<ValidationResult>,
 {
     let namespace = api
         .find_namespace(&namespace_id)
         .expect("namespace must exist in api");
+
+    let dto_results = namespace.dtos().flat_map(|dto| match &dto.namespace {
+        Some(_) => recurse_namespaces(
+            api,
+            namespace_id.child(EntityType::Dto, dto.name).unwrap(),
+            action.clone(),
+        ),
+        _ => Vec::new(),
+    });
 
     let child_results = namespace.namespaces().flat_map(|child| {
         let child_ty = if child.is_virtual {
@@ -530,11 +539,12 @@ where
         recurse_namespaces(
             api,
             namespace_id.child(child_ty, &child.name).unwrap(),
-            action,
+            action.clone(),
         )
     });
 
-    child_results
+    dto_results
+        .chain(child_results)
         .chain(action(api, namespace_id.clone()))
         .collect_vec()
 }
@@ -989,6 +999,71 @@ mod tests {
             )
             .iter()
             .all(|result| result.is_ok()));
+        }
+    }
+
+    mod recurse_api {
+        use crate::model::validate::recurse_api;
+        use crate::model::{
+            Api, Dto, EntityId, Enum, Field, Namespace, NamespaceChild, Rpc, Semantics, Type,
+            TypeRef, UNDEFINED_NAMESPACE,
+        };
+        use std::borrow::Cow;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // todo more tests here
+
+        // Some of these don't work with the rust parser so we need to manually create the Api...
+
+        #[test]
+        fn recurse_into_existing_dto_namespace() {
+            let api = Api {
+                name: Cow::Borrowed(UNDEFINED_NAMESPACE),
+                children: vec![NamespaceChild::Dto(Dto {
+                    name: "dto",
+                    namespace: Some(Namespace {
+                        children: vec![
+                            NamespaceChild::Field(Field {
+                                name: "field",
+                                ty: TypeRef::new(Type::U32, Semantics::Value),
+                                attributes: Default::default(),
+                                is_static: true,
+                            }),
+                            NamespaceChild::Rpc(Rpc {
+                                name: "rpc",
+                                is_static: true,
+                                ..Default::default()
+                            }),
+                            NamespaceChild::Enum(Enum {
+                                name: "en",
+                                ..Default::default()
+                            }),
+                        ],
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })],
+                is_virtual: false,
+                ..Default::default()
+            };
+
+            let ids = collect_recurse_ids(&api);
+            assert_eq!(
+                &ids,
+                &[EntityId::default(), EntityId::try_from("d:dto").unwrap(),]
+            );
+        }
+
+        fn collect_recurse_ids(api: &Api) -> Vec<EntityId> {
+            let ids = Rc::new(RefCell::new(Vec::new()));
+
+            recurse_api(api, |_, id| {
+                ids.borrow_mut().push(id);
+                Vec::new()
+            });
+
+            Rc::into_inner(ids).unwrap().into_inner()
         }
     }
 }
