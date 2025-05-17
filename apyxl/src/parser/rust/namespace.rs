@@ -94,6 +94,7 @@ fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
                         user,
                         ..Default::default()
                     },
+                    is_static: true,
                 },
                 visibility,
             )
@@ -438,6 +439,7 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(field.name, "field0");
+        assert!(field.is_static);
         assert!(matches!(visibility, Visibility::Public));
         Ok(())
     }
@@ -449,6 +451,7 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(field.name, "field0");
+        assert!(field.is_static);
         assert!(matches!(visibility, Visibility::Private));
         Ok(())
     }

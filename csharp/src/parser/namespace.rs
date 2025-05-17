@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::parser::error::Error;
 use crate::parser::util::keyword_ex;
 use crate::parser::visibility::Visibility;
-use crate::parser::{attributes, comment, dto, en, rpc, visibility};
+use crate::parser::{attributes, comment, dto, en, field, rpc};
 use apyxl::model::{Attributes, Namespace, NamespaceChild};
 use apyxl::parser::Config;
 
@@ -14,7 +14,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, Namespace, Error> {
     recursive(|nested| {
         let prefix = keyword_ex("namespace").then(text::whitespace().at_least(1));
         let name = text::ident().separated_by(just(".")).collect::<Vec<_>>();
-        let body = children(config, nested.clone(), just('}').ignored())
+        let body = children(config, nested.clone(), just('}').ignored(), false)
             .delimited_by(just('{').padded(), just('}').padded());
         comment::multi()
             .then(attributes::attributes().padded())
@@ -42,15 +42,25 @@ pub fn children<'a>(
     config: &'a Config,
     namespace: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
     end_delimiter: impl Parser<'a, &'a str, (), Error<'a>>,
+    inside_dto: bool,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
+    // todo ... I think I should have two different namespace children styles instead of filters like below...
+    // todo     that best support parsing errors I think.
+
     choice((
         dto::parser(config).map(|(c, v)| Some((NamespaceChild::Dto(c), v))),
-        // todo
-        rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
         en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
-        // ty_alias::parser(config).map(|(c, v)| Some((NamespaceChild::TypeAlias(c), v))),
-        namespace.map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
-        // const_var().map(|_| None),
+        rpc::parser(config)
+            .map(|(c, v)| Some((NamespaceChild::Rpc(c), v)))
+            .filter(move |_| inside_dto),
+        field::parser(config)
+            .map(|(c, v)| Some((NamespaceChild::Field(c), v)))
+            .filter(move |_| inside_dto),
+        // todo
+        // ty_alias::parser(config).map(|(c, v)| Some((NamespaceChild::TypeAlias(c), v))).filter(move |_| !inside_dto),
+        namespace
+            .map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public)))
+            .filter(move |_| !inside_dto),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
@@ -66,23 +76,13 @@ pub fn children<'a>(
     .then_ignore(comment::multi())
 }
 
-pub fn const_var<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
-    comment::multi()
-        .then(visibility::parser())
-        .then(just("const"))
-        .then(any().and_is(none_of(";")).repeated().slice())
-        .then(just(';'))
-        .padded()
-        .ignored()
-}
-
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
     use crate::parser::namespace;
-    use apyxl::model::{attributes, Comment, NamespaceChild};
+    use apyxl::model::{Comment, NamespaceChild, attributes};
     use apyxl::parser::test_util::wrap_test_err;
     use apyxl::test_util::executor::TEST_CONFIG;
 
@@ -117,24 +117,54 @@ mod tests {
     }
 
     #[test]
-    fn with_dto() -> Result<()> {
+    fn with_children() -> Result<()> {
         let namespace = namespace::parser(&TEST_CONFIG)
             .parse(
                 r#"
             namespace ns {
                 public struct DtoName {}
+                public enum Enum {}
+                using Type = int;
             }
             "#,
             )
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(namespace.name, "ns");
-        assert_eq!(namespace.children.len(), 1);
+        assert_eq!(namespace.children.len(), 3);
         match &namespace.children[0] {
             NamespaceChild::Dto(dto) => assert_eq!(dto.name, "DtoName"),
             _ => panic!("wrong child type"),
         }
         Ok(())
+    }
+
+    #[test]
+    fn no_field_children() {
+        let result = namespace::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            namespace ns {
+                public static int field = 5;
+            }
+            "#,
+            )
+            .into_result();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn no_rpc_children() {
+        let result = namespace::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            namespace ns {
+                public void Func() {}
+            }
+            "#,
+            )
+            .into_result();
+        assert!(result.is_err());
     }
 
     #[test]
@@ -266,39 +296,5 @@ mod tests {
             ]
         );
         Ok(())
-    }
-
-    mod const_var {
-        use crate::parser::namespace;
-        use apyxl::parser::test_util::wrap_test_err;
-        use anyhow::Result;
-        use chumsky::Parser;
-
-        #[test]
-        fn public_const() -> Result<()> {
-            run_test("public const string ASDF = \"blah\";")
-        }
-
-        #[test]
-        fn public_static() -> Result<()> {
-            run_test("public static string ASDF = \"blah\";")
-        }
-
-        #[test]
-        fn private_const() -> Result<()> {
-            run_test("private const ASDF = \"blah\";")
-        }
-
-        #[test]
-        fn private_static() -> Result<()> {
-            run_test("private static string ASDF = \"blah\";")
-        }
-
-        fn run_test(input: &'static str) -> Result<()> {
-            namespace::const_var()
-                .parse(input)
-                .into_result()
-                .map_err(wrap_test_err)
-        }
     }
 }

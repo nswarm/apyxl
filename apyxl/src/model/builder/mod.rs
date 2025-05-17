@@ -150,6 +150,8 @@ impl<'a> Builder<'a> {
         .flatten()
         .partition(|x| x.is_ok());
 
+        // todo why devirtualize after validation?
+
         errs.append(
             &mut devirtualize_namespaces(&mut self.api, &EntityId::default())
                 .into_iter()
@@ -224,7 +226,7 @@ fn dedupe_namespace_children(namespace: &mut Namespace) {
         });
 }
 
-/// Walk the namespace hierarchy, adding the fully-qualified [Attributes]' `entity_id` for
+/// Walk the namespace hierarchy, adding the fully-qualified [Attributes] `entity_id` for
 /// use in generators. Note that this should be called before devirtualizing namespaces
 /// otherwise it will miss namespaces owned by dtos.
 fn populate_entity_id_attributes(namespace: &mut Namespace, ns_id: &EntityId) {
@@ -260,7 +262,7 @@ fn devirtualize_namespaces(
         .take_namespaces_filtered(|ns| ns.is_virtual)
         .into_iter()
         .map(
-            |virtual_namespace| match namespace.dto_mut(&virtual_namespace.name) {
+            |mut virtual_namespace| match namespace.dto_mut(&virtual_namespace.name) {
                 None => {
                     let virtual_ns_id = namespace_id
                         .child(EntityType::Namespace, &virtual_namespace.name)
@@ -269,7 +271,10 @@ fn devirtualize_namespaces(
                     Ok(None)
                 }
                 Some(dto) => {
+                    let (mut fields, mut rpcs) = virtual_namespace.extract_non_static();
                     dto.namespace = Some(virtual_namespace);
+                    dto.fields.append(&mut fields);
+                    dto.rpcs.append(&mut rpcs);
                     Ok(None)
                 }
             },
@@ -694,12 +699,13 @@ mod tests {
             use crate::test_util::executor::TestExecutor;
 
             #[test]
-            fn moves_into_dto_namespace() {
+            fn moves_static_into_dto_namespace() {
                 let mut exe = TestExecutor::new(
                     r#"
                     struct dto {}
                     impl dto {
                         type NestedAlias = u32;
+                        const field: u32 = 0;
                         fn nested_rpc() {}
                     }
                 "#,
@@ -709,7 +715,26 @@ mod tests {
                 let dto = model.api.dto("dto").unwrap();
                 let dto_namespace = dto.namespace.as_ref().unwrap();
                 assert!(dto_namespace.rpc("nested_rpc").is_some());
+                assert!(dto_namespace.field("field").is_some());
                 assert!(dto_namespace.ty_alias("NestedAlias").is_some());
+            }
+
+            #[test]
+            fn moves_nonstatic_rpcs_into_dto() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    struct dto {}
+                    impl dto {
+                        fn nested_rpc(self) {}
+                    }
+                "#,
+                );
+                let model = build_from_input(&mut exe).unwrap();
+
+                let dto = model.api.dto("dto").unwrap();
+                assert!(dto.rpc("nested_rpc").is_some());
+                let dto_namespace = dto.namespace.as_ref().unwrap();
+                assert!(dto_namespace.rpc("nested_rpc").is_none());
             }
 
             #[test]
@@ -809,7 +834,9 @@ mod tests {
         }
 
         mod validate_duplicates {
-            use crate::model::builder::tests::{assert_contains_error, build_from_input};
+            use crate::model::builder::tests::{
+                assert_contains_error, build_from_input, test_builder,
+            };
             use crate::model::builder::ValidationError;
             use crate::model::EntityId;
             use crate::test_util::executor::TestExecutor;
@@ -940,6 +967,133 @@ mod tests {
             }
 
             #[test]
+            fn dto_rpcs() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct Dto {}
+                        impl Dto {
+                            fn rpc(self) {}
+                            fn rpc(self) {}
+                        }
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateRpcOrField(EntityId::new_unqualified("ns.Dto.rpc")),
+                );
+            }
+
+            #[test]
+            fn dto_static_rpcs() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct Dto {}
+                        impl Dto {
+                            fn rpc() {}
+                            fn rpc() {}
+                        }
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateRpcOrField(EntityId::new_unqualified("ns.Dto.rpc")),
+                );
+            }
+
+            #[test]
+            fn dto_static_nonstatic_rpcs() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct Dto {}
+                        impl Dto {
+                            fn rpc() {}
+                            fn rpc(self) {}
+                        }
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateRpcOrField(EntityId::new_unqualified("ns.Dto.rpc")),
+                );
+            }
+
+            #[test]
+            fn dto_fields() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct dto {
+                            field: u32,
+                            field: u32,
+                        }
+                    }
+                "#,
+                );
+                let builder = test_builder(&mut exe);
+                let result = builder.build();
+                let expected_entity_id = EntityId::try_from("ns.d:dto").unwrap();
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateFieldName(
+                        expected_entity_id.to_owned(),
+                        "field".to_string(),
+                    ),
+                );
+            }
+
+            #[test]
+            fn dto_static_fields() {
+                let mut exe = TestExecutor::new(
+                    r#"
+                    mod ns {
+                        struct Dto {}
+                        impl Dto {
+                            const field: u32 = 0;
+                            const field: u32 = 0;
+                        }
+                    }
+                "#,
+                );
+                let result = build_from_input(&mut exe);
+                assert_contains_error(
+                    &result,
+                    ValidationError::DuplicateRpcOrField(EntityId::new_unqualified("ns.Dto.field")),
+                );
+            }
+
+            // todo can't test this one with rust parser... devirtualization happens after dupe checks.
+            // todo ...which is maybe a problem anyway?
+            // #[test]
+            // fn dto_static_nonstatic_fields() {
+            //     let mut exe = TestExecutor::new(
+            //         r#"
+            //         mod ns {
+            //             struct Dto {
+            //                 field: u32,
+            //             }
+            //             impl Dto {
+            //                 const field: u32 = 0;
+            //             }
+            //         }
+            //     "#,
+            //     );
+            //     let result = build_from_input(&mut exe);
+            //     assert_contains_error(
+            //         &result,
+            //         ValidationError::DuplicateRpcOrField(EntityId::new_unqualified("ns.Dto.field")),
+            //     );
+            // }
+
+            #[test]
             fn rpc_dto_with_same_name_ok() {
                 let mut exe = TestExecutor::new(
                     r#"
@@ -1035,29 +1189,6 @@ mod tests {
                     ValidationError::InvalidFieldName(
                         expected_entity_id.to_owned(),
                         expected_index,
-                    ),
-                );
-            }
-
-            #[test]
-            fn field_name_duplicates() {
-                let mut exe = TestExecutor::new(
-                    r#"
-                    mod ns {
-                        struct dto {
-                            field: bool,
-                            field: bool,
-                        }
-                    }"#,
-                );
-                let builder = test_builder(&mut exe);
-                let result = builder.build();
-                let expected_entity_id = EntityId::try_from("ns.d:dto").unwrap();
-                assert_contains_error(
-                    &result,
-                    ValidationError::DuplicateFieldName(
-                        expected_entity_id.to_owned(),
-                        "field".to_string(),
                     ),
                 );
             }

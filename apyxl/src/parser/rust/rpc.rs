@@ -1,4 +1,4 @@
-use crate::model::{Attributes, Field, Rpc, Semantics, Type, TypeRef};
+use crate::model::{Attributes, Field, Rpc};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, comment, expr_block, ty, visibility};
@@ -21,11 +21,12 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
         .then(visibility::parser())
         .then_ignore(prefix)
         .then(name)
+        .then(is_static())
         .then(params)
         .then(return_type.or_not())
         .then_ignore(expr_block::parser().padded())
         .map(
-            |(((((comments, user), visibility), name), params), return_type)| {
+            |((((((comments, user), visibility), name), is_static), params), return_type)| {
                 (
                     Rpc {
                         name,
@@ -36,6 +37,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
                             user,
                             ..Default::default()
                         },
+                        is_static,
                     },
                     visibility,
                 )
@@ -43,33 +45,27 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
         )
 }
 
+/// Checks if the params start with a self param then rewinds to before the first parenthesis.
+fn is_static<'a>() -> impl Parser<'a, &'a str, bool, Error<'a>> {
+    just("(")
+        .ignore_then(self_param())
+        .map(|x| !x.is_some())
+        .rewind()
+}
+
+fn self_param<'a>() -> impl Parser<'a, &'a str, Option<&'a str>, Error<'a>> {
+    choice((just("self"), just("&self"), just("&mut self")))
+        .then_ignore(just(",").padded().or_not())
+        .or_not()
+}
+
 fn param(config: &Config) -> impl Parser<&str, Field, Error> {
-    let self_param = choice((
-        just("self").map(|ty| {
-            (
-                "self",
-                TypeRef::new(Type::User(ty.to_string()), Semantics::Value),
-            )
-        }),
-        just("&self").map(|ty| {
-            (
-                "self",
-                TypeRef::new(Type::User(ty.to_string()), Semantics::Ref),
-            )
-        }),
-        just("&mut self").map(|ty| {
-            (
-                "self",
-                TypeRef::new(Type::User(ty.to_string()), Semantics::Mut),
-            )
-        }),
-    ));
-    let field = text::ident()
+    let param = text::ident()
         .then_ignore(just(':').padded())
         .then(ty::parser(config));
     comment::multi()
         .then(attributes::attributes().padded())
-        .then(field.or(self_param))
+        .then(param)
         .map(|((comments, user), (name, ty))| Field {
             name,
             ty,
@@ -78,14 +74,17 @@ fn param(config: &Config) -> impl Parser<&str, Field, Error> {
                 user,
                 ..Default::default()
             },
+            is_static: false,
         })
 }
 
 fn params(config: &Config) -> impl Parser<&str, Vec<Field>, Error> {
-    param(config)
-        .separated_by(just(',').padded())
-        .allow_trailing()
-        .collect::<Vec<_>>()
+    self_param().ignore_then(
+        param(config)
+            .separated_by(just(',').padded())
+            .allow_trailing()
+            .collect::<Vec<_>>(),
+    )
 }
 
 #[cfg(test)]
@@ -93,7 +92,7 @@ mod tests {
     use anyhow::Result;
     use chumsky::Parser;
 
-    use crate::model::{attributes, Comment, Semantics, Type, TypeRef};
+    use crate::model::{attributes, Comment};
     use crate::parser::rust::rpc;
     use crate::parser::rust::visibility::Visibility;
     use crate::parser::test_util::wrap_test_err;
@@ -112,6 +111,7 @@ mod tests {
         assert_eq!(rpc.name, "rpc_name");
         assert!(rpc.params.is_empty());
         assert!(rpc.return_type.is_none());
+        assert!(rpc.is_static);
         Ok(())
     }
 
@@ -125,12 +125,8 @@ mod tests {
             )
             .into_result()
             .map_err(wrap_test_err)?;
-        assert_eq!(rpc.params.len(), 1);
-        assert_eq!(
-            rpc.params[0].ty,
-            TypeRef::new(Type::User("self".to_string()), Semantics::Value)
-        );
-        assert_eq!(rpc.params[0].name, "self");
+        assert_eq!(rpc.params.len(), 0);
+        assert!(!rpc.is_static);
         Ok(())
     }
 
@@ -144,12 +140,8 @@ mod tests {
             )
             .into_result()
             .map_err(wrap_test_err)?;
-        assert_eq!(rpc.params.len(), 1);
-        assert_eq!(
-            rpc.params[0].ty,
-            TypeRef::new(Type::User("&self".to_string()), Semantics::Ref)
-        );
-        assert_eq!(rpc.params[0].name, "self");
+        assert_eq!(rpc.params.len(), 0);
+        assert!(!rpc.is_static);
         Ok(())
     }
 
@@ -163,12 +155,8 @@ mod tests {
             )
             .into_result()
             .map_err(wrap_test_err)?;
-        assert_eq!(rpc.params.len(), 1);
-        assert_eq!(
-            rpc.params[0].ty,
-            TypeRef::new(Type::User("&mut self".to_string()), Semantics::Mut)
-        );
-        assert_eq!(rpc.params[0].name, "self");
+        assert_eq!(rpc.params.len(), 0);
+        assert!(!rpc.is_static);
         Ok(())
     }
 
@@ -242,6 +230,31 @@ mod tests {
             .parse(
                 r#"
             fn rpc_name(param0: ParamType0) {}
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(rpc.params.len(), 1);
+        assert_eq!(rpc.params[0].name, "param0");
+        assert_eq!(
+            rpc.params[0]
+                .ty
+                .value
+                .api()
+                .unwrap()
+                .component_names()
+                .last(),
+            Some("ParamType0")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn nonstatic_param() -> Result<()> {
+        let (rpc, _) = rpc::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            fn rpc_name(&mut self, param0: ParamType0) {}
             "#,
             )
             .into_result()

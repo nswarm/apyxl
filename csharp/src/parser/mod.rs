@@ -1,19 +1,21 @@
 use std::borrow::Cow;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chumsky::prelude::*;
 use log::debug;
 
 use apyxl::model::{Api, UNDEFINED_NAMESPACE};
 use apyxl::parser::error::Error;
-use apyxl::parser::{error, util, Config};
-use apyxl::{model, Input};
+use apyxl::parser::{Config, error, util};
+use apyxl::{Input, model};
 
 mod attributes;
 mod comment;
 mod dto;
 mod en;
 mod expr_block;
+mod field;
+mod is_static;
 mod namespace;
 mod rpc;
 mod ty;
@@ -41,7 +43,7 @@ impl apyxl::Parser for CSharpParser {
 
             let children = imports
                 .ignore_then(
-                    namespace::children(config, namespace::parser(config), end().ignored())
+                    namespace::children(config, namespace::parser(config), end().ignored(), false)
                         .padded(),
                 )
                 .then_ignore(end())
@@ -80,11 +82,11 @@ fn using<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
 mod tests {
     use anyhow::Result;
 
+    use crate::parser::CSharpParser;
     use apyxl::model::{Builder, UNDEFINED_NAMESPACE};
     use apyxl::parser::Config;
     use apyxl::test_util::executor::TEST_CONFIG;
-    use apyxl::{input, Parser};
-    use crate::parser::CSharpParser;
+    use apyxl::{Parser, input};
 
     #[test]
     fn root_namespace() -> Result<()> {
@@ -193,11 +195,11 @@ mod tests {
     }
 
     mod using_decl {
+        use crate::parser::CSharpParser;
         use anyhow::Result;
         use apyxl::model::Builder;
         use apyxl::test_util::executor::TEST_CONFIG;
-        use apyxl::{input, Parser};
-        use crate::parser::CSharpParser;
+        use apyxl::{Parser, input};
 
         #[test]
         fn import() -> Result<()> {

@@ -150,13 +150,13 @@ impl EntityType {
             },
 
             EntityType::Dto => match ty {
-                EntityType::Field | EntityType::Dto | EntityType::Rpc | EntityType::TypeAlias => {
-                    true
-                }
+                EntityType::Field
+                | EntityType::Dto
+                | EntityType::Rpc
+                | EntityType::TypeAlias
+                | EntityType::Enum => true,
 
-                EntityType::Namespace | EntityType::Enum | EntityType::Type | EntityType::None => {
-                    false
-                }
+                EntityType::Namespace | EntityType::Type | EntityType::None => false,
             },
 
             EntityType::Rpc => match ty {

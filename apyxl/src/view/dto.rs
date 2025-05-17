@@ -1,7 +1,7 @@
 use crate::model;
 use crate::model::entity::ToEntity;
 use crate::model::EntityType;
-use crate::view::{Attributes, Field, Namespace, Transforms};
+use crate::view::{Attributes, Field, Namespace, Rpc, Transforms};
 use dyn_clone::DynClone;
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -20,6 +20,12 @@ pub trait DtoTransform: Debug + DynClone {
     /// `true`: included.
     /// `false`: excluded.
     fn filter_field(&self, _: &model::Field) -> bool {
+        true
+    }
+
+    /// `true`: included.
+    /// `false`: excluded.
+    fn filter_rpc(&self, _: &model::Rpc) -> bool {
         true
     }
 }
@@ -58,6 +64,19 @@ impl<'v, 'a> Dto<'v, 'a> {
             })
     }
 
+    pub fn rpcs(&'a self) -> impl Iterator<Item = Rpc<'v, 'a>> {
+        self.target
+            .rpcs
+            .iter()
+            .filter(|rpc| self.filter_rpc(rpc))
+            .map(move |field| {
+                Rpc::new(
+                    field,
+                    &self.xforms
+                )
+            })
+    }
+
     pub fn attributes(&self) -> Attributes {
         Attributes::new(
             &self.target.attributes,
@@ -75,6 +94,10 @@ impl<'v, 'a> Dto<'v, 'a> {
 
     fn filter_field(&self, field: &model::Field) -> bool {
         self.xforms.dto.iter().all(|x| x.filter_field(field))
+    }
+
+    fn filter_rpc(&self, rpc: &model::Rpc) -> bool {
+        self.xforms.dto.iter().all(|x| x.filter_rpc(rpc))
     }
 }
 
@@ -137,4 +160,27 @@ mod tests {
 
         assert_eq!(fields, vec!["visible0", "visible1"]);
     }
+
+    // todo non-static rpc
+    // #[test]
+    // fn rpcs() {
+    //     let mut exe = TestExecutor::new(
+    //         r#"
+    //         struct dto {
+    //             visible0: Type0,
+    //             hidden: Type0,
+    //             visible1: Type0,
+    //         }
+    //         "#,
+    //     );
+    //     let model = exe.model();
+    //     let view = model.view().with_dto_transform(TestFilter {});
+    //     let root = view.api();
+    //     let dto = root
+    //         .find_dto(&EntityId::try_from("d:dto").unwrap())
+    //         .unwrap();
+    //     let fields = dto.fields().map(|f| f.name().to_string()).collect_vec();
+    // 
+    //     assert_eq!(fields, vec!["visible0", "visible1"]);
+    // }
 }

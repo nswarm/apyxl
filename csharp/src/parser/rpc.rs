@@ -1,3 +1,4 @@
+use crate::parser::is_static::is_static;
 use crate::parser::visibility::Visibility;
 use crate::parser::{attributes, comment, expr_block, ty, visibility};
 use apyxl::model::{Attributes, Field, Rpc};
@@ -19,12 +20,13 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
     comment::multi()
         .then(attributes::attributes().padded())
         .then(visibility::parser())
+        .then(is_static())
         .then(return_type)
         .then(name)
         .then(params)
         .then_ignore(expr_block::parser().padded())
         .map(
-            |(((((comments, user), visibility), return_type), name), params)| {
+            |((((((comments, user), visibility), is_static), return_type), name), params)| {
                 (
                     Rpc {
                         name,
@@ -35,6 +37,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
                             user,
                             ..Default::default()
                         },
+                        is_static,
                     },
                     visibility,
                 )
@@ -57,6 +60,7 @@ fn param(config: &Config) -> impl Parser<&str, Field, Error> {
                 user,
                 ..Default::default()
             },
+            is_static: false,
         })
 }
 
@@ -91,6 +95,7 @@ mod tests {
         assert_eq!(rpc.name, "rpc_name");
         assert!(rpc.params.is_empty());
         assert!(rpc.return_type.is_none());
+        assert!(!rpc.is_static);
         Ok(())
     }
 
@@ -123,6 +128,21 @@ mod tests {
             .map_err(wrap_test_err)?;
         assert_eq!(rpc.name, "rpc_name");
         assert_eq!(visibility, Visibility::Private);
+        Ok(())
+    }
+
+    #[test]
+    fn is_static() -> Result<()> {
+        let (rpc, _) = rpc::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            static void rpc_name() {}
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(rpc.name, "rpc_name");
+        assert!(rpc.is_static);
         Ok(())
     }
 

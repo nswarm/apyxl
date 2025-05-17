@@ -15,7 +15,7 @@ pub struct Namespace<'a> {
     pub attributes: Attributes<'a>,
 
     /// 'virtual' is a temporary namespace indicating it belongs to a [Dto] and should be moved
-    /// to the [Dto] at build time. Useful for handling [Rpc]s or other [Dto]s nested inside of
+    /// to the [Dto] at build time. Useful for handling [Rpc]s or other [Dto]s nested inside
     /// or that belong to a [Dto].
     pub is_virtual: bool,
 }
@@ -138,6 +138,11 @@ impl<'a> Namespace<'a> {
         self.children.iter().find(|s| s.name() == name)
     }
 
+    /// Get a mutable [NamespaceChild] within this [Namespace] by name.
+    pub fn child_mut(&mut self, name: &str) -> Option<&mut NamespaceChild<'a>> {
+        self.children.iter_mut().find(|s| s.name() == name)
+    }
+
     /// Get a [Dto] within this [Namespace] by name.
     pub fn dto(&self, name: &str) -> Option<&Dto<'a>> {
         self.children.iter().find_map(|s| match s {
@@ -224,6 +229,9 @@ impl<'a> Namespace<'a> {
     pub fn namespace(&self, name: &str) -> Option<&Namespace<'a>> {
         self.children.iter().find_map(|s| match s {
             NamespaceChild::Namespace(value) if value.name == name => Some(value),
+            NamespaceChild::Dto(dto) if dto.name == name && dto.namespace.is_some() => {
+                Some(dto.namespace.as_ref().unwrap())
+            }
             _ => None,
         })
     }
@@ -232,6 +240,9 @@ impl<'a> Namespace<'a> {
     pub fn namespace_mut(&mut self, name: &str) -> Option<&mut Namespace<'a>> {
         self.children.iter_mut().find_map(|s| match s {
             NamespaceChild::Namespace(value) if value.name == name => Some(value),
+            NamespaceChild::Dto(dto) if dto.name == name && dto.namespace.is_some() => {
+                Some(dto.namespace.as_mut().unwrap())
+            }
             _ => None,
         })
     }
@@ -399,110 +410,110 @@ impl<'a> Namespace<'a> {
 
     /// Find a [NamespaceChild] by [EntityId] relative to this [Namespace].
     pub fn find_child(&self, entity_id: &EntityId) -> Option<&NamespaceChild<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.child(&name),
+            (Some(namespace), Some(name)) => namespace.child(name),
             _ => None,
         }
     }
 
     /// Find a [Dto] by [EntityId] relative to this [Namespace].
     pub fn find_dto(&self, entity_id: &EntityId) -> Option<&Dto<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.dto(&name),
+            (Some(namespace), Some(name)) => namespace.dto(name),
             _ => None,
         }
     }
 
     /// Find a mutable [Dto] by [EntityId] relative to this [Namespace].
     pub fn find_dto_mut(&mut self, entity_id: &EntityId) -> Option<&mut Dto<'a>> {
-        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.dto_mut(&name),
+            (Some(namespace), Some(name)) => namespace.dto_mut(name),
             _ => None,
         }
     }
 
     /// Find a [Rpc] by [EntityId] relative to this [Namespace].
     pub fn find_rpc(&self, entity_id: &EntityId) -> Option<&Rpc<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.rpc(&name),
+            (Some(namespace), Some(name)) => namespace.rpc(name),
             _ => None,
         }
     }
 
     /// Find a mutable [Rpc] by [EntityId] relative to this [Namespace].
     pub fn find_rpc_mut(&mut self, entity_id: &EntityId) -> Option<&mut Rpc<'a>> {
-        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.rpc_mut(&name),
+            (Some(namespace), Some(name)) => namespace.rpc_mut(name),
             _ => None,
         }
     }
 
     /// Find an [Enum] by [EntityId] relative to this [Namespace].
     pub fn find_enum(&self, entity_id: &EntityId) -> Option<&Enum<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.en(&name),
+            (Some(namespace), Some(name)) => namespace.en(name),
             _ => None,
         }
     }
 
     /// Find a mutable [Enum] by [EntityId] relative to this [Namespace].
     pub fn find_enum_mut(&mut self, entity_id: &EntityId) -> Option<&mut Enum<'a>> {
-        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.en_mut(&name),
+            (Some(namespace), Some(name)) => namespace.en_mut(name),
             _ => None,
         }
     }
 
     /// Find a [TypeAlias] by [EntityId] relative to this [Namespace].
     pub fn find_ty_alias(&self, entity_id: &EntityId) -> Option<&TypeAlias<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.ty_alias(&name),
+            (Some(namespace), Some(name)) => namespace.ty_alias(name),
             _ => None,
         }
     }
 
     /// Find a mutable [TypeAlias] by [EntityId] relative to this [Namespace].
     pub fn find_ty_alias_mut(&mut self, entity_id: &EntityId) -> Option<&mut TypeAlias<'a>> {
-        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.ty_alias_mut(&name),
+            (Some(namespace), Some(name)) => namespace.ty_alias_mut(name),
             _ => None,
         }
     }
 
     /// Find a [Field] by [EntityId] relative to this [Namespace].
     pub fn find_field(&self, entity_id: &EntityId) -> Option<&Field<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.field(&name),
+            (Some(namespace), Some(name)) => namespace.field(name),
             _ => None,
         }
     }
 
     /// Find a mutable [Field] by [EntityId] relative to this [Namespace].
     pub fn find_field_mut(&mut self, entity_id: &EntityId) -> Option<&mut Field<'a>> {
-        let namespace = self.find_namespace_mut(&unqualified_namespace(&entity_id));
-        let name = unqualified_name(&entity_id);
+        let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id));
+        let name = unqualified_name(entity_id);
         match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.field_mut(&name),
+            (Some(namespace), Some(name)) => namespace.field_mut(name),
             _ => None,
         }
     }
@@ -544,6 +555,20 @@ impl<'a> Namespace<'a> {
         for child in &mut self.children {
             f(child.attributes_mut())
         }
+    }
+
+    pub fn extract_non_static<'b>(&'b mut self) -> (Vec<Field<'a>>, Vec<Rpc<'a>>) {
+        let mut fields = vec![];
+        let mut rpcs = vec![];
+        let children = self.children.drain(..).collect_vec();
+        for child in children {
+            match child {
+                NamespaceChild::Field(field) if !field.is_static => fields.push(field),
+                NamespaceChild::Rpc(rpc) if !rpc.is_static => rpcs.push(rpc),
+                child => self.children.push(child),
+            }
+        }
+        (fields, rpcs)
     }
 }
 
@@ -770,7 +795,7 @@ mod tests {
         use std::borrow::Cow;
 
         use crate::model::api::namespace::tests::{complex_api, complex_namespace};
-        use crate::model::EntityId;
+        use crate::model::{Api, EntityId, Namespace};
         use crate::test_util::{
             test_dto, test_enum, test_field, test_namespace, test_rpc, test_ty_alias, NAMES,
         };
@@ -799,6 +824,22 @@ mod tests {
         test!(en, find_enum, find_enum_mut, test_enum);
         test!(ty_alias, find_ty_alias, find_ty_alias_mut, test_ty_alias);
         test!(field, find_field, find_field_mut, test_field);
+
+        #[test]
+        fn dto_namespace() {
+            let mut api = Api::default();
+            let mut dto = test_dto(1);
+            let dto_name = dto.name.to_string();
+            dto.namespace = Some(Namespace::default());
+            let expected_dto = dto.clone();
+            api.add_dto(dto);
+
+            let entity_id = EntityId::new_unqualified(&dto_name);
+            assert_eq!(
+                api.find_namespace(&entity_id),
+                expected_dto.namespace.as_ref()
+            );
+        }
 
         #[test]
         fn child() {

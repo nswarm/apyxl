@@ -10,6 +10,9 @@ pub struct Rpc<'a> {
     pub params: Vec<Field<'a>>,
     pub return_type: Option<TypeRef>,
     pub attributes: Attributes<'a>,
+
+    /// True if owned by a namespace rather than a Dto.
+    pub is_static: bool,
 }
 
 impl<'a> Rpc<'a> {

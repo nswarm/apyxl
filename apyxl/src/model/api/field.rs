@@ -1,6 +1,6 @@
+use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity, ToEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, TypeRef};
-use crate::model::attributes::AttributesHolder;
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -8,6 +8,10 @@ pub struct Field<'a> {
     pub name: &'a str,
     pub ty: TypeRef,
     pub attributes: Attributes<'a>,
+
+    /// True if owned by a namespace rather than a Dto.
+    /// This member is unused for rpc params. (Yes that's a design flaw).
+    pub is_static: bool,
 }
 
 impl ToEntity for Field<'_> {

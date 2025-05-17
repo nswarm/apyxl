@@ -1,114 +1,58 @@
 use chumsky::prelude::*;
-use itertools::Itertools;
 
-use apyxl::parser::error::Error;
+use crate::parser::is_static::is_static;
 use crate::parser::visibility::Visibility;
-use crate::parser::{attributes, comment, rpc, ty, visibility};
-use crate::parser::{Config, util};
-use apyxl::model::{Attributes, Dto, Field, Namespace, Rpc};
-
-// todo maybe just use NamespaceChild?
-enum DtoChild<'a> {
-    Field(Field<'a>),
-    Rpc(Rpc<'a>),
-}
+use crate::parser::{Config, namespace, util};
+use crate::parser::{attributes, comment, visibility};
+use apyxl::model::{Attributes, Dto, Namespace};
+use apyxl::parser::error::Error;
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
     let prefix = choice((
-        // todo handle differently?
         util::keyword_ex("struct"),
         util::keyword_ex("class"),
         util::keyword_ex("interface"),
     ))
     .then(text::whitespace().at_least(1));
     let name = text::ident();
-    let child = choice((
-        field(config).map(|(field, v)| (DtoChild::Field(field), v)),
-        rpc::parser(config).map(|(rpc, v)| (DtoChild::Rpc(rpc), v)),
-    ));
-    let children = child.repeated().collect::<Vec<_>>().delimited_by(
-        just('{').padded(),
-        just('}').padded().recover_with(skip_then_retry_until(
-            none_of("}").ignored(),
-            just('}').ignored(),
-        )),
-    );
+    let none = any().map(|_| Namespace::default());
+    let children = namespace::children(config, none, just('}').ignored(), true)
+        .delimited_by(just('{').padded(), just('}').padded())
+        .boxed();
     comment::multi()
         .padded()
         .then(attributes::attributes().padded())
         .then(visibility::parser())
-        .then_ignore(util::keyword_ex("static").padded().or_not())
+        .then_ignore(is_static())
         .then_ignore(prefix)
         .then(name)
         .then(children)
         .map(|((((comments, user), visibility), name), children)| {
-            let (fields, rpcs): (Vec<DtoChild>, Vec<DtoChild>) = children
-                .into_iter()
-                .filter_map(|(child, visibility)| visibility.filter(child, config))
-                .partition(|child| match child {
-                    DtoChild::Field(_) => true,
-                    DtoChild::Rpc(_) => false,
-                });
-            let fields = fields
-                .into_iter()
-                .filter_map(|child| match child {
-                    DtoChild::Field(field) => Some(field),
-                    _ => None,
-                })
-                .collect_vec();
-            let mut namespace = Namespace::default();
-            rpcs.into_iter()
-                .filter_map(|child| match child {
-                    DtoChild::Rpc(rpc) => Some(rpc),
-                    _ => None,
-                })
-                .for_each(|rpc| namespace.add_rpc(rpc));
-            (
-                Dto {
-                    name,
-                    fields,
-                    attributes: Attributes {
-                        comments,
-                        user,
-                        ..Default::default()
-                    },
-                    namespace: Some(namespace),
-                },
-                visibility,
-            )
-        })
-}
+            let mut namespace = Namespace {
+                children,
+                ..Default::default()
+            };
+            let (fields, rpcs) = namespace.extract_non_static();
 
-fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
-    let end = just(';');
-    let initializer = just('=')
-        .padded()
-        .then(any().and_is(end.not()).repeated().slice());
-    let field = ty::parser(config)
-        .then_ignore(text::whitespace().at_least(1))
-        .then(text::ident())
-        .then_ignore(initializer.or_not())
-        .then_ignore(end.padded());
-    // todo properties
-    // todo events
-    comment::multi()
-        .then(attributes::attributes().padded())
-        .then(visibility::parser())
-        .then_ignore(util::keyword_ex("readonly").or_not())
-        .then(field)
-        .map(|(((comments, user), visibility), (ty, name))| {
-            (
-                Field {
-                    name,
-                    ty,
-                    attributes: Attributes {
-                        comments,
-                        user,
-                        ..Default::default()
-                    },
+            let namespace = if namespace.children.is_empty() {
+                None
+            } else {
+                Some(namespace)
+            };
+
+            let dto = Dto {
+                name,
+                fields,
+                rpcs,
+                attributes: Attributes {
+                    comments,
+                    user,
+                    ..Default::default()
                 },
-                visibility,
-            )
+                namespace,
+            };
+
+            (dto, visibility)
         })
 }
 
@@ -119,9 +63,9 @@ mod tests {
 
     use crate::parser::dto;
     use crate::parser::visibility::Visibility;
-    use apyxl::test_util::executor::{TEST_CONFIG, TEST_PUB_ONLY_CONFIG};
-    use apyxl::parser::test_util::wrap_test_err;
     use apyxl::model::{Comment, attributes};
+    use apyxl::parser::test_util::wrap_test_err;
+    use apyxl::test_util::executor::{TEST_CONFIG, TEST_PUB_ONLY_CONFIG};
 
     #[test]
     fn private() -> Result<()> {
@@ -228,6 +172,47 @@ mod tests {
     }
 
     #[test]
+    fn non_static_field() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            struct StructName {
+                int field0 = 5;
+            }
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.fields.len(), 1);
+        assert!(dto.field("field0").is_some());
+        assert!(!dto.field("field0").unwrap().is_static);
+        Ok(())
+    }
+
+    #[test]
+    fn static_field() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            struct StructName {
+                static int field0 = 5;
+            }
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.fields.len(), 0);
+        assert!(dto.namespace.is_some());
+        let namespace = dto.namespace.unwrap();
+        assert_eq!(namespace.children.len(), 1);
+        assert!(namespace.field("field0").is_some());
+        assert!(namespace.field("field0").unwrap().is_static);
+        Ok(())
+    }
+
+    #[test]
     fn comment() -> Result<()> {
         let (dto, _) = dto::parser(&TEST_CONFIG)
             .parse(
@@ -277,6 +262,31 @@ mod tests {
     }
 
     #[test]
+    fn initializers() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                struct StructName {
+                    int field0 = 1;
+                    string field1 = "asbcd";
+                    string field2 = SomeSuper.Complex().default("var");
+                    public static STRING = "blah";
+                }
+                "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.fields.len(), 3);
+        assert_eq!(dto.fields[0].name, "field0");
+        assert_eq!(dto.fields[1].name, "field1");
+        assert_eq!(dto.fields[2].name, "field2");
+        assert!(dto.namespace.is_some());
+        assert_eq!(dto.namespace.unwrap().children[0].name(), "STRING");
+        Ok(())
+    }
+
+    #[test]
     fn attributes() -> Result<()> {
         let (dto, _) = dto::parser(&TEST_CONFIG)
             .parse(
@@ -299,30 +309,6 @@ mod tests {
     }
 
     #[test]
-    fn initializers() -> Result<()> {
-        let (dto, _) = dto::parser(&TEST_CONFIG)
-            .parse(
-                r#"
-                struct StructName {
-                    int field0 = 1;
-                    string field1 = "asbcd";
-                    string field2 = SomeSuper.Complex().default("var");
-                    public static STRING = "blah";
-                }
-                "#,
-            )
-            .into_result()
-            .map_err(wrap_test_err)?;
-        assert_eq!(dto.name, "StructName");
-        assert_eq!(dto.fields.len(), 4);
-        assert_eq!(dto.fields[0].name, "field0");
-        assert_eq!(dto.fields[1].name, "field1");
-        assert_eq!(dto.fields[2].name, "field2");
-        assert_eq!(dto.fields[3].name, "STRING");
-        Ok(())
-    }
-
-    #[test]
     fn rpc() -> Result<()> {
         let (dto, _) = dto::parser(&TEST_CONFIG)
             .parse(
@@ -336,11 +322,33 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.rpcs.len(), 2);
+        assert!(dto.rpc("rpc").is_some());
+        assert!(dto.rpc("other_rpc").is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn static_rpc() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                struct StructName {
+                    private static void rpc() {}
+                    public static int other_rpc() {}
+                }
+                "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
         assert!(dto.namespace.is_some());
         let namespace = dto.namespace.as_ref().unwrap();
         assert_eq!(namespace.children.len(), 2);
         assert!(namespace.rpc("rpc").is_some());
+        assert!(namespace.rpc("rpc").unwrap().is_static);
         assert!(namespace.rpc("other_rpc").is_some());
+        assert!(namespace.rpc("other_rpc").unwrap().is_static);
         Ok(())
     }
 
@@ -375,16 +383,69 @@ mod tests {
 
     #[test]
     fn nested_enum() -> Result<()> {
-        todo!("nyi")
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            struct StructName {
+                enum en {}
+            }
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert!(dto.namespace.is_some());
+        let namespace = dto.namespace.as_ref().unwrap();
+        assert!(namespace.en("en").is_some());
+        Ok(())
     }
 
     #[test]
     fn nested_class() -> Result<()> {
-        todo!("nyi")
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            struct StructName {
+                class Nested {
+                    class Nested2 {}
+                }
+            }
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert!(dto.namespace.is_some());
+        let namespace = dto.namespace.as_ref().unwrap();
+        assert!(namespace.dto("Nested").is_some());
+        let namespace = namespace.dto("Nested").unwrap().namespace.as_ref().unwrap();
+        assert!(namespace.dto("Nested2").is_some());
+        Ok(())
     }
 
     #[test]
-    fn complex_nested() -> Result<()> {
-        todo!("nyi")
+    fn no_nested_namespace() {
+        let result = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            struct StructName {
+                namespace blah {}
+            }
+            "#,
+            )
+            .into_result();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn no_nested_ty_alias() {
+        let result = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            struct StructName {
+                using Type = int;
+            }
+            "#,
+            )
+            .into_result();
+        assert!(result.is_err());
     }
 }

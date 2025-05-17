@@ -28,9 +28,11 @@ pub fn parser(config: &Config) -> impl Parser<&str, TypeRef, Error> {
             list(nested.clone()),
             // todo arrays like <type>[] end up in infinite left recursion.
             // todo this is solvable, probably with memoization.
+            // todo: ah use: Parser::rewind
             // arr(nested.clone()),
             map(nested.clone()),
             // todo optionals <type>? run into the same issue as arrays above.
+            // todo: ah use: Parser::rewind
             // option(nested),
             // Note that entity_id should come last because it is greedy.
             entity_id().map(Type::Api),
