@@ -14,7 +14,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, Namespace, Error> {
     recursive(|nested| {
         let prefix = keyword_ex("namespace").then(text::whitespace().at_least(1));
         let name = text::ident().separated_by(just(".")).collect::<Vec<_>>();
-        let body = children(config, nested.clone(), just('}').ignored(), false)
+        let body = children(config, nested.clone(), just('}').ignored())
             .delimited_by(just('{').padded(), just('}').padded());
         comment::multi()
             .then(attributes::attributes().padded())
@@ -42,25 +42,15 @@ pub fn children<'a>(
     config: &'a Config,
     namespace: impl Parser<'a, &'a str, Namespace<'a>, Error<'a>>,
     end_delimiter: impl Parser<'a, &'a str, (), Error<'a>>,
-    inside_dto: bool,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
-    // todo ... I think I should have two different namespace children styles instead of filters like below...
-    // todo     that best support parsing errors I think.
-
     choice((
         dto::parser(config).map(|(c, v)| Some((NamespaceChild::Dto(c), v))),
         en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
-        rpc::parser(config)
-            .map(|(c, v)| Some((NamespaceChild::Rpc(c), v)))
-            .filter(move |_| inside_dto),
-        field::parser(config)
-            .map(|(c, v)| Some((NamespaceChild::Field(c), v)))
-            .filter(move |_| inside_dto),
+        rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
+        field::parser(config).map(|(c, v)| Some((NamespaceChild::Field(c), v))),
         // todo
         // ty_alias::parser(config).map(|(c, v)| Some((NamespaceChild::TypeAlias(c), v))).filter(move |_| !inside_dto),
-        namespace
-            .map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public)))
-            .filter(move |_| !inside_dto),
+        namespace.map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
@@ -82,7 +72,7 @@ mod tests {
     use chumsky::Parser;
 
     use crate::parser::namespace;
-    use apyxl::model::{Comment, NamespaceChild, attributes};
+    use apyxl::model::{attributes, Comment, NamespaceChild};
     use apyxl::parser::test_util::wrap_test_err;
     use apyxl::test_util::executor::TEST_CONFIG;
 

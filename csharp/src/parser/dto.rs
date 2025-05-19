@@ -1,59 +1,86 @@
-use chumsky::prelude::*;
-
 use crate::parser::is_static::is_static;
 use crate::parser::visibility::Visibility;
-use crate::parser::{Config, namespace, util};
+use crate::parser::{Config, en, field, rpc, util};
 use crate::parser::{attributes, comment, visibility};
-use apyxl::model::{Attributes, Dto, Namespace};
+use apyxl::model::{Attributes, Dto, Namespace, NamespaceChild};
 use apyxl::parser::error::Error;
+use chumsky::prelude::*;
+use itertools::Itertools;
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
-    let prefix = choice((
-        util::keyword_ex("struct"),
-        util::keyword_ex("class"),
-        util::keyword_ex("interface"),
-    ))
-    .then(text::whitespace().at_least(1));
-    let name = text::ident();
-    let none = any().map(|_| Namespace::default());
-    let children = namespace::children(config, none, just('}').ignored(), true)
-        .delimited_by(just('{').padded(), just('}').padded())
-        .boxed();
-    comment::multi()
-        .padded()
-        .then(attributes::attributes().padded())
-        .then(visibility::parser())
-        .then_ignore(is_static())
-        .then_ignore(prefix)
-        .then(name)
-        .then(children)
-        .map(|((((comments, user), visibility), name), children)| {
-            let mut namespace = Namespace {
-                children,
-                ..Default::default()
-            };
-            let (fields, rpcs) = namespace.extract_non_static();
-
-            let namespace = if namespace.children.is_empty() {
-                None
-            } else {
-                Some(namespace)
-            };
-
-            let dto = Dto {
-                name,
-                fields,
-                rpcs,
-                attributes: Attributes {
-                    comments,
-                    user,
+    recursive(|nested| {
+        let prefix = choice((
+            util::keyword_ex("struct"),
+            util::keyword_ex("class"),
+            util::keyword_ex("interface"),
+        ))
+        .then(text::whitespace().at_least(1));
+        let name = text::ident();
+        let children = children(config, nested, just('}').ignored())
+            .delimited_by(just('{').padded(), just('}').padded())
+            .boxed();
+        comment::multi()
+            .padded()
+            .then(attributes::attributes().padded())
+            .then(visibility::parser())
+            .then_ignore(is_static())
+            .then_ignore(prefix)
+            .then(name)
+            .then(children)
+            .map(|((((comments, user), visibility), name), children)| {
+                let mut namespace = Namespace {
+                    children,
                     ..Default::default()
-                },
-                namespace,
-            };
+                };
+                let (fields, rpcs) = namespace.extract_non_static();
 
-            (dto, visibility)
-        })
+                let namespace = if namespace.children.is_empty() {
+                    None
+                } else {
+                    Some(namespace)
+                };
+
+                let dto = Dto {
+                    name,
+                    fields,
+                    rpcs,
+                    attributes: Attributes {
+                        comments,
+                        user,
+                        ..Default::default()
+                    },
+                    namespace,
+                };
+
+                (dto, visibility)
+            })
+            .boxed()
+    })
+}
+
+fn children<'a>(
+    config: &'a Config,
+    dto: impl Parser<'a, &'a str, (Dto<'a>, Visibility), Error<'a>>,
+    end_delimiter: impl Parser<'a, &'a str, (), Error<'a>>,
+) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
+    choice((
+        dto.map(|(c, v)| Some((NamespaceChild::Dto(c), v))),
+        en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
+        rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
+        field::parser(config).map(|(c, v)| Some((NamespaceChild::Field(c), v))),
+    ))
+    .recover_with(skip_then_retry_until(
+        any().ignored(),
+        end_delimiter.ignored(),
+    ))
+    .map(|opt| match opt {
+        Some((child, visibility)) => visibility.filter(child, config),
+        None => None,
+    })
+    .repeated()
+    .collect::<Vec<_>>()
+    .map(|v| v.into_iter().flatten().collect_vec())
+    .then_ignore(comment::multi())
 }
 
 #[cfg(test)]

@@ -54,12 +54,13 @@ impl Input for Glob {
 fn walk_glob(root: &Path, glob: &str) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let glob_path = root.join(glob);
-    let glob = globset::Glob::new(
-        glob_path
-            .to_str()
-            .ok_or_else(|| anyhow!("could not convert glob path '{:?}' to OS str", glob_path))?,
-    )?
-    .compile_matcher();
+    let glob_str = glob_path
+        .to_str()
+        .ok_or_else(|| anyhow!("could not convert glob path '{:?}' to OS str", glob_path))?;
+    let glob = globset::GlobBuilder::new(glob_str)
+        .literal_separator(true)
+        .build()?
+        .compile_matcher();
     for entry in WalkDir::new(root) {
         let entry = entry?;
         if entry.file_type().is_dir() {
