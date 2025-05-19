@@ -42,6 +42,7 @@ impl apyxl::Parser for CSharpParser {
                 .collect::<Vec<_>>();
 
             let children = imports
+                .ignore_then(assembly_definitions())
                 .ignore_then(
                     namespace::children(config, namespace::parser(config), end().ignored())
                         .padded(),
@@ -71,22 +72,32 @@ impl apyxl::Parser for CSharpParser {
 }
 
 fn using<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
-    util::keyword_ex("using")
+    comment::multi()
+        .then(util::keyword_ex("using"))
         .then(text::whitespace().at_least(1))
         .then(text::ident().separated_by(just(".")).collect::<Vec<_>>())
         .then(just(';'))
         .ignored()
 }
 
+fn assembly_definitions<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
+    let asmdef = util::keyword_ex("assembly")
+        .then(just(":").padded())
+        .then(any().and_is(just("]").not()).repeated().slice())
+        .delimited_by(just("[").padded(), just("]").padded());
+    comment::multi().then(asmdef).repeated().ignored()
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::parser::{CSharpParser, assembly_definitions};
     use anyhow::Result;
-
-    use crate::parser::CSharpParser;
     use apyxl::model::{Builder, UNDEFINED_NAMESPACE};
     use apyxl::parser::Config;
     use apyxl::test_util::executor::TEST_CONFIG;
     use apyxl::{Parser, input};
+    use chumsky::Parser as ChumskyParser;
+    use itertools::Itertools;
 
     #[test]
     fn root_namespace() -> Result<()> {
@@ -192,6 +203,36 @@ mod tests {
         assert!(model.api().dto("ignored_dto").is_none());
         assert!(model.api().en("ignored_en").is_none());
         Ok(())
+    }
+
+    #[test]
+    fn assembly_definition_parser() {
+        let result = assembly_definitions()
+            .parse(r#"
+            // comment
+            [assembly: AssemblyVersion(123.123.123.123)]
+            "#)
+            .into_result();
+        if result.is_err() {
+            println!("{}", result.unwrap_err().iter().join(","));
+            panic!("error parsing");
+        }
+    }
+
+    #[test]
+    fn ignore_assembly_definitions() -> Result<()> {
+        let mut input = input::Buffer::new(
+            r#"
+        [assembly: blah blahsd () <>.sd.as=++]
+        // comment
+        [assembly: AssemblyVersion(123.123.123.123)]
+        // comment
+        // comment
+        [assembly: "zzz"]
+        "#,
+        );
+        let mut builder = Builder::default();
+        CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)
     }
 
     mod using_decl {
