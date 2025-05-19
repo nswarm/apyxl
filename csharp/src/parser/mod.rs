@@ -43,7 +43,7 @@ impl apyxl::Parser for CSharpParser {
 
             let children = imports
                 .ignore_then(
-                    namespace::children(config, namespace::parser(config), end().ignored(), false)
+                    namespace::children(config, namespace::parser(config), end().ignored())
                         .padded(),
                 )
                 .then_ignore(end())

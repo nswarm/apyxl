@@ -11,7 +11,7 @@ rm -rf "$outDir"
 # See results in sibling folder `output`.
 cd "$scriptDir"
 RUST_LOG=${RUST_LOG-info} cargo run -- \
-  --input "$examplesDir/csharp/**/*.cs" \
+  --input "$examplesDir/csharp/*.cs" \
   --parser csharp \
   --parser-config "$examplesDir/csharp/parser_config.json" \
   --generator rust \
