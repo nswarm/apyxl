@@ -1,4 +1,8 @@
+using System.Reflection;
 using Platform.Service;
+
+// feature: ignore assembly info
+[assembly: AssemblyVersion("1.2.3.4")]
 
 namespace Platform
 {
