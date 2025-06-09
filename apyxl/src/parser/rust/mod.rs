@@ -165,6 +165,7 @@ fn apply_imports(
                 imports,
             )?;
         }
+        // todo already out of date... we don't handle rpcs here :(
     }
 
     for rpc in namespace.rpcs_mut() {

@@ -35,11 +35,9 @@ impl apyxl::Parser for CSharpParser {
         for (chunk, data) in input.chunks() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
 
-            let imports = comment::multi()
-                .then(using())
-                .padded()
-                .repeated()
-                .collect::<Vec<_>>();
+            let dealiased = remove_aliases(data);
+
+            let imports = using().padded().repeated().collect::<Vec<_>>();
 
             let children = imports
                 .ignore_then(assembly_definitions())
@@ -56,28 +54,68 @@ impl apyxl::Parser for CSharpParser {
                     return_err
                 })?;
 
-            builder.merge_from_chunk(
-                Api {
-                    name: Cow::Borrowed(UNDEFINED_NAMESPACE),
-                    children,
-                    attributes: Default::default(),
-                    is_virtual: false,
-                },
-                chunk,
-            );
+            let api = Api {
+                name: Cow::Borrowed(UNDEFINED_NAMESPACE),
+                children,
+                attributes: Default::default(),
+                is_virtual: false,
+            };
+            builder.merge_from_chunk(api, chunk);
         }
 
         Ok(())
     }
 }
 
-fn using<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
+/// Parses any `using X = Y;` statements, then uses those as find+replace input to modify the
+/// input data to remove all type aliases, returning the modified data.
+///
+/// This is necessary because C# doesn't have 'real' typedefs, it only has file-local using
+/// statements. This maybe isn't the most performant way to do this, but it is pretty simple.
+fn remove_aliases(data: &str) -> Cow<str> {
+    // Using statements must be at the beginning of the file.
+
+    /// hmmmmmmmmmm.... this isn't actually that great lol...
+    /// because what if I have like...
+    /// using Field = int;
+    /// class Dto {
+    ///     Field Field;
+    /// }
+    ///
+    /// that will result in
+    /// class Dto {
+    ///     int int;
+    /// }
+    ///
+    /// which is definitely an error.... fffff
+    // todo
+    // ok... I need a better way of walking the entire hierarchy for types that guarantees
+    // that when I add new type locations, those are hit too by everything....
+    // maybe like namespace.types() -> Iterator<Item = TypeRef> or smth
+    // ........ NOW WE'RE TLAKING
+    Cow::Owned(data.to_string())
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct LocalAlias<'a> {
+    find: &'a str,
+    replace: &'a str,
+}
+
+fn using<'a>() -> impl Parser<'a, &'a str, Option<LocalAlias<'a>>, Error<'a>> {
+    let find = text::ident().separated_by(just(".")).slice();
+    let replace = any()
+        .and_is(just(";").not())
+        .repeated()
+        .slice()
+        .map(&str::trim);
     comment::multi()
-        .then(util::keyword_ex("using"))
-        .then(text::whitespace().at_least(1))
-        .then(text::ident().separated_by(just(".")).collect::<Vec<_>>())
-        .then(just(';'))
-        .ignored()
+        .ignore_then(util::keyword_ex("using"))
+        .ignore_then(text::whitespace().at_least(1))
+        .ignore_then(find)
+        .then(just("=").padded().ignore_then(replace).or_not())
+        .then_ignore(just(';').padded())
+        .map(|(find, replace)| replace.map(|replace| LocalAlias { find, replace }))
 }
 
 fn assembly_definitions<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
@@ -101,16 +139,6 @@ mod tests {
 
     #[test]
     fn root_namespace() -> Result<()> {
-        // todo
-        //
-        // // zzz
-        // const ignored: &[&str] = &["zz", "xx"];
-        // // alias comment
-        // type private_alias = u32;
-        // // alias comment
-        // pub type alias = u32;
-        //      (inside class) void method() {}
-        // pub const asjkdhflakjshdg ignored var;
         let mut input = input::Buffer::new(
             r#"
         // comment
@@ -118,6 +146,8 @@ mod tests {
         // comment
         // comment
         using asdf.x.y.z;
+        // alias comment
+        using private_alias = u32;
         public class dto {
             public void method() {}
         }
@@ -139,7 +169,6 @@ mod tests {
         assert!(model.api().dto("dto").is_some(), "dto");
         assert!(model.api().rpc("rpc").is_some(), "rpc");
         assert!(model.api().en("en").is_some(), "en");
-        // assert!(model.api().ty_alias("alias").is_some(), "alias");
         assert!(
             model.api().namespace("SomeNamespace").is_some(),
             "SomeNamespace"
@@ -147,10 +176,6 @@ mod tests {
         assert!(model.api().dto("private_dto").is_some(), "private_dto");
         assert!(model.api().rpc("private_rpc").is_some(), "private_rpc");
         assert!(model.api().en("private_en").is_some(), "private_en");
-        // assert!(
-        //     model.api().ty_alias("private_alias").is_some(),
-        //     "private_alias"
-        // );
         assert!(
             model.api().dto("dto").unwrap().namespace.is_some(),
             "dto scope namespace"
@@ -208,10 +233,12 @@ mod tests {
     #[test]
     fn assembly_definition_parser() {
         let result = assembly_definitions()
-            .parse(r#"
+            .parse(
+                r#"
             // comment
             [assembly: AssemblyVersion(123.123.123.123)]
-            "#)
+            "#,
+            )
             .into_result();
         if result.is_err() {
             println!("{}", result.unwrap_err().iter().join(","));
@@ -235,27 +262,100 @@ mod tests {
         CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)
     }
 
-    mod using_decl {
+    mod using {
         use crate::parser::CSharpParser;
         use anyhow::Result;
-        use apyxl::model::Builder;
+        use apyxl::model::{Builder, Type};
         use apyxl::test_util::executor::TEST_CONFIG;
-        use apyxl::{Parser, input};
+        use apyxl::{Parser, input, parser};
 
         #[test]
         fn import() -> Result<()> {
-            run_test("using asd;")
+            assert_no_parse_errors("using asd;")
         }
 
         #[test]
         fn namespaced() -> Result<()> {
-            run_test("using a.b.c.d;")
+            assert_no_parse_errors("using a.b.c.d;")
         }
 
-        fn run_test(input: &str) -> Result<()> {
+        #[test]
+        fn alias_replaces_types() -> Result<()> {
+            let input = r#"
+            using BlahType = string;
+            class Dto {
+                BlahType bt;
+                BlahType func(BlahType bt) {}
+            }
+            "#;
+            let mut input = input::Buffer::new(input);
+            let mut builder = Builder::default();
+            CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
+            let model = builder.build().unwrap();
+            let api = model.api();
+
+            let dto = api.dto("Dto").unwrap();
+            let field = dto.field("bt").unwrap();
+            let rpc = dto.rpc("func").unwrap();
+            assert_eq!(field.ty.value, Type::String);
+            assert_eq!(rpc.return_type.as_ref().unwrap().value, Type::String);
+            Ok(())
+        }
+
+        fn assert_no_parse_errors(input: &str) -> Result<()> {
             let mut input = input::Buffer::new(input);
             let mut builder = Builder::default();
             CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)
+        }
+    }
+    mod using_alias {
+        use crate::parser::{LocalAlias, using};
+        use anyhow::Result;
+        use apyxl::parser::test_util::wrap_test_err;
+        use chumsky::Parser as ChumskyParser;
+
+        #[test]
+        fn non_alias_returns_none() -> Result<()> {
+            assert_local_alias(r#"using a.b.c;"#, None)
+        }
+
+        #[test]
+        fn alias() -> Result<()> {
+            assert_local_alias(
+                r#"using a = b;"#,
+                Some(LocalAlias {
+                    find: "a",
+                    replace: "b",
+                }),
+            )
+        }
+
+        #[test]
+        fn trims_alias() -> Result<()> {
+            assert_local_alias(
+                r#"using a =   b      ;"#,
+                Some(LocalAlias {
+                    find: "a",
+                    replace: "b",
+                }),
+            )
+        }
+
+        #[test]
+        fn complex_alias() -> Result<()> {
+            assert_local_alias(
+                r#"using a = b. dsa sd()^*#@ vyzu;"#,
+                Some(LocalAlias {
+                    find: "a",
+                    replace: "b. dsa sd()^*#@ vyzu",
+                }),
+            )
+        }
+
+        fn assert_local_alias(input: &str, expected: Option<LocalAlias>) -> Result<()> {
+            let actual = using().parse(input).into_result().map_err(wrap_test_err)?;
+            assert_eq!(actual, expected);
+            Ok(())
         }
     }
 }

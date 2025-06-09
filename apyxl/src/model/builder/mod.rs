@@ -815,7 +815,7 @@ mod tests {
                 let entity_id = EntityId::try_from(id).expect("invalid entity_id");
                 let dto0 = model
                     .api
-                    .find_entity(entity_id.clone())
+                    .find_entity_by_id(entity_id.clone())
                     .expect("entity does not exist");
                 assert_eq!(entity_id_attr(&dto0), Some(&entity_id), "{}", id);
             }
@@ -1743,7 +1743,7 @@ mod tests {
 
             fn assert_qualified_ty(api: &Api, ty_id: &str, expected_target_id: &str) {
                 let ty_id = EntityId::try_from(ty_id).unwrap();
-                let ty_entity = api.find_entity(ty_id).expect("couldn't find ty_id");
+                let ty_entity = api.find_entity_by_id(ty_id).expect("couldn't find ty_id");
                 if let Entity::Type(ty) = ty_entity {
                     let target = ty.value.api().unwrap();
                     assert!(target.is_qualified(), "target not qualified");

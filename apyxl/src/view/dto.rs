@@ -1,5 +1,5 @@
 use crate::model;
-use crate::model::entity::ToEntity;
+use crate::model::entity::AsEntity;
 use crate::model::EntityType;
 use crate::view::{Attributes, Field, Namespace, Rpc, Transforms};
 use dyn_clone::DynClone;
@@ -69,12 +69,7 @@ impl<'v, 'a> Dto<'v, 'a> {
             .rpcs
             .iter()
             .filter(|rpc| self.filter_rpc(rpc))
-            .map(move |field| {
-                Rpc::new(
-                    field,
-                    &self.xforms
-                )
-            })
+            .map(move |field| Rpc::new(field, &self.xforms))
     }
 
     pub fn attributes(&self) -> Attributes {
@@ -180,7 +175,7 @@ mod tests {
     //         .find_dto(&EntityId::try_from("d:dto").unwrap())
     //         .unwrap();
     //     let fields = dto.fields().map(|f| f.name().to_string()).collect_vec();
-    // 
+    //
     //     assert_eq!(fields, vec!["visible0", "visible1"]);
     // }
 }

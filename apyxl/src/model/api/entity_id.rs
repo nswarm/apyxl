@@ -183,6 +183,7 @@ impl EntityId {
     /// assert_eq!(child, EntityId::try_from("a.b.c").unwrap());
     /// ```
     pub fn child<S: ToString>(&self, ty: EntityType, name: S) -> Result<Self> {
+        // todo could have a to_child as well to consume self
         if let Some(last) = self.components.iter().last() {
             if !last.ty.is_valid_subtype(&ty) {
                 return Err(anyhow!(

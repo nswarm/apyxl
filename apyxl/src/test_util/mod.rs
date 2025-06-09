@@ -50,3 +50,12 @@ pub fn test_field(i: usize) -> model::Field<'static> {
         is_static: false,
     }
 }
+
+pub fn test_static_field(i: usize) -> model::Field<'static> {
+    model::Field {
+        name: NAMES[i],
+        ty: TypeRef::new(Type::U32, Semantics::Value),
+        attributes: Default::default(),
+        is_static: true,
+    }
+}

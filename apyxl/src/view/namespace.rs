@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use dyn_clone::DynClone;
 
 use crate::model;
-use crate::model::entity::ToEntity;
+use crate::model::entity::AsEntity;
 use crate::model::EntityType;
 use crate::view::ty_alias::TypeAlias;
 use crate::view::{Attributes, Dto, Enum, Field, Rpc, Transforms};

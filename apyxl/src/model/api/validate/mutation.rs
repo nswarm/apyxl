@@ -28,7 +28,7 @@ impl Mutation {
 pub mod qualify_type {
     use anyhow::{anyhow, Result};
 
-    use crate::model::entity::{EntityMut, FindEntity};
+    use crate::model::entity::{EntityMut, FindEntity, FindEntityMut};
     use crate::model::{Api, EntityId, TypeRef};
 
     #[derive(Debug)]
@@ -38,7 +38,7 @@ pub mod qualify_type {
     }
 
     pub fn execute(api: &mut Api, data: Data) -> Result<()> {
-        match api.find_entity_mut(data.entity_id.clone()) {
+        match api.find_entity_by_id_mut(data.entity_id.clone()) {
             None => Err(error_entity_id_not_found(&data.entity_id)),
             Some(entity) => match entity {
                 EntityMut::Type(ty) => {

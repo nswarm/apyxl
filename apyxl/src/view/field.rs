@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 
 use crate::model;
-use crate::model::entity::ToEntity;
+use crate::model::entity::AsEntity;
 use crate::model::EntityType;
 use crate::view::{AttributeTransform, Attributes, EntityIdTransform, TypeRef};
 
