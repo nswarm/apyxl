@@ -1,12 +1,12 @@
 use chumsky::prelude::*;
 use std::borrow::Cow;
 
-use apyxl::parser::error::Error;
 use apyxl::model::attributes;
+use apyxl::parser::error::Error;
 
 pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, Error<'a>> {
     // todo doesn't quite work for all C# attrs.
-    let name = text::ident();
+    let name = text::ident().separated_by(just(".").padded()).slice();
     let data = text::ident()
         .then(just('=').padded().ignore_then(text::ident()).or_not())
         .map(|(lhs, rhs)| match rhs {
@@ -35,7 +35,7 @@ pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, E
             )),
         )
         .or_not()
-        .map(|opt| opt.unwrap_or(vec![]))
+        .map(|opt| opt.unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -43,9 +43,9 @@ mod tests {
     use chumsky::Parser;
 
     use crate::parser::dto;
-    use apyxl::test_util::executor::TEST_CONFIG;
     use apyxl::model::attributes;
     use apyxl::model::attributes::UserData;
+    use apyxl::test_util::executor::TEST_CONFIG;
 
     #[test]
     fn flags() {
@@ -59,6 +59,17 @@ mod tests {
                 attributes::User::new_flag("flag2"),
                 attributes::User::new_flag("flag3"),
             ],
+        )
+    }
+
+    #[test]
+    fn namespaced() {
+        run_test(
+            r#"
+                    [a.b.c.attr]
+                    struct dto {}
+                    "#,
+            vec![attributes::User::new_flag("a.b.c.attr")],
         )
     }
 
