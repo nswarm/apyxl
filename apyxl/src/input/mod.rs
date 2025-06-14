@@ -19,7 +19,5 @@ mod stdin;
 /// must remain in memory for the duration of parsing. This is a choice that requires more memory,
 /// but allows the parsing and generation process to be nearly copy-free.
 pub trait Input {
-    fn chunks(&self) -> Vec<(&Chunk, &Data)>;
+    fn chunks(&self) -> Vec<(&Chunk, &str)>;
 }
-
-pub type Data = String;

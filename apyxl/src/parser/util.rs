@@ -1,6 +1,6 @@
 use crate::parser::error::Error;
 use chumsky::error::Rich;
-use chumsky::{Parser, text};
+use chumsky::{text, Parser};
 
 /// Expanded [text::keyword] that has a more informative error.
 pub fn keyword_ex(keyword: &str) -> impl Parser<&str, &str, Error> {

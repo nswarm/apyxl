@@ -2,12 +2,12 @@ use std::io::{stdin, Read};
 
 use anyhow::Result;
 
-use crate::input::{Data, Input};
+use crate::input::Input;
 use crate::model::Chunk;
 
 pub struct StdIn {
     chunk: Chunk,
-    data: Data,
+    data: String,
 }
 
 impl StdIn {
@@ -23,7 +23,7 @@ impl StdIn {
 }
 
 impl Input for StdIn {
-    fn chunks(&self) -> Vec<(&Chunk, &Data)> {
+    fn chunks(&self) -> Vec<(&Chunk, &str)> {
         vec![(&self.chunk, &self.data)]
     }
 }
