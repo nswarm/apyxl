@@ -4,13 +4,13 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use itertools::Itertools;
 
-use crate::input::{Data, Input};
+use crate::input::Input;
 use crate::model::Chunk;
 
 /// Input from one or more files in a file system.
 #[derive(Default)]
 pub struct FileSet {
-    chunks: Vec<(Chunk, Data)>,
+    chunks: Vec<(Chunk, String)>,
 }
 
 impl FileSet {
@@ -37,9 +37,16 @@ impl FileSet {
 }
 
 impl Input for FileSet {
-    fn chunks(&self) -> Vec<(&Chunk, &Data)> {
-        self.chunks.iter().map(|(c, d)| (c, d)).collect_vec()
+    fn chunks(&self) -> Vec<(&Chunk, &str)> {
+        self.chunks
+            .iter()
+            .map(|(c, d)| (c, strip_bom(d)))
+            .collect_vec()
     }
+}
+
+fn strip_bom(data: &str) -> &str {
+    data.trim_start_matches("\u{feff}")
 }
 
 #[cfg(test)]

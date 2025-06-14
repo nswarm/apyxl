@@ -1,12 +1,12 @@
 use itertools::Itertools;
 
-use crate::input::{Data, Input};
+use crate::input::Input;
 use crate::model::Chunk;
 
 /// Stores data across multiple in-memory chunks.
 #[derive(Default)]
 pub struct ChunkBuffer {
-    chunks: Vec<(Chunk, Data)>,
+    chunks: Vec<(Chunk, String)>,
 }
 
 impl ChunkBuffer {
@@ -20,7 +20,10 @@ impl ChunkBuffer {
 }
 
 impl Input for ChunkBuffer {
-    fn chunks(&self) -> Vec<(&Chunk, &Data)> {
-        self.chunks.iter().map(|(c, d)| (c, d)).collect_vec()
+    fn chunks(&self) -> Vec<(&Chunk, &str)> {
+        self.chunks
+            .iter()
+            .map(|(c, d)| (c, d.as_str()))
+            .collect_vec()
     }
 }

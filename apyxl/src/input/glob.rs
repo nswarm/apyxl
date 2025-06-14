@@ -6,7 +6,7 @@ use chumsky::prelude::*;
 use walkdir::WalkDir;
 
 use crate::input;
-use crate::input::{Chunk, Data, Input};
+use crate::input::{Chunk, Input};
 
 /// Input from one or more files in a file system.
 #[derive(Default)]
@@ -46,7 +46,7 @@ impl Glob {
 }
 
 impl Input for Glob {
-    fn chunks(&self) -> Vec<(&Chunk, &Data)> {
+    fn chunks(&self) -> Vec<(&Chunk, &str)> {
         self.file_set.chunks()
     }
 }
