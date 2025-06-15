@@ -1,12 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace Platform.Service
 {
 
 using SpecialId = UInt32;
 
-[Serializable]
+[System.Serializable]
 public class User
 {
     public const string PubConstName = "name";

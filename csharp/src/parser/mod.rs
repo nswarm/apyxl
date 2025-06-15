@@ -7,8 +7,8 @@ use log::debug;
 
 use apyxl::model::entity::{EntityMut, FindEntity};
 use apyxl::model::{
-    entity, Api, Chunk, EntityId, EntityType, Field, Namespace, NamespaceChild, Rpc, Semantics,
-    Type, TypeRef, UNDEFINED_NAMESPACE,
+    entity, Api, EntityId, EntityType, Field, Namespace, NamespaceChild, Rpc, Type,
+    TypeRef, UNDEFINED_NAMESPACE,
 };
 use apyxl::parser::error::Error;
 use apyxl::parser::{error, util, Config};
@@ -24,6 +24,7 @@ mod is_static;
 mod namespace;
 mod rpc;
 mod ty;
+mod ty_alias;
 mod visibility;
 
 #[derive(Default)]
@@ -39,19 +40,26 @@ impl apyxl::Parser for CSharpParser {
         for (chunk, data) in input.chunks() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
 
-            let imports = using(config)
+            // These must come before asmdefs, but still be appended to the top level
+            // namespace aliases.
+            let file_aliases = ty_alias::parser(config)
+                .map(|alias| alias.map(NamespaceChild::TypeAlias))
                 .padded()
                 .repeated()
-                .collect::<Vec<_>>()
-                .ignored();
+                .collect::<Vec<Option<NamespaceChild>>>();
 
-            let children = imports // Ignore local aliases as part of the api.
-                .ignore_then(assembly_definitions())
-                .ignore_then(
+            let children = file_aliases
+                .then_ignore(assembly_definitions())
+                .then(
                     namespace::children(config, namespace::parser(config), end().ignored())
                         .padded(),
                 )
                 .then_ignore(end())
+                .map(|(aliases, mut children)| {
+                    let mut aliases = aliases.into_iter().flatten().collect_vec();
+                    children.append(&mut aliases);
+                    children
+                })
                 .parse(data)
                 .into_result()
                 .map_err(|errs| {
@@ -67,7 +75,7 @@ impl apyxl::Parser for CSharpParser {
                 is_virtual: false,
             };
 
-            remove_chunk_local_aliases(config, chunk, data, &mut api)?;
+            apply_local_ty_aliases(&mut api)?;
 
             builder.merge_from_chunk(api, chunk);
         }
@@ -81,60 +89,82 @@ impl apyxl::Parser for CSharpParser {
 ///
 /// This is necessary because C# doesn't have 'real' typedefs, it only has file-local using
 /// statements.
-fn remove_chunk_local_aliases(
-    config: &Config,
-    chunk: &Chunk,
-    raw_data: &str,
-    api: &mut Api,
-) -> Result<()> {
-    // Using statements must be at the beginning of the file. So just reparse to use here.
-    let aliases = comment::multi()
-        .ignore_then(using(config))
-        .padded()
-        .repeated()
-        .collect::<Vec<_>>()
-        .then_ignore(any().repeated())
-        .parse(raw_data)
-        .into_result()
-        .map_err(|errs| {
-            let return_err = anyhow!(
-                "errors encountered while parsing local aliases: {:?}",
-                &errs
-            );
-            error::report_errors(chunk, raw_data, errs.clone());
-            return_err
-        })?
-        .into_iter()
-        .flatten()
-        .collect_vec();
-
+fn apply_local_ty_aliases(api: &mut Api) -> Result<()> {
     let mut type_ids = Vec::new();
     collect_type_ids(api, EntityId::default(), &mut type_ids);
 
-    for type_id in type_ids {
-        let actual_type_ref = api
-            .find_entity_mut(type_id)
-            .expect("entity id should exist since we just collected it");
-        let actual_type_ref = if let EntityMut::Type(type_ref) = actual_type_ref {
-            type_ref
-        } else {
-            unreachable!("we only collect TypeRef entity ids, so this should really be one");
-        };
-        if let Some(alias) = aliases.iter().find(|x| x.find == *actual_type_ref) {
-            actual_type_ref.value = alias.replace.value.clone();
-            actual_type_ref.semantics = alias.replace.semantics;
+    // Each pass replaces one level of indirection, so if an alias refers to another alias,
+    // you need two passes. So we just loop until we stop making replacements.
+    loop {
+        let mut made_replacements = false;
+        for type_id in &type_ids {
+            let ty_parent = type_id.namespace().unwrap_or_default();
+            let ty = type_ref(api, type_id.clone()).value.clone();
+            let replace_ty = match find_alias_target_ty(api, ty_parent, ty) {
+                None => {
+                    continue;
+                }
+                Some(ty) => ty,
+            };
+
+            let actual_type_ref = type_ref(api, type_id.clone());
+            actual_type_ref.value = replace_ty;
+            made_replacements = true;
+        }
+        if !made_replacements {
+            break;
         }
     }
+
+    // Now remove all ty aliases because we don't want them polluting the merged API.
+    remove_all_ty_aliases(api);
 
     Ok(())
 }
 
-// I don't love this, but I have a plan for a much improved hierarchy iteration refactor in the future.
-pub fn collect_type_ids(
-    namespace: &Namespace,
-    namespace_id: EntityId,
-    type_ids: &mut Vec<EntityId>,
-) {
+fn type_ref<'a>(api: &'a mut Api, alias_id: EntityId) -> &'a mut TypeRef {
+    let type_ref = api
+        .find_entity_mut(alias_id)
+        .expect("entity id should exist since we just collected it");
+    if let EntityMut::Type(type_ref) = type_ref {
+        type_ref
+    } else {
+        unreachable!("type checked in collect_type_ids");
+    }
+}
+
+fn find_alias_target_ty(
+    api: &mut Api,
+    mut from_ty_parent: EntityId,
+    from_ty: Type,
+) -> Option<Type> {
+    let rel_alias_id = if let Type::Api(alias_id) = from_ty {
+        alias_id
+    } else {
+        return None;
+    };
+
+    loop {
+        let namespace = api.find_namespace_mut(&from_ty_parent).unwrap();
+        if let Some(alias) = namespace.find_ty_alias(&rel_alias_id) {
+            return Some(alias.target_ty.value.clone());
+        }
+        from_ty_parent = from_ty_parent.parent()?
+    }
+}
+
+fn remove_all_ty_aliases(namespace: &mut Namespace) {
+    let is_not_ty_alias = |child: &NamespaceChild| !matches!(child, NamespaceChild::TypeAlias(_));
+    namespace.children.retain(is_not_ty_alias);
+
+    for namespace in namespace.namespaces_mut() {
+        remove_all_ty_aliases(namespace);
+    }
+}
+
+// I don't love this since it's duplicating iteration code that is very similar elsewhere,
+// but I have a plan for a much improved hierarchy iteration refactor in the future.
+fn collect_type_ids(namespace: &Namespace, namespace_id: EntityId, type_ids: &mut Vec<EntityId>) {
     let handle_field = |parent_id: &EntityId, field: &Field, type_ids: &mut Vec<EntityId>| {
         let field_id = parent_id.child(EntityType::Field, field.name).unwrap();
         type_ids.push(
@@ -195,30 +225,6 @@ pub fn collect_type_ids(
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-struct LocalAlias {
-    find: TypeRef,
-    replace: TypeRef,
-}
-
-// Works for all types of `using`, but returns None for non-LocalAlias.
-fn using(config: &Config) -> impl Parser<&str, Option<LocalAlias>, Error> {
-    let find = text::ident()
-        .map(|s: &str| TypeRef {
-            value: Type::Api(EntityId::new_unqualified(s.trim())),
-            semantics: Semantics::Value,
-        })
-        .then_ignore(just("=").padded());
-    let replace = ty::parser(config);
-    comment::multi()
-        .ignore_then(util::keyword_ex("using"))
-        .ignore_then(text::whitespace().at_least(1))
-        .ignore_then(find.or_not())
-        .then(replace)
-        .then_ignore(just(';').padded())
-        .map(|(find, replace)| find.map(|find| LocalAlias { find, replace }))
-}
-
 fn assembly_definitions<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
     let asmdef = util::keyword_ex("assembly")
         .then(just(":").padded())
@@ -231,12 +237,11 @@ fn assembly_definitions<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
 mod tests {
     use crate::parser::{assembly_definitions, CSharpParser};
     use anyhow::Result;
-    use apyxl::model::{Builder, Type, UNDEFINED_NAMESPACE};
+    use apyxl::model::{Builder, UNDEFINED_NAMESPACE};
     use apyxl::parser::Config;
     use apyxl::test_util::executor::TEST_CONFIG;
     use apyxl::{input, Parser};
     use chumsky::Parser as ChumskyParser;
-    use itertools::Itertools;
 
     #[test]
     fn root_namespace() -> Result<()> {
@@ -251,16 +256,13 @@ mod tests {
         using alias = uint;
         public class dto {
             public static void method() {}
+            alias AliasedField = 5;
         }
         private struct private_dto {}
         namespace SomeNamespace {}
         namespace Some.Other.Namespace {}
         enum private_en {}
         public enum en {}
-        /// rpc comment
-        public void rpc() {}
-        private void private_rpc() {}
-        alias rpc_with_alias_return() {}
         // end comment ignored
         "#,
         );
@@ -269,14 +271,12 @@ mod tests {
         let model = builder.build().unwrap();
         assert_eq!(model.api().name, UNDEFINED_NAMESPACE);
         assert!(model.api().dto("dto").is_some(), "dto");
-        assert!(model.api().rpc("rpc").is_some(), "rpc");
         assert!(model.api().en("en").is_some(), "en");
         assert!(
             model.api().namespace("SomeNamespace").is_some(),
             "SomeNamespace"
         );
         assert!(model.api().dto("private_dto").is_some(), "private_dto");
-        assert!(model.api().rpc("private_rpc").is_some(), "private_rpc");
         assert!(model.api().en("private_en").is_some(), "private_en");
         assert!(
             model.api().dto("dto").unwrap().namespace.is_some(),
@@ -295,13 +295,6 @@ mod tests {
             "dto scope rpc"
         );
         assert!(model.api().ty_alias("alias").is_none(), "alias not in api");
-        let alias_rpc = model.api().rpc("rpc_with_alias_return");
-        assert!(alias_rpc.is_some(), "rpc_with_alias_return");
-        assert_eq!(
-            alias_rpc.unwrap().return_type.as_ref().unwrap().value,
-            Type::U32,
-            "alias applied"
-        );
         Ok(())
     }
 
@@ -351,7 +344,7 @@ mod tests {
             )
             .into_result();
         if result.is_err() {
-            println!("{}", result.unwrap_err().iter().join(","));
+            // println!("{}", result.unwrap_err().iter().join(","));
             panic!("error parsing");
         }
     }
@@ -372,118 +365,138 @@ mod tests {
         CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)
     }
 
-    mod using {
-        use crate::parser::{using, CSharpParser, LocalAlias};
+    mod local_ty_alias {
+        use crate::parser::CSharpParser;
         use anyhow::Result;
-        use apyxl::model::{Builder, EntityId, Semantics, Type, TypeRef};
-        use apyxl::parser::test_util::wrap_test_err;
+        use apyxl::model::{Api, Builder, EntityId, Type};
         use apyxl::test_util::executor::TEST_CONFIG;
         use apyxl::{input, Parser};
-        use chumsky::Parser as ChumskyParser;
 
         #[test]
-        fn direct_parse() {
-            let input = "using asd;";
-            let result = using(&TEST_CONFIG).parse(input).into_result();
-            assert!(result.is_ok());
-        }
-
-        #[test]
-        fn import() -> Result<()> {
-            assert_no_parse_errors("using asd;")
-        }
-
-        #[test]
-        fn namespaced() -> Result<()> {
-            assert_no_parse_errors("using a.b.c.d;")
-        }
-
-        #[test]
-        fn import_with_comment() -> Result<()> {
-            assert_no_parse_errors(
-                r#"
-            // comment
-            using a.b.c.d;
-            "#,
-            )
-        }
-
-        #[test]
-        fn alias() -> Result<()> {
-            assert_local_alias(
-                r#"using a = b;"#,
-                LocalAlias {
-                    find: type_ref("a"),
-                    replace: type_ref("b"),
-                },
-            )
-        }
-
-        #[test]
-        fn trims_alias() -> Result<()> {
-            assert_local_alias(
-                r#"using   a    =   b      ;"#,
-                LocalAlias {
-                    find: type_ref("a"),
-                    replace: type_ref("b"),
-                },
-            )
-        }
-
-        #[test]
-        fn complex_alias() -> Result<()> {
-            assert_local_alias(
-                r#"using asdf_asd = b;"#,
-                LocalAlias {
-                    find: type_ref("asdf_asd"),
-                    replace: type_ref("b"),
-                },
-            )
-        }
-
-        #[test]
-        fn alias_replaces_types() -> Result<()> {
+        fn basic() -> Result<()> {
             let input = r#"
-            using BlahType = string;
-            class Dto {
-                BlahType bt;
-                BlahType func(BlahType bt) {}
+            using Alias = string;
+            struct Dto {
+                Alias field;
             }
             "#;
+            run_test(input, |api| {
+                let entity_id = EntityId::try_from("d:Dto.f:field").unwrap();
+                let field = api.find_field(&entity_id).unwrap();
+                assert_eq!(field.ty.value, Type::String);
+            })
+        }
+
+        #[test]
+        fn nested_inside() -> Result<()> {
+            let input = r#"
+            namespace a {
+                using Alias = string;
+                struct Dto {
+                    Alias field;
+                }
+            }
+            "#;
+            run_alias_test(input)
+        }
+
+        #[test]
+        fn nested_outside() -> Result<()> {
+            let input = r#"
+            using Alias = string;
+            namespace a {
+                struct Dto {
+                    Alias field;
+                }
+            }
+            "#;
+            run_alias_test(input)
+        }
+
+        #[test]
+        fn nested_sibling() -> Result<()> {
+            let input = r#"
+            namespace a {
+                struct Dto {
+                    b.Alias field;
+                }
+            }
+            namespace b {
+                using Alias = string;
+            }
+            "#;
+            run_alias_test(input)
+        }
+
+        #[test]
+        fn nested_child() -> Result<()> {
+            let input = r#"
+            namespace a {
+                struct Dto {
+                    b.Alias field;
+                }
+                namespace b {
+                    using Alias = string;
+                }
+            }
+            "#;
+            run_alias_test(input)
+        }
+
+        #[test]
+        fn multi_redirect_aliases() -> Result<()> {
+            let input = r#"
+            using Alias4 = a.x.Alias5;
+            namespace a {
+                struct Dto {
+                    b.Alias1 field;
+                }
+                namespace x {
+                    using Alias5 = string;
+                }
+                namespace b {
+                    using Alias1 = c.Alias2;
+                }
+                namespace c {
+                    using Alias2 = d.Alias3;
+                }
+            }
+            namespace d {
+                using Alias3 = Alias4;
+            }
+            "#;
+            run_alias_test(input)
+        }
+
+        #[test]
+        fn removes_type_aliases() -> Result<()> {
+            let input = r#"
+            using Alias1 = string;
+            namespace a {
+                using Alias2 = string;
+            }
+            "#;
+            run_test(input, |api| {
+                assert_eq!(api.ty_aliases().count(), 0);
+                assert_eq!(api.namespace("a").unwrap().ty_aliases().count(), 0);
+            })
+        }
+
+        fn run_alias_test(input: &'static str) -> Result<()> {
+            run_test(input, |api| {
+                let entity_id = EntityId::try_from("a.d:Dto.f:field").unwrap();
+                let field = api.find_field(&entity_id).unwrap();
+                assert_eq!(field.ty.value, Type::String);
+            })
+        }
+
+        fn run_test(input: &'static str, assertions: impl FnOnce(&Api)) -> Result<()> {
             let mut input = input::Buffer::new(input);
             let mut builder = Builder::default();
             CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
             let model = builder.build().unwrap();
-            let api = model.api();
-
-            let dto = api.dto("Dto").unwrap();
-            let field = dto.field("bt").unwrap();
-            let rpc = dto.rpc("func").unwrap();
-            assert_eq!(field.ty.value, Type::String);
-            assert_eq!(rpc.return_type.as_ref().unwrap().value, Type::String);
+            assertions(model.api());
             Ok(())
-        }
-
-        fn type_ref(id: &str) -> TypeRef {
-            TypeRef {
-                value: Type::Api(EntityId::new_unqualified(id)),
-                semantics: Semantics::Value,
-            }
-        }
-
-        fn assert_local_alias(input: &'static str, expected: LocalAlias) -> Result<()> {
-            let actual = using(&TEST_CONFIG)
-                .parse(input)
-                .into_result()
-                .map_err(wrap_test_err)?;
-            assert_eq!(actual, Some(expected));
-            Ok(())
-        }
-
-        fn assert_no_parse_errors(input: &str) -> Result<()> {
-            let mut input = input::Buffer::new(input);
-            let mut builder = Builder::default();
-            CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)
         }
     }
 }

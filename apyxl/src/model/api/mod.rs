@@ -42,7 +42,7 @@ pub type Api<'a> = Namespace<'a>;
 impl Api<'_> {
     /// Find `find_ty` by walking up the namespace hierarchy, starting at `initial_namespace`.
     /// Returns the fully qualified type [EntityId] if it exists.
-    /// Only supports finding [Dto]s and [Enum]s.
+    /// Only supports finding certain entity types.
     pub fn find_qualified_type_relative(
         &self,
         initial_namespace: &EntityId,

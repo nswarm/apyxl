@@ -440,21 +440,28 @@ impl<'a> Namespace<'a> {
 
     /// Find a [Rpc] by [EntityId] relative to this [Namespace].
     pub fn find_rpc(&self, entity_id: &EntityId) -> Option<&Rpc<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
-        let name = unqualified_name(entity_id);
-        match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.rpc(name),
-            _ => None,
+        let name = unqualified_name(entity_id)?;
+        if let Some(namespace) = self.find_namespace(&unqualified_namespace(entity_id)) {
+            namespace.rpc(name)
+        } else if let Some(dto) = self.find_dto(&unqualified_namespace(entity_id)) {
+            dto.rpc(name)
+        } else {
+            None
         }
     }
 
     /// Find a mutable [Rpc] by [EntityId] relative to this [Namespace].
     pub fn find_rpc_mut(&mut self, entity_id: &EntityId) -> Option<&mut Rpc<'a>> {
-        let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id));
-        let name = unqualified_name(entity_id);
-        match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.rpc_mut(name),
-            _ => None,
+        let name = unqualified_name(entity_id)?;
+        // This if is a workaround for multiple mutable borrows.
+        if self.find_namespace_mut(&unqualified_namespace(entity_id)).is_some() {
+            let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id)).unwrap();
+            return namespace.rpc_mut(name);
+        }
+        if let Some(dto) = self.find_dto_mut(&unqualified_namespace(entity_id)) {
+            dto.rpc_mut(name)
+        } else {
+            None
         }
     }
 
@@ -500,21 +507,28 @@ impl<'a> Namespace<'a> {
 
     /// Find a [Field] by [EntityId] relative to this [Namespace].
     pub fn find_field(&self, entity_id: &EntityId) -> Option<&Field<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
-        let name = unqualified_name(entity_id);
-        match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.field(name),
-            _ => None,
+        let name = unqualified_name(entity_id)?;
+        if let Some(namespace) = self.find_namespace(&unqualified_namespace(entity_id)) {
+            namespace.field(name)
+        } else if let Some(dto) = self.find_dto(&unqualified_namespace(entity_id)) {
+            dto.field(name)
+        } else {
+            None
         }
     }
 
     /// Find a mutable [Field] by [EntityId] relative to this [Namespace].
     pub fn find_field_mut(&mut self, entity_id: &EntityId) -> Option<&mut Field<'a>> {
-        let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id));
-        let name = unqualified_name(entity_id);
-        match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.field_mut(name),
-            _ => None,
+        let name = unqualified_name(entity_id)?;
+        // This if is a workaround for multiple mutable borrows.
+        if self.find_namespace_mut(&unqualified_namespace(entity_id)).is_some() {
+            let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id)).unwrap();
+            return namespace.field_mut(name);
+        }
+        if let Some(dto) = self.find_dto_mut(&unqualified_namespace(entity_id)) {
+            dto.field_mut(name)
+        } else {
+            None
         }
     }
 
@@ -525,9 +539,15 @@ impl<'a> Namespace<'a> {
         for name in entity_id.component_names() {
             if let Some(namespace) = namespace_it.namespace(name) {
                 namespace_it = namespace;
-            } else {
-                return None;
+                continue;
             }
+            if let Some(dto) = namespace_it.dto(name) {
+                if let Some(namespace) = &dto.namespace {
+                    namespace_it = namespace;
+                    continue;
+                }
+            }
+            return None;
         }
         Some(namespace_it)
     }
@@ -625,7 +645,7 @@ impl ToEntity for NamespaceChild<'_> {
 }
 
 fn unqualified_name(id: &EntityId) -> Option<&str> {
-    if id.len() > 0 {
+    if !id.is_empty() {
         id.component_names().last()
     } else {
         None
