@@ -5,8 +5,11 @@ use apyxl::model::attributes;
 use apyxl::parser::error::Error;
 
 pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, Error<'a>> {
-    // todo doesn't quite work for all C# attrs.
     let name = text::ident().separated_by(just(".").padded()).slice();
+    let assigned_data = just('=')
+        .padded()
+        .ignore_then(text::ident())
+        .map(|data| vec![attributes::UserData::new(None, data)]);
     let data = text::ident()
         .then(just('=').padded().ignore_then(text::ident()).or_not())
         .map(|(lhs, rhs)| match rhs {
@@ -17,9 +20,8 @@ pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, E
         .separated_by(just(',').padded())
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(just('(').padded(), just(')').padded())
-        .or_not();
-    name.then(data_list)
+        .delimited_by(just('(').padded(), just(')').padded());
+    name.then(assigned_data.or(data_list).or_not())
         .map(|(name, data)| attributes::User {
             name: Cow::Borrowed(name),
             data: data.unwrap_or(vec![]),
@@ -70,6 +72,20 @@ mod tests {
                     struct dto {}
                     "#,
             vec![attributes::User::new_flag("a.b.c.attr")],
+        )
+    }
+
+    #[test]
+    fn single_data_value() {
+        run_test(
+            r#"
+                    [a.b.c.attr=data]
+                    struct dto {}
+                    "#,
+            vec![attributes::User::new(
+                "a.b.c.attr",
+                vec![UserData::new(None, "data")],
+            )],
         )
     }
 
