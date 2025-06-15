@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::parser::error::Error;
 use crate::parser::util::keyword_ex;
 use crate::parser::visibility::Visibility;
-use crate::parser::{attributes, comment, dto, en, field, rpc};
+use crate::parser::{attributes, comment, dto, en, ty_alias};
 use apyxl::model::{Attributes, Namespace, NamespaceChild};
 use apyxl::parser::Config;
 
@@ -46,10 +46,8 @@ pub fn children<'a>(
     choice((
         dto::parser(config).map(|(c, v)| Some((NamespaceChild::Dto(c), v))),
         en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
-        rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
-        field::parser(config).map(|(c, v)| Some((NamespaceChild::Field(c), v))),
-        // todo
-        // ty_alias::parser(config).map(|(c, v)| Some((NamespaceChild::TypeAlias(c), v))).filter(move |_| !inside_dto),
+        ty_alias::parser(config)
+            .map(|c| c.map(|alias| (NamespaceChild::TypeAlias(alias), Visibility::Public))),
         namespace.map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
     ))
     .recover_with(skip_then_retry_until(
@@ -112,9 +110,9 @@ mod tests {
             .parse(
                 r#"
             namespace ns {
+                using Type = int;
                 public struct DtoName {}
                 public enum Enum {}
-                using Type = int;
             }
             "#,
             )
@@ -122,10 +120,9 @@ mod tests {
             .map_err(wrap_test_err)?;
         assert_eq!(namespace.name, "ns");
         assert_eq!(namespace.children.len(), 3);
-        match &namespace.children[0] {
-            NamespaceChild::Dto(dto) => assert_eq!(dto.name, "DtoName"),
-            _ => panic!("wrong child type"),
-        }
+        assert!(namespace.ty_alias("Type").is_some());
+        assert!(namespace.dto("DtoName").is_some());
+        assert!(namespace.en("Enum").is_some());
         Ok(())
     }
 

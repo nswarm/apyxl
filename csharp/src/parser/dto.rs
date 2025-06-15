@@ -1,7 +1,7 @@
 use crate::parser::is_static::is_static;
 use crate::parser::visibility::Visibility;
-use crate::parser::{Config, en, field, rpc, util};
 use crate::parser::{attributes, comment, visibility};
+use crate::parser::{en, field, rpc, util, Config};
 use apyxl::model::{Attributes, Dto, Namespace, NamespaceChild};
 use apyxl::parser::error::Error;
 use chumsky::prelude::*;
@@ -90,7 +90,7 @@ mod tests {
 
     use crate::parser::dto;
     use crate::parser::visibility::Visibility;
-    use apyxl::model::{Comment, attributes};
+    use apyxl::model::{attributes, Comment};
     use apyxl::parser::test_util::wrap_test_err;
     use apyxl::test_util::executor::{TEST_CONFIG, TEST_PUB_ONLY_CONFIG};
 
@@ -297,7 +297,7 @@ mod tests {
                     int field0 = 1;
                     string field1 = "asbcd";
                     string field2 = SomeSuper.Complex().default("var");
-                    public static STRING = "blah";
+                    public static string STRING = "blah";
                 }
                 "#,
             )
@@ -400,11 +400,8 @@ mod tests {
         assert_eq!(dto.fields[0].name, "field0");
         assert_eq!(dto.fields[1].name, "field1");
         assert_eq!(dto.fields[2].name, "field2");
-        assert!(dto.namespace.is_some());
-        let namespace = dto.namespace.as_ref().unwrap();
-        assert_eq!(namespace.children.len(), 2);
-        assert!(namespace.rpc("rpc").is_some());
-        assert!(namespace.rpc("other_rpc").is_some());
+        assert!(dto.rpc("rpc").is_some());
+        assert!(dto.rpc("other_rpc").is_some());
         Ok(())
     }
 
@@ -455,20 +452,6 @@ mod tests {
                 r#"
             struct StructName {
                 namespace blah {}
-            }
-            "#,
-            )
-            .into_result();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn no_nested_ty_alias() {
-        let result = dto::parser(&TEST_CONFIG)
-            .parse(
-                r#"
-            struct StructName {
-                using Type = int;
             }
             "#,
             )

@@ -42,7 +42,7 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Visibility, Error<'a>> {
     })
     .or_not()
     // None = Private is not technically true, e.g. struct defaults public
-    .map(|o| o.unwrap_or_else(|| Visibility::Private))
+    .map(|o| o.unwrap_or(Visibility::Private))
 }
 
 #[cfg(test)]

@@ -32,9 +32,10 @@ pub struct Metadata {
     pub chunk: Chunk,
 }
 
+/// Information stored about the entity's origin chunk(s).
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Attribute {
-    /// Some entities (namespaces) can exists in more than one chunk.
+    /// Some entities can exist in more than one chunk.
     pub relative_file_paths: Vec<PathBuf>,
 }
 
