@@ -1,3 +1,5 @@
+use chumsky::container::Seq;
+use chumsky::input::InputRef;
 use chumsky::prelude::*;
 
 use apyxl::model::{EntityId, Semantics, Type, TypeRef};
@@ -8,41 +10,47 @@ const ALLOWED_TYPE_NAME_CHARS: &str = "_<>";
 
 pub fn parser(config: &Config) -> impl Parser<&str, TypeRef, Error> {
     recursive(|nested| {
-        let ty = choice((
-            just("byte[]").map(|_| Type::Bytes),
-            just("bool").map(|_| Type::Bool),
-            just("byte").map(|_| Type::U8),
-            just("ushort").map(|_| Type::U16),
-            just("uint").map(|_| Type::U32),
-            just("ulong").map(|_| Type::U64),
-            just("sbyte").map(|_| Type::I8),
-            just("short").map(|_| Type::I16),
-            just("int").map(|_| Type::I32),
-            just("long").map(|_| Type::I64),
-            just("float").map(|_| Type::F32),
-            just("double").map(|_| Type::F64),
-            just("string").map(|_| Type::String),
-        ))
-        .or(choice((
-            user_ty(config).map(Type::User),
-            list(nested.clone()),
-            // todo arrays like <type>[] end up in infinite left recursion.
-            // todo this is solvable, probably with memoization.
-            // todo: ah use: Parser::rewind
-            // arr(nested.clone()),
-            map(nested.clone()),
-            // todo optionals <type>? run into the same issue as arrays above.
-            // todo: ah use: Parser::rewind
-            // option(nested),
-            // Note that entity_id should come last because it is greedy.
-            entity_id().map(Type::Api),
-        )))
-        .boxed();
-        ty.map(|ty| TypeRef {
-            value: ty,
-            semantics: Semantics::Value,
-        })
-        .boxed()
+        let array_parser = array(config, nested.clone());
+        ty_parser(config, nested, array_parser).boxed()
+    })
+}
+
+fn ty_parser<'a>(
+    config: &'a Config,
+    nested: impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone + 'a,
+    array_parser: impl Parser<'a, &'a str, Type, Error<'a>> + Clone + 'a,
+) -> impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone {
+    let ty = choice((
+        // Array must be first to properly catch primitive type arrays.
+        array_parser,
+        just("byte[]").map(|_| Type::Bytes),
+        just("bool").map(|_| Type::Bool),
+        just("byte").map(|_| Type::U8),
+        just("ushort").map(|_| Type::U16),
+        just("uint").map(|_| Type::U32),
+        just("ulong").map(|_| Type::U64),
+        just("sbyte").map(|_| Type::I8),
+        just("short").map(|_| Type::I16),
+        just("int").map(|_| Type::I32),
+        just("long").map(|_| Type::I64),
+        just("float").map(|_| Type::F32),
+        just("double").map(|_| Type::F64),
+        just("string").map(|_| Type::String),
+    ))
+    .or(choice((
+        user_ty(config).map(Type::User),
+        list(nested.clone()),
+        map(nested.clone()),
+        // todo optionals <type>? run into the same issue as arrays above.
+        // todo: ah use: Parser::rewind
+        // option(nested),
+        // Note that entity_id should come last because it is greedy.
+        entity_id().map(Type::Api),
+    )))
+    .boxed();
+    ty.map(|ty| TypeRef {
+        value: ty,
+        semantics: Semantics::Value,
     })
 }
 
@@ -68,6 +76,46 @@ fn list<'a>(
         .then_ignore(text::whitespace())
         .then_ignore(just('>'))
         .map(Type::new_array)
+}
+
+fn array<'a>(
+    config: &'a Config,
+    ty: impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone + 'a,
+) -> impl Parser<'a, &'a str, Type, Error<'a>> + Clone {
+    custom(move |input: &mut InputRef<&'a str, Error<'a>>| {
+        // Instead of trying to do left recursion shenanigans already inside a recursive
+        // parser, use lookahead to see how many nested arrays there are, parse the type as
+        // a ty that _cannot be an array_, then iteratively wrap it in array Types.
+        //
+        // (note that it can still have arrays deeper
+        // which is why we still pass it the main ty parser).
+        let error_parser = empty().try_map(|_, span| Err(Rich::custom(span, "will never show")));
+        let array_ty = ty_parser(config, ty.clone(), error_parser);
+        let lookahead = any()
+            .filter(|c: &char| c.is_alphanumeric() || "._<>".contains(*c))
+            .repeated()
+            .at_least(1)
+            .slice()
+            .ignore_then(just("[]").padded().repeated().at_least(1).count());
+
+        let marker = input.save();
+        let depth = match input.parse(lookahead) {
+            Ok(count) => count,
+            Err(err) => return Err(err),
+        };
+        input.rewind(marker);
+
+        let parser = array_ty
+            .clone()
+            .then_ignore(just("[]").repeated().exactly(depth).padded());
+        let array_ty = input.parse(parser)?;
+
+        let mut return_ty = Type::new_array(array_ty);
+        for _ in 0..(depth - 1) {
+            return_ty = Type::new_array(TypeRef::new(return_ty, Semantics::Value));
+        }
+        Ok(return_ty)
+    })
 }
 
 fn map<'a>(
@@ -125,6 +173,8 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
 
 #[cfg(test)]
 mod tests {
+    use chumsky::Parser;
+
     mod ty {
         use anyhow::Result;
         use chumsky::Parser;
@@ -183,14 +233,42 @@ mod tests {
         );
 
         // Vec/Array.
-        // test!(
-        //     array,
-        //     "int[]",
-        //     TypeRef::new(
-        //         Type::new_array(TypeRef::new(Type::I32, Semantics::Value)),
-        //         Semantics::Value
-        //     )
-        // );
+        test!(
+            array,
+            "int[]",
+            TypeRef::new(
+                Type::new_array(TypeRef::new(Type::I32, Semantics::Value)),
+                Semantics::Value
+            )
+        );
+        test!(
+            array_nested,
+            "int[][][]",
+            TypeRef::new(
+                Type::new_array(TypeRef::new(
+                    Type::new_array(TypeRef::new(
+                        Type::new_array(TypeRef::new(Type::I32, Semantics::Value)),
+                        Semantics::Value
+                    )),
+                    Semantics::Value
+                )),
+                Semantics::Value
+            )
+        );
+        test!(
+            complex_array,
+            "List<int[]>[]",
+            TypeRef::new(
+                Type::new_array(TypeRef::new(
+                    Type::new_array(TypeRef::new(
+                        Type::new_array(TypeRef::new(Type::I32, Semantics::Value)),
+                        Semantics::Value
+                    )),
+                    Semantics::Value
+                )),
+                Semantics::Value
+            )
+        );
         test!(
             vec,
             "List<int>",
