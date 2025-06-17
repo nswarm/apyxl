@@ -32,7 +32,8 @@ public class PlatformInfo
     // feature: rpc
     // feature: rpc params
     // feature: namespace references
-    public Service.User GetUser(UserId id, bool isOnline) {
+    public Service.User GetUser(UserId id, bool isOnline)
+    {
         return new User();
     }
 }

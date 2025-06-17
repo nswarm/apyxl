@@ -1,28 +1,30 @@
-use chumsky::container::Seq;
 use chumsky::input::InputRef;
 use chumsky::prelude::*;
 
 use apyxl::model::{EntityId, Semantics, Type, TypeRef};
-use apyxl::parser::Config;
 use apyxl::parser::error::Error;
+use apyxl::parser::Config;
 
 const ALLOWED_TYPE_NAME_CHARS: &str = "_<>";
 
 pub fn parser(config: &Config) -> impl Parser<&str, TypeRef, Error> {
     recursive(|nested| {
-        let array_parser = array(config, nested.clone());
-        ty_parser(config, nested, array_parser).boxed()
+        let optional_parser = optional(config, nested.clone());
+        let array_parser = array(config, nested.clone(), optional_parser.clone());
+        ty(config, nested, array_parser, optional_parser).boxed()
     })
 }
 
-fn ty_parser<'a>(
+fn ty<'a>(
     config: &'a Config,
     nested: impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone + 'a,
-    array_parser: impl Parser<'a, &'a str, Type, Error<'a>> + Clone + 'a,
+    array: impl Parser<'a, &'a str, Type, Error<'a>> + Clone + 'a,
+    optional: impl Parser<'a, &'a str, Type, Error<'a>> + Clone + 'a,
 ) -> impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone {
     let ty = choice((
-        // Array must be first to properly catch primitive type arrays.
-        array_parser,
+        // Array/optional must be first to properly catch primitive types since they use type suffixes.
+        array,
+        optional,
         just("byte[]").map(|_| Type::Bytes),
         just("bool").map(|_| Type::Bool),
         just("byte").map(|_| Type::U8),
@@ -41,10 +43,6 @@ fn ty_parser<'a>(
         user_ty(config).map(Type::User),
         list(nested.clone()),
         map(nested.clone()),
-        // todo optionals <type>? run into the same issue as arrays above.
-        // todo: ah use: Parser::rewind
-        // option(nested),
-        // Note that entity_id should come last because it is greedy.
         entity_id().map(Type::Api),
     )))
     .boxed();
@@ -71,16 +69,15 @@ fn list<'a>(
     ty: impl Parser<'a, &'a str, TypeRef, Error<'a>>,
 ) -> impl Parser<'a, &'a str, Type, Error<'a>> {
     just("List<")
-        .then_ignore(text::whitespace())
-        .ignore_then(ty)
-        .then_ignore(text::whitespace())
+        .ignore_then(ty.padded())
         .then_ignore(just('>'))
         .map(Type::new_array)
 }
 
 fn array<'a>(
     config: &'a Config,
-    ty: impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone + 'a,
+    nested_ty: impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone + 'a,
+    optional: impl Parser<'a, &'a str, Type, Error<'a>> + Clone + 'a,
 ) -> impl Parser<'a, &'a str, Type, Error<'a>> + Clone {
     custom(move |input: &mut InputRef<&'a str, Error<'a>>| {
         // Instead of trying to do left recursion shenanigans already inside a recursive
@@ -89,10 +86,14 @@ fn array<'a>(
         //
         // (note that it can still have arrays deeper
         // which is why we still pass it the main ty parser).
-        let error_parser = empty().try_map(|_, span| Err(Rich::custom(span, "will never show")));
-        let array_ty = ty_parser(config, ty.clone(), error_parser);
+        let array_ty = ty(
+            config,
+            nested_ty.clone(),
+            error_ty_parser(),
+            optional.clone(),
+        );
         let lookahead = any()
-            .filter(|c: &char| c.is_alphanumeric() || "._<>".contains(*c))
+            .filter(|c: &char| c.is_alphanumeric() || "._<>?".contains(*c))
             .repeated()
             .at_least(1)
             .slice()
@@ -116,6 +117,23 @@ fn array<'a>(
         }
         Ok(return_ty)
     })
+}
+
+fn optional<'a>(
+    config: &'a Config,
+    nested_ty: impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone + 'a,
+) -> impl Parser<'a, &'a str, Type, Error<'a>> + Clone {
+    // Not allowing arbitrary type arrays that are optional (e.g. int[]?) because
+    // 1. That seems unlikely (just use List)
+    // 2. I don't have a good answer to the mutual recursion problem.
+    ty(config, nested_ty, error_ty_parser(), error_ty_parser())
+        .then_ignore(just('?').padded())
+        .map(Type::new_optional)
+}
+
+/// Parser that always returns an error. Use for dynamically skipping choices.
+fn error_ty_parser<'a>() -> impl Parser<'a, &'a str, Type, Error<'a>> + Clone {
+    empty().try_map(|_, span| Err(Rich::custom(span, "will never show")))
 }
 
 fn map<'a>(
@@ -270,6 +288,17 @@ mod tests {
             )
         );
         test!(
+            array_of_optional,
+            "int?[]",
+            TypeRef::new(
+                Type::new_array(TypeRef::new(
+                    Type::new_optional(TypeRef::new(Type::I32, Semantics::Value)),
+                    Semantics::Value
+                )),
+                Semantics::Value
+            )
+        );
+        test!(
             vec,
             "List<int>",
             TypeRef::new(
@@ -357,25 +386,39 @@ mod tests {
         );
 
         // Option.
-        // test!(
-        //     option,
-        //     "int?",
-        //     TypeRef::new(
-        //         Type::Optional(Box::new(TypeRef::new(Type::I32, Semantics::Value))),
-        //         Semantics::Value
-        //     )
-        // );
-        // test!(
-        //     option_api,
-        //     "a.b.c?",
-        //     TypeRef::new(
-        //         Type::new_optional(TypeRef::new(
-        //             Type::Api(EntityId::new_unqualified("a.b.c")),
-        //             Semantics::Value
-        //         )),
-        //         Semantics::Value
-        //     )
-        // );
+        test!(
+            option,
+            "int?",
+            TypeRef::new(
+                Type::Optional(Box::new(TypeRef::new(Type::I32, Semantics::Value))),
+                Semantics::Value
+            )
+        );
+        test!(
+            option_api,
+            "a.b.c?",
+            TypeRef::new(
+                Type::new_optional(TypeRef::new(
+                    Type::Api(EntityId::new_unqualified("a.b.c")),
+                    Semantics::Value
+                )),
+                Semantics::Value
+            )
+        );
+        test!(
+            complex_option,
+            "List<int?[]>",
+            TypeRef::new(
+                Type::new_array(TypeRef::new(
+                    Type::new_array(TypeRef::new(
+                        Type::new_optional(TypeRef::new(Type::I32, Semantics::Value)),
+                        Semantics::Value
+                    )),
+                    Semantics::Value
+                )),
+                Semantics::Value
+            )
+        );
 
         // Combined complex types.
         test!(
