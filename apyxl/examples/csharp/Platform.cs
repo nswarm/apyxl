@@ -16,7 +16,6 @@ namespace Platform
 // feature: dto
 public class PlatformInfo
 {
-
     // feature: primitives
     public bool IsHealthy;
     public UInt64 NumUsers;

@@ -1220,6 +1220,7 @@ mod tests {
         }
 
         mod validate_rpc {
+            use std::borrow::Cow;
             use crate::model::builder::tests::{
                 assert_contains_error, build_from_input, test_builder,
             };
@@ -1243,7 +1244,7 @@ mod tests {
                     .api
                     .find_rpc_mut(&EntityId::new_unqualified("ns.rpc2"))
                     .unwrap()
-                    .name = "";
+                    .name = Cow::Borrowed("");
 
                 let result = builder.build();
                 let expected_entity_id = EntityId::try_from("ns").unwrap();

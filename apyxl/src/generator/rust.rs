@@ -391,6 +391,7 @@ fn write_option(ty: TypeRef, o: &mut dyn Output) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use anyhow::Result;
 
     use crate::generator::rust::{
@@ -512,7 +513,7 @@ pub mod ns0 {
                 write_rpc(
                     view::Rpc::new(
                         &model::Rpc {
-                            name: "rpc_name",
+                            name: Cow::Borrowed("rpc_name"),
                             params: vec![
                                 model::Field {
                                     name: "param0",
@@ -555,7 +556,7 @@ pub mod ns0 {
                 write_rpc(
                     view::Rpc::new(
                         &model::Rpc {
-                            name: "rpc_name",
+                            name: Cow::Borrowed("rpc_name"),
                             params: vec![],
                             return_type: Some(model::TypeRef::new_api(
                                 "ReturnType",

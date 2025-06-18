@@ -22,7 +22,7 @@ pub fn test_dto(i: usize) -> model::Dto<'static> {
 
 pub fn test_rpc(i: usize) -> model::Rpc<'static> {
     model::Rpc {
-        name: NAMES[i],
+        name: Cow::Borrowed(NAMES[i]),
         ..Default::default()
     }
 }

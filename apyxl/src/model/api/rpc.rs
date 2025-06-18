@@ -2,11 +2,12 @@ use crate::model::api::entity::ToEntity;
 use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Field, TypeRef};
+use std::borrow::Cow;
 
 /// A single Remote Procedure Call (RPC) within an [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct Rpc<'a> {
-    pub name: &'a str,
+    pub name: Cow<'a, str>,
     pub params: Vec<Field<'a>>,
     pub return_type: Option<TypeRef>,
     pub attributes: Attributes<'a>,

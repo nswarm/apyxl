@@ -64,18 +64,20 @@ namespace Inventory
 {
 public struct Item
 {
+    // feature: property shorthand get
+    public string Name => "name";
+    
     private string _id;
 
-    // feature: property arrow get/set
+    // feature: property shorthand get/set
     public string Id
     {
         get => _id;
-        set => _id = value;
+        private set => _id = value;
     }
+
     // feature: property get/set {}
-
     private string _data;
-
     private string Data
     {
         get { return _data; }

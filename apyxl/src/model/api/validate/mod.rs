@@ -104,7 +104,7 @@ pub fn no_duplicate_rpc_or_field(api: &Api, namespace_id: EntityId) -> Vec<Valid
     let namespace = api
         .find_namespace(&namespace_id)
         .expect("namespace must exist in api");
-    let rpc_names = namespace.rpcs().map(|rpc| rpc.name);
+    let rpc_names = namespace.rpcs().map(|rpc| rpc.name.as_ref());
     let field_names = namespace.fields().map(|field| field.name);
     rpc_names
         .chain(field_names)
@@ -180,7 +180,7 @@ pub fn rpc_param_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .flat_map(|rpc| {
             field_names(
                 &rpc.params,
-                namespace_id.child(EntityType::Rpc, rpc.name).unwrap(),
+                namespace_id.child(EntityType::Rpc, &rpc.name).unwrap(),
             )
         })
         .collect_vec()
@@ -193,7 +193,7 @@ pub fn rpc_param_names_no_duplicates(api: &Api, namespace_id: EntityId) -> Vec<V
         .flat_map(|rpc| {
             duplicate_field_names(
                 &rpc.params,
-                namespace_id.child(EntityType::Rpc, rpc.name).unwrap(),
+                namespace_id.child(EntityType::Rpc, &rpc.name).unwrap(),
             )
         })
         .collect_vec()
@@ -318,7 +318,7 @@ pub fn rpc_param_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .expect("namespace must exist in api")
         .rpcs()
         .flat_map(|rpc| {
-            let rpc_id = namespace_id.child(EntityType::Rpc, rpc.name).unwrap();
+            let rpc_id = namespace_id.child(EntityType::Rpc, &rpc.name).unwrap();
             field_list_types(api, &rpc.params, namespace_id.clone(), rpc_id)
         })
         .collect_vec()
@@ -328,7 +328,7 @@ pub fn rpc_return_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResu
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
         .rpcs()
-        .filter_map(|rpc| rpc.return_type.as_ref().map(|ty| (rpc.name, ty)))
+        .filter_map(|rpc| rpc.return_type.as_ref().map(|ty| (&rpc.name, ty)))
         .map(|(rpc_name, return_type)| {
             let rpc_id = namespace_id.child(EntityType::Rpc, rpc_name).unwrap();
             let return_ty_id = rpc_id
@@ -1031,7 +1031,7 @@ mod tests {
                                 is_static: true,
                             }),
                             NamespaceChild::Rpc(Rpc {
-                                name: "rpc",
+                                name: Cow::Borrowed("rpc"),
                                 is_static: true,
                                 ..Default::default()
                             }),

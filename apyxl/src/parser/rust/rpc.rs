@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::model::{Attributes, Field, Rpc};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
@@ -29,7 +30,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
             |((((((comments, user), visibility), name), is_static), params), return_type)| {
                 (
                     Rpc {
-                        name,
+                        name: Cow::Borrowed(name),
                         params,
                         return_type,
                         attributes: Attributes {
