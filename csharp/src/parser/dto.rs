@@ -75,6 +75,8 @@ fn children<'a>(
         }),
         // Field after property so that it can be greedy with '=<whatever>;'.
         field::parser(config).map(|(c, v)| vec![(NamespaceChild::Field(c), v)]),
+        // Catch comments after all children
+        comment::single().padded().map(|_| vec![]),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
@@ -183,6 +185,24 @@ mod tests {
         assert_eq!(dto.fields[0].name, "field0");
         assert_eq!(dto.fields[1].name, "field1");
         assert_eq!(dto.fields[2].name, "field2");
+        Ok(())
+    }
+
+    #[test]
+    fn complex_field() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            struct StructName {
+                public Dictionary<string, List<int>> ComplexField;
+            }
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.fields.len(), 1);
+        assert_eq!(dto.fields[0].name, "ComplexField");
         Ok(())
     }
 

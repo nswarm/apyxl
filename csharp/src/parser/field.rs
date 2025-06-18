@@ -21,7 +21,8 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> 
         .then(attributes::attributes().padded())
         .then(visibility::parser(Visibility::Private))
         .then(is_static())
-        .then_ignore(util::keyword_ex("readonly").or_not())
+        .then_ignore(util::keyword_ex("const").padded().or_not())
+        .then_ignore(util::keyword_ex("readonly").padded().or_not())
         .then(field)
         .map(
             |((((comments, user), visibility), is_static), (ty, name))| {
@@ -42,4 +43,33 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> 
         )
 }
 
-// tests in dto.
+// more tests in dto.
+
+#[cfg(test)]
+mod tests {
+    use crate::parser::field::parser;
+    use anyhow::Result;
+    use apyxl::parser::test_util::wrap_test_err;
+    use apyxl::test_util::executor::TEST_CONFIG;
+    use chumsky::Parser;
+
+    #[test]
+    fn const_field() -> Result<()> {
+        let input = "public const int field = 0;";
+        let _ = parser(&TEST_CONFIG)
+            .parse(input)
+            .into_result()
+            .map_err(wrap_test_err)?;
+        Ok(())
+    }
+
+    #[test]
+    fn complex_field() -> Result<()> {
+        let input = "public static Dictionary<string, List<int>> field = 0;";
+        let _ = parser(&TEST_CONFIG)
+            .parse(input)
+            .into_result()
+            .map_err(wrap_test_err)?;
+        Ok(())
+    }
+}
