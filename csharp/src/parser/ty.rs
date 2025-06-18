@@ -2,8 +2,8 @@ use chumsky::input::InputRef;
 use chumsky::prelude::*;
 
 use apyxl::model::{EntityId, Semantics, Type, TypeRef};
-use apyxl::parser::Config;
 use apyxl::parser::error::Error;
+use apyxl::parser::Config;
 
 const ALLOWED_TYPE_NAME_CHARS: &str = "_<>";
 const LANGUAGE_RESERVED_KEYWORDS: &[&str] = &["namespace", "class", "struct", "interface", "enum"];
@@ -29,13 +29,13 @@ fn ty<'a>(
         just("byte[]").map(|_| Type::Bytes),
         just("bool").map(|_| Type::Bool),
         just("byte").map(|_| Type::U8),
-        just("ushort").map(|_| Type::U16),
-        just("uint").map(|_| Type::U32),
-        just("ulong").map(|_| Type::U64),
+        just("ushort").or(just("UInt16")).map(|_| Type::U16),
+        just("uint").or(just("UInt32")).map(|_| Type::U32),
+        just("ulong").or(just("UInt64")).map(|_| Type::U64),
         just("sbyte").map(|_| Type::I8),
-        just("short").map(|_| Type::I16),
-        just("int").map(|_| Type::I32),
-        just("long").map(|_| Type::I64),
+        just("short").or(just("Int16")).map(|_| Type::I16),
+        just("int").or(just("Int32")).map(|_| Type::I32),
+        just("long").or(just("Int64")).map(|_| Type::I64),
         just("float").map(|_| Type::F32),
         just("double").map(|_| Type::F64),
         just("string").map(|_| Type::String),
@@ -155,8 +155,8 @@ fn map<'a>(
         .ignore_then(ty.clone())
         .then_ignore(just(',').padded())
         .then(ty)
-        .then_ignore(just('>'))
         .then_ignore(text::whitespace())
+        .then_ignore(just('>'))
         .map(|(key, value)| Type::new_map(key, value))
 }
 
@@ -172,7 +172,6 @@ fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
             let marker = input.save();
             match input.parse(just(ty.parse.as_str())) {
                 Ok(_) => {
-                    let _ = input.next();
                     return Ok(ty.name.to_string());
                 }
                 Err(err) => {

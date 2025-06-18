@@ -15,6 +15,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, Option<TypeAlias>, Error> {
         .then(ty::parser(config))
         .then_ignore(just(';').padded())
         .map(|(((comments, user), alias_name), target)| {
+            // todo.... namespace usings need to be considered when qualifying types
             alias_name.map(|name| TypeAlias {
                 name,
                 target_ty: target,

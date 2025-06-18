@@ -2,9 +2,7 @@
 
 namespace Platform.Service
 {
-
-using SpecialId = UInt32;
-
+    
 [System.Serializable]
 public class User
 {
@@ -12,29 +10,29 @@ public class User
     public const string ConstName = "name";
     public static string PubStaticName = "name";
     public static string StaticName = "name";
-
+    
     public Id UserId;
     public State UserState;
-
+    
     public DisplayInfo Display;
-
+    
     // feature: maps
     // feature: nested type dependency - generator will import social.rs
     public Dictionary<Id, Social.Friend> Friends;
-
+    
     // feature: complex nested types
     public Dictionary<string, List<Inventory.Item>> EquipmentSlots;
 
     // feature: user type in parser config
     public SpecialId SpecialId;
-
+    
     // feature: nested struct
     public struct Id
     {
         // feature: property accessor
         public UInt128 Value { get; }
     }
-
+    
     // feature: nested enum
     public enum State
     {

@@ -62,6 +62,8 @@ pub fn children<'a>(
         ty_alias::parser(config)
             .map(|c| c.map(|alias| (NamespaceChild::TypeAlias(alias), Visibility::Public))),
         namespace.map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
+        // Catch comments after all children
+        comment::single().padded().map(|_| None),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
@@ -74,7 +76,6 @@ pub fn children<'a>(
     .repeated()
     .collect::<Vec<_>>()
     .map(|v| v.into_iter().flatten().collect_vec())
-    .then_ignore(comment::multi())
 }
 
 #[cfg(test)]
@@ -108,6 +109,25 @@ mod tests {
             .parse(
                 r#"
             namespace empty {}
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(namespace.name, "empty");
+        assert!(namespace.children.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn empty_with_comments() -> Result<()> {
+        let namespace = namespace::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            namespace empty {
+            // blah
+            // blah
+            /// blahh
+            }
             "#,
             )
             .into_result()
