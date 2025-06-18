@@ -63,7 +63,7 @@ impl Dependencies {
                     }
                 }
                 NamespaceChild::Rpc(rpc) => {
-                    self.add_node(&namespace_id.child(EntityType::Rpc, rpc.name).unwrap());
+                    self.add_node(&namespace_id.child(EntityType::Rpc, &rpc.name).unwrap());
                 }
                 NamespaceChild::Enum(en) => {
                     self.add_node(&namespace_id.child(EntityType::Enum, en.name).unwrap());
@@ -107,7 +107,7 @@ impl Dependencies {
         }
 
         for rpc in namespace.rpcs() {
-            let from_id = namespace_id.child(EntityType::Rpc, rpc.name).unwrap();
+            let from_id = namespace_id.child(EntityType::Rpc, &rpc.name).unwrap();
             let from = *self.node(&from_id).unwrap();
             for param in &rpc.params {
                 self.add_edge(from, namespace_id, &param.ty.value);

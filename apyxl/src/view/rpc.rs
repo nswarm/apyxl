@@ -34,7 +34,7 @@ impl<'v, 'a> Rpc<'v, 'a> {
     }
 
     pub fn name(&self) -> Cow<str> {
-        let mut name = Cow::Borrowed(self.target.name);
+        let mut name = self.target.name.clone();
         for x in &self.xforms.rpc {
             x.name(&mut name)
         }
