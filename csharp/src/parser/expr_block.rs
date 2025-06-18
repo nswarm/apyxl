@@ -10,7 +10,7 @@ pub enum ExprBlock<'a> {
     Nested(Vec<ExprBlock<'a>>),
 }
 
-pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
+pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> + Clone {
     let body = none_of("{}").repeated().at_least(1).slice().map(&str::trim);
     recursive(|nested| {
         choice((

@@ -1,11 +1,11 @@
+use crate::parser::is_static::is_static;
 use crate::parser::visibility::Visibility;
 use crate::parser::{attributes, comment, ty, visibility};
 use apyxl::model::{Attributes, Field};
 use apyxl::parser::error::Error;
-use apyxl::parser::{Config, util};
+use apyxl::parser::{util, Config};
 use chumsky::prelude::{any, just};
-use chumsky::{Parser, text};
-use crate::parser::is_static::is_static;
+use chumsky::{text, Parser};
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
     let end = just(';');
@@ -17,11 +17,9 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> 
         .then(text::ident())
         .then_ignore(initializer.or_not())
         .then_ignore(end.padded());
-    // todo properties
-    // todo events
     comment::multi()
         .then(attributes::attributes().padded())
-        .then(visibility::parser())
+        .then(visibility::parser(Visibility::Private))
         .then(is_static())
         .then_ignore(util::keyword_ex("readonly").or_not())
         .then(field)
@@ -43,3 +41,5 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> 
             },
         )
 }
+
+// tests in dto.

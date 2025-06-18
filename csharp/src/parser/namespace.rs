@@ -13,18 +13,21 @@ use apyxl::parser::Config;
 pub fn parser(config: &Config) -> impl Parser<&str, Namespace, Error> {
     recursive(|nested| {
         let prefix = keyword_ex("namespace").then(text::whitespace().at_least(1));
-        let name = text::ident().separated_by(just(".")).collect::<Vec<_>>();
+        let name_chain = text::ident()
+            .separated_by(just("."))
+            .at_least(1)
+            .collect::<Vec<_>>();
         let body = children(config, nested.clone(), just('}').ignored())
             .delimited_by(just('{').padded(), just('}').padded());
         comment::multi()
             .then(attributes::attributes().padded())
             .then_ignore(prefix)
-            .then(name)
+            .then(name_chain)
             .then(body)
-            .map(|(((comments, user), name), children)| {
-                Namespace {
-                    // todo this needs to return nested set of namespaces, not a namespace w/ name glommed together...
-                    name: Cow::Owned(name.join(".")),
+            .map(|(((comments, user), mut name_chain), children)| {
+                let name = name_chain.remove(name_chain.len() - 1);
+                let mut namespace = Namespace {
+                    name: Cow::Borrowed(name),
                     children,
                     attributes: Attributes {
                         comments,
@@ -32,7 +35,17 @@ pub fn parser(config: &Config) -> impl Parser<&str, Namespace, Error> {
                         ..Default::default()
                     },
                     is_virtual: false,
+                };
+                // For inline nested namespaces e.g. `namespace a.b.c`, walk the name_chain
+                // in reverse, and wrapping each level in a new namespace.
+                for parent in name_chain.into_iter().rev() {
+                    namespace = Namespace {
+                        name: Cow::Borrowed(parent),
+                        children: vec![NamespaceChild::Namespace(namespace)],
+                        ..Default::default()
+                    }
                 }
+                namespace
             })
             .boxed()
     })
@@ -172,6 +185,34 @@ mod tests {
             NamespaceChild::Namespace(ns) => assert_eq!(ns.name, "ns1"),
             _ => panic!("wrong child type"),
         }
+        Ok(())
+    }
+
+    #[test]
+    fn nested_inline() -> Result<()> {
+        let ns0 = namespace::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+            namespace ns0.ns1.ns2 {}
+            "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(ns0.name, "ns0");
+        assert_eq!(ns0.children.len(), 1);
+
+        let ns1 = ns0.namespace("ns1");
+        assert!(ns1.is_some());
+        let ns1 = ns1.unwrap();
+        assert_eq!(ns1.name, "ns1");
+        assert_eq!(ns1.children.len(), 1);
+
+        let ns2 = ns1.namespace("ns2");
+        assert!(ns2.is_some());
+        let ns2 = ns2.unwrap();
+        assert_eq!(ns2.name, "ns2");
+        assert_eq!(ns2.children.len(), 0);
+
         Ok(())
     }
 

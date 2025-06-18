@@ -32,14 +32,26 @@ apyxl can be used in two ways, and has examples for each:
 
 ## Built-in Support
 
+General:
+
+- Ignores anything inside the body of functions.
+- Only parses public definitions unless the parser config `enable_parse_private` is set to `true`.
+
 ### Parser: Rust
 
 Notes:
 
-- Only parses `pub` definitions unless the parser config `enable_parse_private` is set to `true`.
-- Ignores anything inside the body of functions.
-- `self` fn params are parsed as `Type::User("self", <type>)` where `<type>` is one of `self, &self, &mut self`
-- fails to parse lifetimes on references anywhere
+- `self` fns are in dto `rpcs`, static fns are in the dto's namespace.
+- fails to parse lifetimes on references anywhere.
+
+### Parser: C#
+
+Notes:
+
+- `bytes[]` is parsed as `Type::Bytes`.
+- Optional (nullable) arrays are not supported, e.g. `int[]?`.
+- Properties are parsed as `get_<field_name>` and/or `set_<field_name>` rpcs on the dto.
+- Events are parsed as `add_<event_name>_listener` and `remove_<event_name>_listener` rpcs on the dto.
 
 ### Generator: Rust
 
@@ -238,6 +250,7 @@ instead of a file.
 - Helpers for resolving type aliases e.g. for generator targets that don't support type aliases
 - Refactor out common chumsky helpers
 - Applying transforms through configuration/cli
+- Parser-specific config
 
 ## Architecture
 

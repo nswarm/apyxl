@@ -2,9 +2,10 @@ use crate::parser::is_static::is_static;
 use crate::parser::visibility::Visibility;
 use crate::parser::{attributes, comment, expr_block, ty, visibility};
 use apyxl::model::{Attributes, Field, Rpc};
-use apyxl::parser::Config;
 use apyxl::parser::error::Error;
+use apyxl::parser::Config;
 use chumsky::prelude::*;
+use std::borrow::Cow;
 
 pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
     let return_type = choice((just("void").map(|_| None), ty::parser(config).map(Some)))
@@ -19,7 +20,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
     );
     comment::multi()
         .then(attributes::attributes().padded())
-        .then(visibility::parser())
+        .then(visibility::parser(Visibility::Private))
         .then(is_static())
         .then(return_type)
         .then(name)
@@ -29,7 +30,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
             |((((((comments, user), visibility), is_static), return_type), name), params)| {
                 (
                     Rpc {
-                        name,
+                        name: Cow::Borrowed(name),
                         params,
                         return_type,
                         attributes: Attributes {
@@ -78,7 +79,7 @@ mod tests {
 
     use crate::parser::rpc;
     use crate::parser::visibility::Visibility;
-    use apyxl::model::{Comment, attributes};
+    use apyxl::model::{attributes, Comment};
     use apyxl::parser::test_util::wrap_test_err;
     use apyxl::test_util::executor::TEST_CONFIG;
 
