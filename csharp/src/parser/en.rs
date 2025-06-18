@@ -18,7 +18,7 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, (Enum<'a>, Visibility), Error<'a
         .delimited_by(just('{').padded(), just('}').padded());
     comment::multi()
         .then(attributes::attributes().padded())
-        .then(visibility::parser())
+        .then(visibility::parser(Visibility::Private))
         .then_ignore(prefix)
         .then(name)
         .then(values)
@@ -81,8 +81,8 @@ mod tests {
         use chumsky::Parser;
 
         use crate::parser::en::en_value;
-        use apyxl::parser::test_util::wrap_test_err;
         use apyxl::model::attributes;
+        use apyxl::parser::test_util::wrap_test_err;
 
         #[test]
         fn test() -> Result<()> {
@@ -123,8 +123,8 @@ mod tests {
 
         use crate::parser::en;
         use crate::parser::visibility::Visibility;
+        use apyxl::model::{attributes, Comment, EnumValue, EnumValueNumber};
         use apyxl::parser::test_util::wrap_test_err;
-        use apyxl::model::{Comment, EnumValue, EnumValueNumber, attributes};
 
         #[test]
         fn public() -> Result<()> {

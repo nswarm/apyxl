@@ -2,10 +2,11 @@ use chumsky::input::InputRef;
 use chumsky::prelude::*;
 
 use apyxl::model::{EntityId, Semantics, Type, TypeRef};
-use apyxl::parser::error::Error;
 use apyxl::parser::Config;
+use apyxl::parser::error::Error;
 
 const ALLOWED_TYPE_NAME_CHARS: &str = "_<>";
+const LANGUAGE_RESERVED_KEYWORDS: &[&str] = &["namespace", "class", "struct", "interface", "enum"];
 
 pub fn parser(config: &Config) -> impl Parser<&str, TypeRef, Error> {
     recursive(|nested| {
@@ -63,6 +64,16 @@ fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
                 .repeated(),
         )
         .slice()
+        .try_map(|ty: &str, span| {
+            if LANGUAGE_RESERVED_KEYWORDS.contains(&ty) {
+                Err(Rich::custom(
+                    span,
+                    format!("type name {} is a C# keyword", ty),
+                ))
+            } else {
+                Ok(ty)
+            }
+        })
 }
 
 fn list<'a>(
@@ -191,8 +202,6 @@ fn entity_id<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
 
 #[cfg(test)]
 mod tests {
-    use chumsky::Parser;
-
     mod ty {
         use anyhow::Result;
         use chumsky::Parser;

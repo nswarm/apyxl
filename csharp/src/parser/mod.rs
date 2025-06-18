@@ -22,6 +22,7 @@ mod expr_block;
 mod field;
 mod is_static;
 mod namespace;
+mod property;
 mod rpc;
 mod ty;
 mod ty_alias;
@@ -175,7 +176,7 @@ fn collect_type_ids(namespace: &Namespace, namespace_id: EntityId, type_ids: &mu
     };
 
     let handle_rpc = |parent_id: &EntityId, rpc: &Rpc, type_ids: &mut Vec<EntityId>| {
-        let rpc_id = parent_id.child(EntityType::Rpc, rpc.name).unwrap();
+        let rpc_id = parent_id.child(EntityType::Rpc, &rpc.name).unwrap();
         for param in &rpc.params {
             handle_field(&rpc_id, param, type_ids);
         }

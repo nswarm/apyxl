@@ -25,7 +25,7 @@ impl Visibility {
     }
 }
 
-pub fn parser<'a>() -> impl Parser<'a, &'a str, Visibility, Error<'a>> {
+pub fn parser<'a>(default: Visibility) -> impl Parser<'a, &'a str, Visibility, Error<'a>> {
     choice((
         util::keyword_ex("public"),
         util::keyword_ex("protected"),
@@ -41,19 +41,21 @@ pub fn parser<'a>() -> impl Parser<'a, &'a str, Visibility, Error<'a>> {
         _ => unreachable!(),
     })
     .or_not()
-    // None = Private is not technically true, e.g. struct defaults public
-    .map(|o| o.unwrap_or(Visibility::Private))
+    .map(move |o| o.unwrap_or(default))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::parser::visibility;
+    use crate::parser::visibility::Visibility;
     use anyhow::Result;
     use chumsky::Parser;
 
     #[test]
     fn requires_whitespace() -> Result<()> {
-        let result = visibility::parser().parse("public").into_result();
+        let result = visibility::parser(Visibility::Private)
+            .parse("public")
+            .into_result();
         assert!(result.is_err());
         Ok(())
     }

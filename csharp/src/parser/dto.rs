@@ -1,6 +1,6 @@
 use crate::parser::is_static::is_static;
 use crate::parser::visibility::Visibility;
-use crate::parser::{attributes, comment, visibility};
+use crate::parser::{attributes, comment, property, visibility};
 use crate::parser::{en, field, rpc, util, Config};
 use apyxl::model::{Attributes, Dto, Namespace, NamespaceChild};
 use apyxl::parser::error::Error;
@@ -22,7 +22,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
         comment::multi()
             .padded()
             .then(attributes::attributes().padded())
-            .then(visibility::parser())
+            .then(visibility::parser(Visibility::Private))
             .then_ignore(is_static())
             .then_ignore(prefix)
             .then(name)
@@ -64,18 +64,26 @@ fn children<'a>(
     end_delimiter: impl Parser<'a, &'a str, (), Error<'a>>,
 ) -> impl Parser<'a, &'a str, Vec<NamespaceChild<'a>>, Error<'a>> {
     choice((
-        dto.map(|(c, v)| Some((NamespaceChild::Dto(c), v))),
-        en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
-        rpc::parser(config).map(|(c, v)| Some((NamespaceChild::Rpc(c), v))),
-        field::parser(config).map(|(c, v)| Some((NamespaceChild::Field(c), v))),
+        dto.map(|(c, v)| vec![(NamespaceChild::Dto(c), v)]),
+        en::parser().map(|(c, v)| vec![(NamespaceChild::Enum(c), v)]),
+        rpc::parser(config).map(|(c, v)| vec![(NamespaceChild::Rpc(c), v)]),
+        property::parser(config).map(|properties| {
+            properties
+                .into_iter()
+                .map(|(rpc, v)| (NamespaceChild::Rpc(rpc), v))
+                .collect_vec()
+        }),
+        // Field after property so that it can be greedy with '=<whatever>;'.
+        field::parser(config).map(|(c, v)| vec![(NamespaceChild::Field(c), v)]),
     ))
     .recover_with(skip_then_retry_until(
         any().ignored(),
         end_delimiter.ignored(),
     ))
-    .map(|opt| match opt {
-        Some((child, visibility)) => visibility.filter(child, config),
-        None => None,
+    .map(|vec| {
+        vec.into_iter()
+            .filter_map(|(child, visibility)| visibility.filter(child, config))
+            .collect_vec()
     })
     .repeated()
     .collect::<Vec<_>>()
@@ -380,6 +388,48 @@ mod tests {
     }
 
     #[test]
+    fn property() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                struct StructName {
+                    int prop { get; set; }
+                }
+                "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert_eq!(dto.rpcs.len(), 2);
+        assert!(dto.rpc("get_prop").is_some());
+        assert!(dto.rpc("set_prop").is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn static_property() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                struct StructName {
+                    static int prop { get; set; }
+                }
+                "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        assert!(dto.namespace.is_some());
+        let namespace = dto.namespace.as_ref().unwrap();
+        assert_eq!(namespace.children.len(), 2);
+        assert!(namespace.rpc("get_prop").is_some());
+        assert!(namespace.rpc("get_prop").unwrap().is_static);
+        assert!(namespace.rpc("set_prop").is_some());
+        assert!(namespace.rpc("set_prop").unwrap().is_static);
+        Ok(())
+    }
+
+    #[test]
     fn mixed_rpc_dto() -> Result<()> {
         let (dto, _) = dto::parser(&TEST_CONFIG)
             .parse(
@@ -402,6 +452,33 @@ mod tests {
         assert_eq!(dto.fields[2].name, "field2");
         assert!(dto.rpc("rpc").is_some());
         assert!(dto.rpc("other_rpc").is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn mixed_field_property() -> Result<()> {
+        let (dto, _) = dto::parser(&TEST_CONFIG)
+            .parse(
+                r#"
+                struct StructName {
+                    int field0 = 1;
+                    string field1 => "asbcd";
+                    string field2 {
+                        get => "zzz";
+                    }
+                }
+                "#,
+            )
+            .into_result()
+            .map_err(wrap_test_err)?;
+        assert_eq!(dto.name, "StructName");
+        println!("FIELDS\n{:#?}", dto.fields);
+        println!("\n\nRPCS{:#?}", dto.rpcs);
+        assert_eq!(dto.fields.len(), 1);
+        assert_eq!(dto.fields[0].name, "field0");
+        assert_eq!(dto.rpcs.len(), 2);
+        assert_eq!(dto.rpcs[0].name, "get_field1");
+        assert_eq!(dto.rpcs[1].name, "get_field2");
         Ok(())
     }
 
