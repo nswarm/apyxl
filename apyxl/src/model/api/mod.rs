@@ -218,6 +218,23 @@ mod tests {
         );
     }
 
+    // todo can't use rust parser for tests of things like enums/dtos nested inside dtos :\
+    // #[test]
+    // fn x_inside_dto() {
+    //     let initial_namespace = EntityId::new_unqualified("ns0");
+    //     let find_id = EntityId::new_unqualified("ns1.field");
+    //     run_test(
+    //         r#"
+    //         mod ns0 {
+    //             const field: u32 = 5;
+    //         }
+    //         "#,
+    //         &initial_namespace,
+    //         &find_id,
+    //         Some(EntityId::try_from("ns0.ns1.f:field").unwrap()),
+    //     );
+    // }
+
     #[test]
     fn does_not_exist() {
         let initial_namespace = EntityId::default();
