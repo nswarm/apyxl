@@ -454,8 +454,13 @@ impl<'a> Namespace<'a> {
     pub fn find_rpc_mut(&mut self, entity_id: &EntityId) -> Option<&mut Rpc<'a>> {
         let name = unqualified_name(entity_id)?;
         // This if is a workaround for multiple mutable borrows.
-        if self.find_namespace_mut(&unqualified_namespace(entity_id)).is_some() {
-            let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id)).unwrap();
+        if self
+            .find_namespace_mut(&unqualified_namespace(entity_id))
+            .is_some()
+        {
+            let namespace = self
+                .find_namespace_mut(&unqualified_namespace(entity_id))
+                .unwrap();
             return namespace.rpc_mut(name);
         }
         if let Some(dto) = self.find_dto_mut(&unqualified_namespace(entity_id)) {
@@ -467,21 +472,33 @@ impl<'a> Namespace<'a> {
 
     /// Find an [Enum] by [EntityId] relative to this [Namespace].
     pub fn find_enum(&self, entity_id: &EntityId) -> Option<&Enum<'a>> {
-        let namespace = self.find_namespace(&unqualified_namespace(entity_id));
-        let name = unqualified_name(entity_id);
-        match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.en(name),
-            _ => None,
+        let name = unqualified_name(entity_id)?;
+        if let Some(namespace) = self.find_namespace(&unqualified_namespace(entity_id)) {
+            namespace.en(name)
+        } else if let Some(dto) = self.find_dto(&unqualified_namespace(entity_id)) {
+            dto.namespace.as_ref()?.en(name)
+        } else {
+            None
         }
     }
 
     /// Find a mutable [Enum] by [EntityId] relative to this [Namespace].
     pub fn find_enum_mut(&mut self, entity_id: &EntityId) -> Option<&mut Enum<'a>> {
-        let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id));
-        let name = unqualified_name(entity_id);
-        match (namespace, name) {
-            (Some(namespace), Some(name)) => namespace.en_mut(name),
-            _ => None,
+        let name = unqualified_name(entity_id)?;
+        // This if is a workaround for multiple mutable borrows.
+        if self
+            .find_namespace_mut(&unqualified_namespace(entity_id))
+            .is_some()
+        {
+            let namespace = self
+                .find_namespace_mut(&unqualified_namespace(entity_id))
+                .unwrap();
+            return namespace.en_mut(name);
+        }
+        if let Some(dto) = self.find_dto_mut(&unqualified_namespace(entity_id)) {
+            dto.namespace.as_mut()?.en_mut(name)
+        } else {
+            None
         }
     }
 
@@ -521,8 +538,13 @@ impl<'a> Namespace<'a> {
     pub fn find_field_mut(&mut self, entity_id: &EntityId) -> Option<&mut Field<'a>> {
         let name = unqualified_name(entity_id)?;
         // This if is a workaround for multiple mutable borrows.
-        if self.find_namespace_mut(&unqualified_namespace(entity_id)).is_some() {
-            let namespace = self.find_namespace_mut(&unqualified_namespace(entity_id)).unwrap();
+        if self
+            .find_namespace_mut(&unqualified_namespace(entity_id))
+            .is_some()
+        {
+            let namespace = self
+                .find_namespace_mut(&unqualified_namespace(entity_id))
+                .unwrap();
             return namespace.field_mut(name);
         }
         if let Some(dto) = self.find_dto_mut(&unqualified_namespace(entity_id)) {

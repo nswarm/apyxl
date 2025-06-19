@@ -308,7 +308,7 @@ pub fn dto_field_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .dtos()
         .flat_map(|dto| {
             let dto_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
-            field_list_types(api, &dto.fields, namespace_id.clone(), dto_id)
+            field_list_types(api, &dto.fields, namespace_id.clone(), dto_id, true)
         })
         .collect_vec()
 }
@@ -319,7 +319,7 @@ pub fn rpc_param_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .rpcs()
         .flat_map(|rpc| {
             let rpc_id = namespace_id.child(EntityType::Rpc, &rpc.name).unwrap();
-            field_list_types(api, &rpc.params, namespace_id.clone(), rpc_id)
+            field_list_types(api, &rpc.params, namespace_id.clone(), rpc_id, false)
         })
         .collect_vec()
 }
@@ -353,6 +353,7 @@ pub fn field_list_types<'a, 'b: 'a>(
     fields: &[Field],
     namespace_id: EntityId,
     parent_entity_id: EntityId,
+    can_be_nested_in_parent: bool,
 ) -> Vec<ValidationResult> {
     fields
         .iter()
@@ -364,7 +365,18 @@ pub fn field_list_types<'a, 'b: 'a>(
             let ty_id = field_id
                 .child(EntityType::Type, entity::subtype::TY)
                 .unwrap();
-            match qualify_type(api, &namespace_id, &field.ty) {
+
+            let mut qualified = Err(EntityId::default());
+            if can_be_nested_in_parent {
+                // Need to check if the type is in parent, otherwise we'll skip the namespace
+                // attached to the entity (e.g. dto's namespace).
+                qualified = qualify_type(api, &parent_entity_id, &field.ty);
+            }
+            if qualified.is_err() {
+                qualified = qualify_type(api, &namespace_id, &field.ty);
+            }
+
+            match qualified {
                 Ok(Some(qualified_ty)) => Ok(Some(Mutation::new_qualify_type(ty_id, qualified_ty))),
                 Err(err_entity_id) => Err(ValidationError::InvalidFieldOrParamType(
                     parent_entity_id.clone(),
@@ -861,6 +873,30 @@ mod tests {
             );
         }
 
+        // todo need more tests for dto-nested types, but can't use rust parser :|
+        // #[test]
+        // fn nested_in_dto() {
+        //     run_test(
+        //         r#"
+        //         struct dto0 {
+        //             field: ns0::dto1::nested_dto,
+        //             field: ns0::dto1::nested_en,
+        //         }
+        //         mod ns0 {
+        //             mod ns1 {
+        //                 struct dto1 {}
+        //                 impl dto1 {}
+        //             }
+        //             struct dto2 {}
+        //             impl dto2 {
+        //                 const
+        //             }
+        //         }
+        //         "#,
+        //         &EntityId::try_from("d:dto0").unwrap(),
+        //     );
+        // }
+
         #[test]
         fn enum_type() {
             run_test(
@@ -996,6 +1032,7 @@ mod tests {
                     .fields,
                 source_dto.parent().expect("dto has no parent"),
                 source_dto.clone(),
+                false,
             )
             .iter()
             .all(|result| result.is_ok()));
