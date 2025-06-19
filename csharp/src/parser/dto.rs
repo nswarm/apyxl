@@ -492,8 +492,6 @@ mod tests {
             .into_result()
             .map_err(wrap_test_err)?;
         assert_eq!(dto.name, "StructName");
-        println!("FIELDS\n{:#?}", dto.fields);
-        println!("\n\nRPCS{:#?}", dto.rpcs);
         assert_eq!(dto.fields.len(), 1);
         assert_eq!(dto.fields[0].name, "field0");
         assert_eq!(dto.rpcs.len(), 2);
