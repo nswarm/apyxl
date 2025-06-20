@@ -1,13 +1,14 @@
-use std::borrow::Cow;
-
 use anyhow::{anyhow, Result};
+use chumsky::container::Container;
 use chumsky::prelude::*;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use log::debug;
+use std::borrow::Cow;
+use std::collections::HashSet;
 
 use apyxl::model::entity::{EntityMut, FindEntity};
 use apyxl::model::{
-    entity, Api, EntityId, EntityType, Field, Namespace, NamespaceChild, Rpc, Type,
+    entity, Api, EntityId, EntityType, Field, Namespace, NamespaceChild, Rpc, Type, TypeAlias,
     TypeRef, UNDEFINED_NAMESPACE,
 };
 use apyxl::parser::error::Error;
@@ -38,28 +39,36 @@ impl apyxl::Parser for CSharpParser {
         input: &'a mut I,
         builder: &mut model::Builder<'a>,
     ) -> Result<()> {
+        let mut chunked_apis = Vec::new();
+        let mut all_entity_ids = HashSet::<EntityId>::default();
         for (chunk, data) in input.chunks() {
             debug!("parsing chunk {:?}", chunk.relative_file_path);
 
             // These must come before asmdefs, but still be appended to the top level
             // namespace aliases.
-            let file_aliases = ty_alias::parser(config)
-                .map(|alias| alias.map(NamespaceChild::TypeAlias))
-                .padded()
-                .repeated()
-                .collect::<Vec<Option<NamespaceChild>>>();
+            let imports = choice((
+                ty_alias::parser(config).map(Import::Alias),
+                import().map(Import::Namespace),
+            ))
+            .padded()
+            .repeated()
+            .collect::<Vec<_>>();
 
-            let children = file_aliases
+            let (children, imports) = imports
                 .then_ignore(assembly_definitions())
                 .then(
                     namespace::children(config, namespace::parser(config), end().ignored())
                         .padded(),
                 )
                 .then_ignore(end())
-                .map(|(aliases, mut children)| {
-                    let mut aliases = aliases.into_iter().flatten().collect_vec();
+                .map(|(mut imports, mut children)| {
+                    let (imports, mut aliases): (Vec<_>, Vec<_>) =
+                        imports.into_iter().partition_map(|import| match import {
+                            Import::Namespace(id) => Either::Left(id),
+                            Import::Alias(alias) => Either::Right(NamespaceChild::TypeAlias(alias)),
+                        });
                     children.append(&mut aliases);
-                    children
+                    (children, imports)
                 })
                 .parse(data)
                 .into_result()
@@ -78,11 +87,45 @@ impl apyxl::Parser for CSharpParser {
 
             apply_local_ty_aliases(&mut api)?;
 
+            // Keep track of all EntityIds in this chunk for use in imports.
+            collect_referenceable_entity_ids(&api, EntityId::default(), &mut all_entity_ids);
+
+            chunked_apis.push((chunk, api, imports));
+        }
+
+        // Necessary to separate API parsing from merging to builder so that we have the complete
+        // API available to qualify imported types. This is because C# only has namespace imports,
+        // and we don't know what's in the namespace until we parse it.
+
+        for (chunk, mut api, imports) in chunked_apis {
+            debug!(
+                "applying imports to chunk {:?}...",
+                chunk.relative_file_path
+            );
+
+            // Need to know what's in this chunk so it has precedence over those in others.
+            let mut local_entity_ids = HashSet::new();
+            collect_referenceable_entity_ids(&api, EntityId::default(), &mut local_entity_ids);
+
+            apply_imports(
+                &all_entity_ids,
+                &local_entity_ids,
+                EntityId::default(),
+                &mut api,
+                &imports,
+            )?;
+
+            debug!("merging chunk {:?}...", chunk.relative_file_path);
             builder.merge_from_chunk(api, chunk);
         }
 
         Ok(())
     }
+}
+
+enum Import<'a> {
+    Namespace(EntityId),
+    Alias(TypeAlias<'a>),
 }
 
 /// Replace types in this chunk referred to by local aliases like `using X = A.B.C;`. This will
@@ -121,6 +164,226 @@ fn apply_local_ty_aliases(api: &mut Api) -> Result<()> {
     remove_all_ty_aliases(api);
 
     Ok(())
+}
+
+fn collect_referenceable_entity_ids(ns: &Namespace, id: EntityId, set: &mut HashSet<EntityId>) {
+    for child in &ns.children {
+        let id = id.child_unqualified(child.name());
+        set.push(id.clone());
+
+        match child {
+            NamespaceChild::Dto(dto) => {
+                if let Some(ns) = &dto.namespace {
+                    collect_referenceable_entity_ids(ns, id, set)
+                }
+            }
+            NamespaceChild::Namespace(ns) => collect_referenceable_entity_ids(ns, id, set),
+            _ => {}
+        }
+    }
+}
+
+fn apply_imports(
+    all_entity_ids: &HashSet<EntityId>,
+    local_entity_ids: &HashSet<EntityId>,
+    namespace_id: EntityId,
+    namespace: &mut Namespace,
+    imports: &[EntityId],
+) -> Result<()> {
+    // Also add ids from this portion of the hierarchy tree in order to catch multi nested ids
+    // referencing less-nested types, for example:
+    // namespace a {
+    //   using Id = int;
+    //   namespace b {
+    //     struct Entity {
+    //       id: Id; // this references the Id inside 'a' even though it's not qualified.
+    //     }
+    //   }
+    // }
+    let mut local_entity_ids = local_entity_ids.clone();
+    collect_referenceable_entity_ids(namespace, EntityId::default(), &mut local_entity_ids);
+
+    println!(
+        r#"
+--- {} ---
+all_entity_ids:
+  {}
+local_entity_ids:
+  {}
+imports:
+  {}
+"#,
+        namespace_id,
+        all_entity_ids.iter().format("\n  "),
+        local_entity_ids.iter().format("\n  "),
+        imports.iter().format("\n  ")
+    );
+
+    // todo this is getting ridiculously convoluted. will the Great Entity Refactor (tm) help?
+
+    let apply_import_to_field = |field: &mut Field,
+                                 namespace_id: EntityId,
+                                 local_entity_ids: &HashSet<EntityId>|
+     -> Result<()> {
+        apply_imports_to_type(
+            all_entity_ids,
+            &local_entity_ids,
+            &namespace_id,
+            &mut field.ty,
+            imports,
+        )
+    };
+
+    let apply_import_to_rpc = |rpc: &mut Rpc,
+                               namespace_id: EntityId,
+                               local_entity_ids: &HashSet<EntityId>|
+     -> Result<()> {
+        for param in &mut rpc.params {
+            apply_imports_to_type(
+                all_entity_ids,
+                &local_entity_ids,
+                &namespace_id,
+                &mut param.ty,
+                imports,
+            )?;
+        }
+        if let Some(return_ty) = &mut rpc.return_type {
+            apply_imports_to_type(
+                all_entity_ids,
+                &local_entity_ids,
+                &namespace_id,
+                return_ty,
+                imports,
+            )?;
+        }
+        Ok(())
+    };
+
+    for dto in namespace.dtos_mut() {
+        let dto_id = namespace_id.child_unqualified(dto.name);
+
+        let mut dto_entity_ids = local_entity_ids.clone();
+        if let Some(dto_ns) = &mut dto.namespace {
+            apply_imports(
+                all_entity_ids,
+                &local_entity_ids,
+                dto_id.clone(),
+                dto_ns,
+                imports,
+            )?;
+
+            // Need to do this here so that types inside non-static fields/rpcs can properly
+            // reference types nested inside the dto.
+            collect_referenceable_entity_ids(dto_ns, EntityId::default(), &mut dto_entity_ids);
+        }
+
+        for field in &mut dto.fields {
+            apply_import_to_field(field, dto_id.clone(), &dto_entity_ids)?;
+        }
+        for rpc in &mut dto.rpcs {
+            apply_import_to_rpc(rpc, dto_id.clone(), &dto_entity_ids)?;
+        }
+        // note: enums have no type refs.
+    }
+
+    for rpc in namespace.rpcs_mut() {
+        apply_import_to_rpc(rpc, namespace_id.clone(), &local_entity_ids)?;
+    }
+
+    for field in namespace.fields_mut() {
+        apply_import_to_field(field, namespace_id.clone(), &local_entity_ids)?;
+    }
+
+    // note: enums have no type refs.
+
+    for ns in namespace.namespaces_mut() {
+        let ns_id = namespace_id.child_unqualified(&ns.name);
+        apply_imports(all_entity_ids, &local_entity_ids, ns_id, ns, imports)?;
+    }
+
+    Ok(())
+}
+
+fn apply_imports_to_type(
+    all_entity_ids: &HashSet<EntityId>,
+    local_entity_ids: &HashSet<EntityId>,
+    namespace_id: &EntityId,
+    ty: &mut TypeRef,
+    imports: &[EntityId],
+) -> Result<()> {
+    match &mut ty.value {
+        Type::Bool
+        | Type::U8
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::U128
+        | Type::USIZE
+        | Type::I8
+        | Type::I16
+        | Type::I32
+        | Type::I64
+        | Type::I128
+        | Type::F8
+        | Type::F16
+        | Type::F32
+        | Type::F64
+        | Type::F128
+        | Type::String
+        | Type::StringView
+        | Type::Bytes
+        | Type::User(_) => {}
+
+        Type::Array(ty) => {
+            apply_imports_to_type(all_entity_ids, local_entity_ids, namespace_id, ty, imports)?
+        }
+        Type::Optional(ty) => {
+            apply_imports_to_type(all_entity_ids, local_entity_ids, namespace_id, ty, imports)?
+        }
+        Type::Map { key, value } => {
+            apply_imports_to_type(all_entity_ids, local_entity_ids, namespace_id, key, imports)?;
+            apply_imports_to_type(
+                all_entity_ids,
+                local_entity_ids,
+                namespace_id,
+                value,
+                imports,
+            )?;
+        }
+        Type::Api(id) => {
+            println!("testing {}", id);
+            if !local_entity_ids.contains(id) {
+                println!("no local id for {}", id);
+                for import in imports {
+                    if let Some(qualified) = qualify_by_import(all_entity_ids, import, id)? {
+                        println!("-- {} qualified to {}", id, qualified);
+                        *id = qualified;
+                        break;
+                    }
+                }
+            }
+        }
+    };
+    Ok(())
+}
+
+fn qualify_by_import(
+    all_entity_ids: &HashSet<EntityId>,
+    import: &EntityId,
+    id: &mut EntityId,
+) -> Result<Option<EntityId>> {
+    let mut import_iter = import.clone();
+    loop {
+        let qualified = import_iter.concat(id)?;
+        if all_entity_ids.contains(&qualified) {
+            return Ok(Some(qualified));
+        }
+        import_iter = match import_iter.parent() {
+            None => break,
+            Some(parent) => parent,
+        }
+    }
+    Ok(None)
 }
 
 fn type_ref<'a>(api: &'a mut Api, alias_id: EntityId) -> &'a mut TypeRef {
@@ -232,6 +495,20 @@ fn assembly_definitions<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
         .then(any().and_is(just("]").not()).repeated().slice())
         .delimited_by(just("[").padded(), just("]").padded());
     comment::multi().then(asmdef).repeated().ignored()
+}
+
+fn import<'a>() -> impl Parser<'a, &'a str, EntityId, Error<'a>> {
+    let prefix = util::keyword_ex("using").then(text::whitespace().at_least(1));
+    let namespace = text::ident()
+        .separated_by(just('.').padded())
+        .at_least(1)
+        .collect::<Vec<_>>();
+    comment::multi()
+        .ignore_then(attributes::attributes().padded())
+        .ignore_then(prefix)
+        .ignore_then(namespace)
+        .then_ignore(just(';').padded())
+        .map(|namespace| EntityId::new_unqualified_vec(namespace.into_iter()))
 }
 
 #[cfg(test)]
@@ -498,6 +775,355 @@ mod tests {
             let model = builder.build().unwrap();
             assertions(model.api());
             Ok(())
+        }
+    }
+
+    mod imports {
+        use crate::parser::{import, CSharpParser};
+        use anyhow::{anyhow, Result};
+        use apyxl::input;
+        use apyxl::model::{Builder, Chunk, EntityId, Model};
+        use apyxl::parser::test_util::wrap_test_err;
+        use apyxl::test_util::executor::TEST_CONFIG;
+        use apyxl::Parser as ApyxlParser;
+        use chumsky::Parser;
+
+        #[test]
+        fn basic_import() -> Result<()> {
+            parse_import("using asd;")
+        }
+
+        #[test]
+        fn namespaced_using() -> Result<()> {
+            parse_import("using a.b.c.d;")
+        }
+
+        #[test]
+        fn using_with_comment() -> Result<()> {
+            parse_import(
+                r#"
+            // comment
+            using a.b.c.d;
+            "#,
+            )
+        }
+
+        #[test]
+        fn using_with_attrs() -> Result<()> {
+            parse_import(
+                r#"
+            [attr]
+            using a.b.c.d;
+            "#,
+            )
+        }
+
+        #[test]
+        fn multiple_imports() -> Result<()> {
+            let input = r#"
+            using a.b;
+            using c.d;
+            "#;
+            let mut input = input::Buffer::new(input);
+            let mut builder = Builder::default();
+            CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
+            Ok(())
+        }
+
+        #[test]
+        fn multiple_imports_and_aliases() -> Result<()> {
+            let input = r#"
+            using a.b;
+            using Blah = a.b.xyz;
+            using c.d;
+            "#;
+            let mut input = input::Buffer::new(input);
+            let mut builder = Builder::default();
+            CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
+            Ok(())
+        }
+
+        #[test]
+        fn dto_field() -> Result<()> {
+            let a = r#"
+            namespace a {
+                struct Id {}
+            }
+            "#;
+            let test = r#"
+            using a;
+            struct Entity {
+                Id id;
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "Entity", "ns:a.d:Id")
+        }
+
+        #[test]
+        fn rpc_param() -> Result<()> {
+            let a = r#"
+            namespace a {
+                struct Id {}
+            }
+            "#;
+            let test = r#"
+            using a;
+            struct Entity {
+                void rpc(Id id) {}
+            }
+            "#;
+
+            run_chunked_test(&[("a", a), ("test", test)], |model| {
+                let actual = model
+                    .api()
+                    .find_rpc(&EntityId::new_unqualified("Entity.rpc"))
+                    .unwrap()
+                    .params[0]
+                    .ty
+                    .value
+                    .api()
+                    .unwrap();
+
+                let expected = EntityId::try_from("ns:a.d:Id").unwrap();
+                assert_eq!(
+                    expected, *actual,
+                    "expected: {}, actual: {}",
+                    expected, actual
+                );
+                Ok(())
+            })
+        }
+
+        #[test]
+        fn rpc_return_ty() -> Result<()> {
+            let a = r#"
+            namespace a {
+                struct Id {}
+            }
+            "#;
+            let test = r#"
+            using a;
+            struct Entity {
+                Id rpc() {}
+            }
+            "#;
+
+            run_chunked_test(&[("a", a), ("test", test)], |model| {
+                let actual = model
+                    .api()
+                    .find_rpc(&EntityId::new_unqualified("Entity.rpc"))
+                    .unwrap()
+                    .return_type
+                    .as_ref()
+                    .ok_or(anyhow!("no return type"))?
+                    .value
+                    .api()
+                    .unwrap();
+
+                let expected = EntityId::try_from("ns:a.d:Id").unwrap();
+                assert_eq!(
+                    expected, *actual,
+                    "expected: {}, actual: {}",
+                    expected, actual
+                );
+                Ok(())
+            })
+        }
+
+        #[test]
+        fn namespace_full() -> Result<()> {
+            let a = "namespace a { namespace b { namespace c { struct Id {} } } }";
+            let test = r#"
+            using a.b;
+            struct Entity {
+                a.b.c.Id id;
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "Entity", "ns:a.ns:b.ns:c.d:Id")
+        }
+
+        #[test]
+        fn namespace() -> Result<()> {
+            let a = "namespace a { namespace b { namespace c { struct Id {} } } }";
+            let test = r#"
+            using a.b.c;
+            struct Entity {
+                c.Id id;
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "Entity", "ns:a.ns:b.ns:c.d:Id")
+        }
+
+        #[test]
+        fn explicit_override() -> Result<()> {
+            let a = "namespace a { struct Id {} }";
+            let b = "namespace b { struct Id {} }";
+            let test = r#"
+            using a;
+            using b;
+            struct Entity {
+                b.Id id;
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("b", b), ("test", test)], "Entity", "ns:b.d:Id")
+        }
+
+        #[test]
+        fn local_override() -> Result<()> {
+            let a = "namespace a { struct Id {} }";
+            let test = r#"
+            using a;
+            struct Id {}
+            struct Entity {
+                Id id;
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "Entity", "d:Id")
+        }
+
+        #[test]
+        fn nested_dto_override() -> Result<()> {
+            let a = "namespace a { struct Id {} }";
+            let test = r#"
+            using a;
+            struct Entity {
+                struct Id {}
+                Id id;
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "Entity", "d:Entity.d:Id")
+        }
+
+        #[test]
+        fn nested_enum_override() -> Result<()> {
+            let a = "namespace a { struct Id {} }";
+            let test = r#"
+            using a;
+            struct Entity {
+                enum Id {}
+                Id id;
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "Entity", "d:Entity.e:Id")
+        }
+
+        #[test]
+        fn nested_local_override() -> Result<()> {
+            let a = "namespace a {  }";
+            let test = r#"
+            using a;
+            struct Id {}
+            namespace b {
+                struct Entity {
+                    Id id;
+                }
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "b.Entity", "d:Id")
+        }
+
+        #[test]
+        fn extra_nested_local_override() -> Result<()> {
+            let a = "namespace a { struct Id {} }";
+            let test = r#"
+            using a;
+            namespace b {
+                struct Id {}
+                namespace c {
+                    struct Entity {
+                        Id id;
+                    }
+                }
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "b.c.Entity", "ns:b.d:Id")
+        }
+
+        #[test]
+        fn local_sibling_nested_no_override() -> Result<()> {
+            let a = "namespace a { struct Id {} }";
+            let test = r#"
+            using a;
+            namespace b {
+                struct Id {}
+            }
+            namespace c {
+                struct Entity {
+                    Id id;
+                }
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "c.Entity", "ns:a.d:Id")
+        }
+
+        #[test]
+        fn explicit_sibling_nested_override() -> Result<()> {
+            let a = r#"
+            namespace a {
+                namespace b {
+                    struct Id {}
+                }
+            }
+            "#;
+            let test = r#"
+            using a;
+            namespace b {
+                struct Id {}
+            }
+            namespace c {
+                struct Entity {
+                    b.Id id;
+                }
+            }
+            "#;
+            run_dto_chunked_test(&[("a", a), ("test", test)], "c.Entity", "ns:b.d:Id")
+        }
+
+        fn parse_import(input: &'static str) -> Result<()> {
+            let _ = import().parse(input).into_result().map_err(wrap_test_err)?;
+            Ok(())
+        }
+
+        fn run_chunked_test(
+            inputs: &[(&str, &str)],
+            assertions: impl FnOnce(&Model) -> Result<()>,
+        ) -> Result<()> {
+            let mut input = input::ChunkBuffer::new();
+            for (path, data) in inputs {
+                input.add_chunk(Chunk::with_relative_file_path(path), data);
+            }
+            let mut builder = Builder::default();
+            CSharpParser::default().parse(&TEST_CONFIG, &mut input, &mut builder)?;
+            let model = builder.build().unwrap();
+
+            assertions(&model)?;
+            Ok(())
+        }
+
+        fn run_dto_chunked_test(
+            inputs: &[(&str, &str)],
+            dto_id: &str,
+            expected_entity_id: &str,
+        ) -> Result<()> {
+            run_chunked_test(inputs, |model| {
+                let actual = model
+                    .api()
+                    .find_dto(&EntityId::new_unqualified(dto_id))
+                    .unwrap()
+                    .fields[0]
+                    .ty
+                    .value
+                    .api()
+                    .unwrap();
+
+                let expected = EntityId::try_from(expected_entity_id)?;
+                assert_eq!(
+                    expected, *actual,
+                    "expected: {}, actual: {}",
+                    expected, actual
+                );
+                Ok(())
+            })
         }
     }
 }

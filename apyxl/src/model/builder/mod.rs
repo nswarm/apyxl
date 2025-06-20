@@ -133,6 +133,8 @@ impl<'a> Builder<'a> {
             validate::recurse_api(&self.api, validate::dto_field_names),
             validate::recurse_api(&self.api, validate::dto_field_names_no_duplicates),
             validate::recurse_api(&self.api, validate::dto_field_types),
+            validate::recurse_api(&self.api, validate::dto_rpc_names),
+            validate::recurse_api(&self.api, validate::dto_rpc_types),
             validate::recurse_api(&self.api, validate::rpc_names),
             validate::recurse_api(&self.api, validate::rpc_param_names),
             validate::recurse_api(&self.api, validate::rpc_param_names_no_duplicates),

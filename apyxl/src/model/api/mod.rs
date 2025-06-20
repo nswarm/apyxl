@@ -49,9 +49,11 @@ impl Api<'_> {
         find_ty: &EntityId,
     ) -> Option<EntityId> {
         let mut iter = initial_namespace.to_qualified_namespaces();
-        loop {
+        loop {            
             match self.find_namespace(&iter) {
-                None => return None,
+                None => {
+                    // Keep going up the chain, first check might be a dto without a namespace.
+                },
                 Some(namespace) => {
                     let is_dto = namespace.find_dto(find_ty).is_some();
                     let is_enum = namespace.find_enum(find_ty).is_some();

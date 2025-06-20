@@ -6,7 +6,9 @@ use itertools::Itertools;
 use thiserror::Error;
 
 pub use crate::model::validate::mutation::Mutation;
-use crate::model::{entity, Api, EntityId, EntityType, Field, Type, TypeRef, UNDEFINED_NAMESPACE};
+use crate::model::{
+    entity, Api, EntityId, EntityType, Field, Rpc, Type, TypeRef, UNDEFINED_NAMESPACE,
+};
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError {
@@ -25,7 +27,8 @@ pub enum ValidationError {
     #[error("Invalid enum name within namespace '{0}', index #{1}. Enum names cannot be empty.")]
     InvalidEnumName(EntityId, usize),
 
-    #[error("Invalid type alias name within namespace '{0}', index #{1}. Type alias names cannot be empty.")]
+    #[error("Invalid type alias name within namespace '{0}', index #{1}. Type alias names cannot be empty."
+    )]
     InvalidTypeAliasName(EntityId, usize),
 
     #[error("Invalid field name at '{0}', index {1}. Field names cannot be empty.")]
@@ -34,7 +37,8 @@ pub enum ValidationError {
     #[error("Invalid enum value name at '{0}', index {1}. Enum value names cannot be empty.")]
     InvalidEnumValueName(EntityId, usize),
 
-    #[error("Invalid field type at '{0}'. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
+    #[error("Invalid field type at '{0}'. Type '{1}' must be a valid DTO, enum, or type alias in the API."
+    )]
     InvalidFieldType(EntityId, EntityId),
 
     #[error(
@@ -42,10 +46,12 @@ pub enum ValidationError {
     )]
     InvalidFieldOrParamType(EntityId, String, usize, EntityId),
 
-    #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
+    #[error("Invalid return type for RPC {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API."
+    )]
     InvalidRpcReturnType(EntityId, EntityId),
 
-    #[error("Invalid target type for type alias {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API.")]
+    #[error("Invalid target type for type alias {0}. Type '{1}' must be a valid DTO, enum, or type alias in the API."
+    )]
     InvalidTypeAliasTargetType(EntityId, EntityId),
 
     #[error("Duplicate DTO, enum, or type alias definition: '{0}'")]
@@ -158,11 +164,35 @@ pub fn dto_field_names_no_duplicates(api: &Api, namespace_id: EntityId) -> Vec<V
         .collect_vec()
 }
 
-pub fn rpc_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+pub fn dto_rpc_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
-        .rpcs()
-        .enumerate()
+        .dtos()
+        .flat_map(|dto| {
+            // todo should these be separated...? or should everything else be more collapsed?
+            let dto_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
+            let mut results = Vec::new();
+            results.append(&mut _rpc_names(dto_id.clone(), dto.rpcs.iter()));
+            results.append(&mut _rpc_param_names(dto_id.clone(), dto.rpcs.iter()));
+            results.append(&mut _rpc_param_names_no_duplicates(dto_id, dto.rpcs.iter()));
+            results
+        })
+        .collect_vec()
+}
+
+pub fn rpc_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+    let rpcs = api
+        .find_namespace(&namespace_id)
+        .expect("namespace must exist in api")
+        .rpcs();
+    _rpc_names(namespace_id, rpcs)
+}
+
+fn _rpc_names<'a, 'api: 'a>(
+    namespace_id: EntityId,
+    rpcs: impl Iterator<Item = &'a Rpc<'api>>,
+) -> Vec<ValidationResult> {
+    rpcs.enumerate()
         .map(|(i, rpc)| {
             if rpc.name.is_empty() {
                 Err(ValidationError::InvalidRpcName(namespace_id.clone(), i))
@@ -174,29 +204,45 @@ pub fn rpc_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
 }
 
 pub fn rpc_param_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
-    api.find_namespace(&namespace_id)
+    let rpcs = api
+        .find_namespace(&namespace_id)
         .expect("namespace must exist in api")
-        .rpcs()
-        .flat_map(|rpc| {
-            field_names(
-                &rpc.params,
-                namespace_id.child(EntityType::Rpc, &rpc.name).unwrap(),
-            )
-        })
-        .collect_vec()
+        .rpcs();
+    _rpc_param_names(namespace_id, rpcs)
+}
+
+fn _rpc_param_names<'a, 'api: 'a>(
+    namespace_id: EntityId,
+    rpcs: impl Iterator<Item = &'a Rpc<'api>>,
+) -> Vec<ValidationResult> {
+    rpcs.flat_map(|rpc| {
+        field_names(
+            &rpc.params,
+            namespace_id.child(EntityType::Rpc, &rpc.name).unwrap(),
+        )
+    })
+    .collect_vec()
 }
 
 pub fn rpc_param_names_no_duplicates(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
-    api.find_namespace(&namespace_id)
+    let rpcs = api
+        .find_namespace(&namespace_id)
         .expect("namespace must exist in api")
-        .rpcs()
-        .flat_map(|rpc| {
-            duplicate_field_names(
-                &rpc.params,
-                namespace_id.child(EntityType::Rpc, &rpc.name).unwrap(),
-            )
-        })
-        .collect_vec()
+        .rpcs();
+    _rpc_param_names_no_duplicates(namespace_id, rpcs)
+}
+
+fn _rpc_param_names_no_duplicates<'a, 'api: 'a>(
+    namespace_id: EntityId,
+    rpcs: impl Iterator<Item = &'a Rpc<'api>>,
+) -> Vec<ValidationResult> {
+    rpcs.flat_map(|rpc| {
+        duplicate_field_names(
+            &rpc.params,
+            namespace_id.child(EntityType::Rpc, &rpc.name).unwrap(),
+        )
+    })
+    .collect_vec()
 }
 
 pub fn enum_names(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
@@ -313,22 +359,54 @@ pub fn dto_field_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResul
         .collect_vec()
 }
 
-pub fn rpc_param_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+pub fn dto_rpc_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
     api.find_namespace(&namespace_id)
         .expect("namespace must exist in api")
-        .rpcs()
-        .flat_map(|rpc| {
-            let rpc_id = namespace_id.child(EntityType::Rpc, &rpc.name).unwrap();
-            field_list_types(api, &rpc.params, namespace_id.clone(), rpc_id, false)
+        .dtos()
+        .flat_map(|dto| {
+            let dto_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
+            let mut results = Vec::new();
+            results.append(&mut _rpc_param_types(api, dto_id.clone(), dto.rpcs.iter()));
+            results.append(&mut _rpc_return_types(api, dto_id.clone(), dto.rpcs.iter()));
+            results
         })
         .collect_vec()
 }
 
-pub fn rpc_return_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
-    api.find_namespace(&namespace_id)
+pub fn rpc_param_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+    let rpcs = api
+        .find_namespace(&namespace_id)
         .expect("namespace must exist in api")
-        .rpcs()
-        .filter_map(|rpc| rpc.return_type.as_ref().map(|ty| (&rpc.name, ty)))
+        .rpcs();
+    _rpc_param_types(api, namespace_id, rpcs)
+}
+
+fn _rpc_param_types<'a, 'api: 'a>(
+    api: &Api,
+    namespace_id: EntityId,
+    rpcs: impl Iterator<Item = &'a Rpc<'api>>,
+) -> Vec<ValidationResult> {
+    rpcs.flat_map(|rpc| {
+        let rpc_id = namespace_id.child(EntityType::Rpc, &rpc.name).unwrap();
+        field_list_types(api, &rpc.params, namespace_id.clone(), rpc_id, false)
+    })
+    .collect_vec()
+}
+
+pub fn rpc_return_types(api: &Api, namespace_id: EntityId) -> Vec<ValidationResult> {
+    let rpcs = api
+        .find_namespace(&namespace_id)
+        .expect("namespace must exist in api")
+        .rpcs();
+    _rpc_return_types(api, namespace_id, rpcs)
+}
+
+fn _rpc_return_types<'a, 'api: 'a>(
+    api: &Api,
+    namespace_id: EntityId,
+    rpcs: impl Iterator<Item = &'a Rpc<'api>>,
+) -> Vec<ValidationResult> {
+    rpcs.filter_map(|rpc| rpc.return_type.as_ref().map(|ty| (&rpc.name, ty)))
         .map(|(rpc_name, return_type)| {
             let rpc_id = namespace_id.child(EntityType::Rpc, rpc_name).unwrap();
             let return_ty_id = rpc_id
@@ -743,6 +821,8 @@ mod tests {
                 )),
             );
         }
+
+        // todo test rpcs already on the dto (not in virtual namespace) (cant do with rust parser).
 
         #[test]
         fn nested() {
