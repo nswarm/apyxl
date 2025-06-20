@@ -59,8 +59,7 @@ pub fn children<'a>(
     choice((
         dto::parser(config).map(|(c, v)| Some((NamespaceChild::Dto(c), v))),
         en::parser().map(|(c, v)| Some((NamespaceChild::Enum(c), v))),
-        ty_alias::parser(config)
-            .map(|c| c.map(|alias| (NamespaceChild::TypeAlias(alias), Visibility::Public))),
+        ty_alias::parser(config).map(|c| Some((NamespaceChild::TypeAlias(c), Visibility::Public))),
         namespace.map(|c| Some((NamespaceChild::Namespace(c), Visibility::Public))),
         // Catch comments after all children
         comment::single().padded().map(|_| None),
@@ -84,7 +83,7 @@ mod tests {
     use chumsky::Parser;
 
     use crate::parser::namespace;
-    use apyxl::model::{attributes, Comment, NamespaceChild};
+    use apyxl::model::{Comment, NamespaceChild, attributes};
     use apyxl::parser::test_util::wrap_test_err;
     use apyxl::test_util::executor::TEST_CONFIG;
 

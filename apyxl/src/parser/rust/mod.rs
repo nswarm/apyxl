@@ -1,15 +1,17 @@
+use crate::model::{
+    Api, EntityId, Field, Namespace, NamespaceChild, Rpc, Type, TypeRef, UNDEFINED_NAMESPACE,
+};
+use crate::parser::rust::import::Import;
+use crate::parser::{error, Config};
+use crate::{model, rust_util, Input, Parser as ApyxlParser};
 use anyhow::{anyhow, Result};
 use chumsky::container::Container;
 use chumsky::prelude::*;
+use itertools::Itertools;
 use log::debug;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
-
-use crate::model::{Api, EntityId, Namespace, NamespaceChild, Type, TypeRef, UNDEFINED_NAMESPACE};
-use crate::parser::rust::import::Import;
-use crate::parser::{error, Config};
-use crate::{model, rust_util, Input, Parser as ApyxlParser};
 
 mod attributes;
 mod comment;
@@ -70,7 +72,7 @@ impl ApyxlParser for Rust {
                 .as_ref()
                 .map(|file_path| rust_util::path_to_entity_id(file_path))
                 .unwrap_or(EntityId::default());
-            collect_entity_ids(&api, chunk_entity_id, &mut all_entity_ids);
+            collect_referenceable_entity_ids(&api, chunk_entity_id, &mut all_entity_ids);
 
             chunked_apis.push((chunk, api, imports));
         }
@@ -91,8 +93,9 @@ impl ApyxlParser for Rust {
                 chunk.relative_file_path
             );
 
+            // Need to know what's in this chunk so it has precedence over those in others.
             let mut local_entity_ids = HashSet::new();
-            collect_entity_ids(&api, EntityId::default(), &mut local_entity_ids);
+            collect_referenceable_entity_ids(&api, EntityId::default(), &mut local_entity_ids);
 
             sort_imports(&mut imports);
             apply_imports(
@@ -125,16 +128,17 @@ fn sort_imports(imports: &mut [Import]) {
     });
 }
 
-fn collect_entity_ids(ns: &Namespace, id: EntityId, set: &mut HashSet<EntityId>) {
+fn collect_referenceable_entity_ids(ns: &Namespace, id: EntityId, set: &mut HashSet<EntityId>) {
     for child in &ns.children {
         let id = id.child_unqualified(child.name());
         set.push(id.clone());
         if let NamespaceChild::Namespace(ns) = child {
-            collect_entity_ids(ns, id, set);
+            collect_referenceable_entity_ids(ns, id, set);
         }
     }
 }
 
+// todo this whole chain of things... can I make it more generic for other language use?
 fn apply_imports(
     all_entity_ids: &HashSet<EntityId>,
     local_entity_ids: &HashSet<EntityId>,
@@ -143,7 +147,7 @@ fn apply_imports(
     imports: &[Import],
 ) -> Result<()> {
     // Also add ids from this portion of the hierarchy tree in order to catch multi nested ids
-    // referencing less nested types, for example:
+    // referencing less-nested types, for example:
     // mod a {
     //   type Id = u32;
     //   mod b {
@@ -153,21 +157,19 @@ fn apply_imports(
     //   }
     // }
     let mut local_entity_ids = local_entity_ids.clone();
-    collect_entity_ids(namespace, EntityId::default(), &mut local_entity_ids);
+    collect_referenceable_entity_ids(namespace, EntityId::default(), &mut local_entity_ids);
 
-    for dto in namespace.dtos_mut() {
-        for field in &mut dto.fields {
-            apply_imports_to_type(
-                all_entity_ids,
-                &local_entity_ids,
-                &namespace_id,
-                &mut field.ty,
-                imports,
-            )?;
-        }
-    }
+    let apply_import_to_field = |field: &mut Field| -> Result<()> {
+        apply_imports_to_type(
+            all_entity_ids,
+            &local_entity_ids,
+            &namespace_id,
+            &mut field.ty,
+            imports,
+        )
+    };
 
-    for rpc in namespace.rpcs_mut() {
+    let apply_import_to_rpc = |rpc: &mut Rpc| -> Result<()> {
         for param in &mut rpc.params {
             apply_imports_to_type(
                 all_entity_ids,
@@ -186,6 +188,24 @@ fn apply_imports(
                 imports,
             )?;
         }
+        Ok(())
+    };
+
+    for dto in namespace.dtos_mut() {
+        for field in &mut dto.fields {
+            apply_import_to_field(field)?;
+        }
+        for rpc in &mut dto.rpcs {
+            apply_import_to_rpc(rpc)?;
+        }
+    }
+
+    for rpc in namespace.rpcs_mut() {
+        apply_import_to_rpc(rpc)?;
+    }
+
+    for field in namespace.fields_mut() {
+        apply_import_to_field(field)?;
     }
 
     for alias in namespace.ty_aliases_mut() {
