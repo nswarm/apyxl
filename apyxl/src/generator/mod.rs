@@ -3,14 +3,12 @@ use std::fmt::Debug;
 
 pub use dbg::Dbg;
 pub use rust::Rust;
-pub use markdown::Markdown;
 
 use crate::output::Output;
 use crate::view;
 
 mod dbg;
 mod rust;
-mod markdown;
 mod util;
 
 pub trait Generator: Debug {
