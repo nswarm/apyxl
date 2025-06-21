@@ -288,6 +288,9 @@ fn apply_imports_to_type(
                 }
             }
         }
+
+        // Not supported.
+        Type::Function { .. } => {} //
     };
     Ok(())
 }

@@ -552,6 +552,34 @@ fn qualify_type(
                 .map(|opt| opt.map(|opt_ty| TypeRef::new_optional(opt_ty, ty.semantics)))
         }
 
+        Type::Function { params, return_ty } => {
+            let mut has_qualified_params = false;
+            let params = params
+                .iter()
+                .map(|param| {
+                    qualify_type(api, namespace_id, param).map(|ty| {
+                        has_qualified_params |= ty.is_some();
+                        println!("qualified: {:?}", ty);
+                        ty.unwrap_or((**param).clone())
+                    })
+                })
+                .collect::<Result<Vec<_>, EntityId>>()?;
+            let return_type = return_ty
+                .as_ref()
+                .map(|ty| qualify_type(api, namespace_id, &*ty))
+                .transpose()?
+                .flatten();
+            return if has_qualified_params || return_type.is_some() {
+                Ok(Some(TypeRef::new_function(
+                    params,
+                    return_type,
+                    ty.semantics,
+                )))
+            } else {
+                Ok(None)
+            };
+        }
+
         Type::Map { key, value } => {
             let key_ty = qualify_type(api, namespace_id, key)?;
             let value_ty = qualify_type(api, namespace_id, value)?;
@@ -863,6 +891,47 @@ mod tests {
                         TypeRef::new_api("ns0.d:dto", Semantics::Value).unwrap(),
                         Semantics::Value,
                     ),
+                    Semantics::Value,
+                )),
+            );
+        }
+
+        #[test]
+        fn function() {
+            run_test(
+                r#"
+                struct dto0 {}
+                mod ns0 {
+                    struct dto1 {}
+                    mod ns1 {
+                        enum en {}
+                    }
+                }
+                "#,
+                &EntityId::default(),
+                &TypeRef::new_function(
+                    vec![
+                        TypeRef::new(
+                            Type::Api(EntityId::new_unqualified("dto0")),
+                            Semantics::Value,
+                        ),
+                        TypeRef::new(
+                            Type::Api(EntityId::new_unqualified("ns0.dto1")),
+                            Semantics::Value,
+                        ),
+                    ],
+                    Some(TypeRef::new(
+                        Type::Api(EntityId::new_unqualified("ns0.ns1.en")),
+                        Semantics::Value,
+                    )),
+                    Semantics::Value,
+                ),
+                Some(TypeRef::new_function(
+                    vec![
+                        TypeRef::new_api("d:dto0", Semantics::Value).unwrap(),
+                        TypeRef::new_api("ns0.d:dto1", Semantics::Value).unwrap(),
+                    ],
+                    Some(TypeRef::new_api("ns0.ns1.e:en", Semantics::Value).unwrap()),
                     Semantics::Value,
                 )),
             );

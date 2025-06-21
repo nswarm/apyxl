@@ -1540,6 +1540,9 @@ mod tests {
             }
         }
 
+        // todo pyx - no function parsing in rust parser
+        // mod validate_function {}
+
         mod metadata {
             use std::path::PathBuf;
 

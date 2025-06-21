@@ -1,9 +1,9 @@
 use std::fmt::Debug;
 
 use crate::model::entity::{EntityMut, FindEntity};
-use anyhow::{anyhow, Result};
-
 use crate::model::{Entity, EntityId, Namespace};
+use anyhow::{anyhow, Result};
+use itertools::Itertools;
 
 /// A type within the language or API. Types other than [TypeRef::Api] are assumed to always
 /// exist during API validation and can be used by [crate::Generator]s to map to the relevant known
@@ -77,6 +77,13 @@ where
     /// An optional type, i.e. a type that also includes whether it is set or not.
     /// Sometimes called a nullable type.
     Optional(Box<TypeRef>),
+
+    /// A function type, typically used to represent events, but could also be used for callable
+    /// predicates/functors in some niche situations.
+    Function {
+        params: Vec<Box<TypeRef>>,
+        return_ty: Option<Box<TypeRef>>,
+    },
 }
 pub type UserTypeName = String;
 pub type Type = BaseType<TypeRef, EntityId, UserTypeName>;
@@ -122,6 +129,20 @@ impl TypeRef {
 
     pub fn new_optional(ty: TypeRef, semantics: Semantics) -> Self {
         Self::new(Type::Optional(Box::new(ty)), semantics)
+    }
+
+    pub fn new_function(
+        params: impl IntoIterator<Item = TypeRef>,
+        return_ty: Option<TypeRef>,
+        semantics: Semantics,
+    ) -> Self {
+        Self::new(
+            Type::Function {
+                params: params.into_iter().map(Box::new).collect_vec(),
+                return_ty: return_ty.map(Box::new),
+            },
+            semantics,
+        )
     }
 
     pub fn is_primitive(&self, api: &Namespace) -> bool {
@@ -191,7 +212,8 @@ impl Type {
             | Type::User(_)
             | Type::Array(_)
             | Type::Map { .. }
-            | Type::Optional(_) => false,
+            | Type::Optional(_)
+            | Type::Function { .. } => false,
         }
     }
 }
