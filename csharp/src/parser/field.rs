@@ -23,6 +23,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> 
         .then(is_static())
         .then_ignore(util::keyword_ex("const").padded().or_not())
         .then_ignore(util::keyword_ex("readonly").padded().or_not())
+        .then_ignore(util::keyword_ex("event").padded().or_not())
         .then(field)
         .map(
             |((((comments, user), visibility), is_static), (ty, name))| {

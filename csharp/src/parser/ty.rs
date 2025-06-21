@@ -44,6 +44,7 @@ fn ty<'a>(
         user_ty(config).map(Type::User),
         list(nested.clone()),
         map(nested.clone()),
+        function(nested.clone()),
         entity_id().map(Type::Api),
     )))
     .boxed();
@@ -160,11 +161,38 @@ fn map<'a>(
         .map(|(key, value)| Type::new_map(key, value))
 }
 
-// fn option<'a>(
-//     ty: impl Parser<'a, &'a str, TypeRef, Error<'a>>,
-// ) -> impl Parser<'a, &'a str, Type, Error<'a>> {
-//     ty.then_ignore(just('?')).map(Type::new_optional)
-// }
+fn function<'a>(
+    ty: impl Parser<'a, &'a str, TypeRef, Error<'a>> + Clone,
+) -> impl Parser<'a, &'a str, Type, Error<'a>> {
+    let types = just('<')
+        .padded()
+        .ignore_then(
+            ty.clone()
+                .map(Box::new)
+                .separated_by(just(',').padded())
+                .at_least(1)
+                .collect::<Vec<_>>(),
+        )
+        .then_ignore(text::whitespace())
+        .then_ignore(just('>'));
+    let empty_action = just("Action").ignored();
+    let action = just("Action").ignore_then(types.clone());
+    let func = just("Func").ignore_then(types);
+    choice((
+        func.map(|mut params| {
+            let return_ty = params.pop();
+            Type::Function { params, return_ty }
+        }),
+        action.map(|params| Type::Function {
+            params,
+            return_ty: None,
+        }),
+        empty_action.map(|_| Type::Function {
+            params: vec![],
+            return_ty: None,
+        }),
+    ))
+}
 
 fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
     custom(move |input| {
@@ -424,6 +452,38 @@ mod tests {
                     )),
                     Semantics::Value
                 )),
+                Semantics::Value
+            )
+        );
+
+        // Event.
+        test!(
+            event_action_empty,
+            "Action",
+            TypeRef::new(Type::new_function(vec![], None), Semantics::Value)
+        );
+        test!(
+            event_action,
+            "Action<int, string>",
+            TypeRef::new(
+                Type::new_function(
+                    vec![
+                        TypeRef::new(Type::I32, Semantics::Value),
+                        TypeRef::new(Type::String, Semantics::Value),
+                    ],
+                    None
+                ),
+                Semantics::Value
+            )
+        );
+        test!(
+            event_func,
+            "Func<int, string>",
+            TypeRef::new(
+                Type::new_function(
+                    vec![TypeRef::new(Type::I32, Semantics::Value),],
+                    Some(TypeRef::new(Type::String, Semantics::Value))
+                ),
                 Semantics::Value
             )
         );
