@@ -19,7 +19,6 @@ mod attributes;
 mod comment;
 mod dto;
 mod en;
-mod event;
 mod expr_block;
 mod field;
 mod is_static;

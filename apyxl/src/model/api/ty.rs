@@ -178,6 +178,16 @@ impl Type {
         Self::Optional(Box::new(ty))
     }
 
+    pub fn new_function(
+        params: impl IntoIterator<Item = TypeRef>,
+        return_ty: Option<TypeRef>,
+    ) -> Self {
+        Self::Function {
+            params: params.into_iter().map(Box::new).collect_vec(),
+            return_ty: return_ty.map(Box::new),
+        }
+    }
+
     pub fn is_primitive(&self, api: &Namespace) -> bool {
         match self {
             Type::Api(api_ty) => {
