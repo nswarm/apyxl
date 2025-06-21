@@ -99,6 +99,7 @@ impl Dependencies {
             let from_id = namespace_id.child(EntityType::Dto, dto.name).unwrap();
             let from = *self.node(&from_id).unwrap();
             for field in &dto.fields {
+                debug!("add edge from dto {} field {}", from_id, field.name);
                 self.add_edge(from, namespace_id, &field.ty.value);
             }
             if let Some(namespace) = &dto.namespace {
@@ -110,9 +111,11 @@ impl Dependencies {
             let from_id = namespace_id.child(EntityType::Rpc, &rpc.name).unwrap();
             let from = *self.node(&from_id).unwrap();
             for param in &rpc.params {
+                debug!("add edge from rpc {} param {}", from_id, param.name);
                 self.add_edge(from, namespace_id, &param.ty.value);
             }
             if let Some(return_type) = &rpc.return_type {
+                debug!("add edge from rpc {} return_ty", from_id);
                 self.add_edge(from, namespace_id, &return_type.value);
             }
         }
@@ -122,6 +125,7 @@ impl Dependencies {
                 .child(EntityType::TypeAlias, alias.name)
                 .unwrap();
             let from = *self.node(&from_id).unwrap();
+            debug!("add edge from alias {} target_ty", from_id);
             self.add_edge(from, namespace_id, &alias.target_ty.value);
         }
 
@@ -136,6 +140,7 @@ impl Dependencies {
     }
 
     fn add_node(&mut self, entity_id: &EntityId) -> NodeIndex {
+        debug!("add_node: {}", entity_id);
         let index = self.graph.add_node(entity_id.clone());
         self.node_map.insert(entity_id.clone(), index);
         index
@@ -204,9 +209,10 @@ impl Dependencies {
         namespace_id: &EntityId,
         relative_id: &EntityId,
     ) {
-        // We unwrap nodes here because we assume the api is validated, and all nodes are added first.
         debug!("add_edge_relative: {} -> {}", namespace_id, relative_id);
-        let to = self.node_relative(namespace_id, relative_id).unwrap();
+        let to = self
+            .node_relative(namespace_id, relative_id)
+            .expect("node did not exist in the api (is it qualified?)");
         self.graph.add_edge(from, *to, ());
     }
 }

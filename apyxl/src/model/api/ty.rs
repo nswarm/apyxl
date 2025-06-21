@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::model::entity::{EntityMut, FindEntity};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use crate::model::{Entity, EntityId, Namespace};
 
@@ -197,6 +197,20 @@ impl Type {
 }
 
 impl<'api> FindEntity<'api> for TypeRef {
+    fn qualify_id(&self, mut id: EntityId, referenceable: bool) -> Result<EntityId> {
+        if referenceable {
+            return Err(anyhow!("types are not referenceable"));
+        }
+        match id.pop_front() {
+            Some((_, name)) => Err(anyhow!(
+                "failed to qualify_id {}.{} - ty has no children",
+                name,
+                id
+            )),
+            None => Ok(EntityId::default()),
+        }
+    }
+
     fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
         if id.is_empty() {
             Some(Entity::Type(self))

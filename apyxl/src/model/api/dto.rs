@@ -2,6 +2,7 @@ use crate::model::api::entity::ToEntity;
 use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Attributes, Entity, EntityId, EntityType, Field, Namespace, Rpc};
+use anyhow::anyhow;
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -46,6 +47,36 @@ impl AttributesHolder for Dto<'_> {
 }
 
 impl<'api> FindEntity<'api> for Dto<'api> {
+    fn qualify_id(&self, mut id: EntityId, referenceable: bool) -> anyhow::Result<EntityId> {
+        if id.is_empty() {
+            return Ok(EntityId::default());
+        }
+
+        if let Some(dto_ns) = self.namespace.as_ref() {
+            if let Ok(qualified) = dto_ns.qualify_id(id.clone(), referenceable) {
+                return Ok(qualified);
+            }
+        }
+
+        if referenceable {
+            return Err(anyhow!("qualify_id: failed to find dto child: {}", id));
+        }
+
+        let (_, child_name) = id.pop_front().unwrap();
+        if let Some(rpc) = self.rpc(&child_name) {
+            Ok(EntityId::new(EntityType::Rpc, child_name)
+                .concat(&rpc.qualify_id(id, referenceable)?)?)
+        } else if let Some(field) = self.field(&child_name) {
+            Ok(EntityId::new(EntityType::Field, child_name)
+                .concat(&field.qualify_id(id, referenceable)?)?)
+        } else {
+            Err(anyhow!(
+                "qualify_id: failed to find dto child {}",
+                child_name
+            ))
+        }
+    }
+
     fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             // Need to put the id for this level back together and evaluate it on the namespace

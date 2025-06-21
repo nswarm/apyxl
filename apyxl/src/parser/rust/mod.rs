@@ -7,7 +7,6 @@ use crate::{model, rust_util, Input, Parser as ApyxlParser};
 use anyhow::{anyhow, Result};
 use chumsky::container::Container;
 use chumsky::prelude::*;
-use itertools::Itertools;
 use log::debug;
 use std::borrow::Cow;
 use std::cmp::Ordering;

@@ -2,6 +2,7 @@ use crate::model::api::entity::ToEntity;
 use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Attributes, Entity, EntityId};
+use anyhow::anyhow;
 
 /// A single enum type in the within an [Api].
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -44,6 +45,13 @@ impl AttributesHolder for Enum<'_> {
 }
 
 impl<'api> FindEntity<'api> for Enum<'api> {
+    fn qualify_id(&self, mut id: EntityId, _referenceable: bool) -> anyhow::Result<EntityId> {
+        match id.pop_front() {
+            Some((_, name)) => Err(anyhow!("failed to qualify_id {}.{} - enum has no children", name, id)),
+            None => Ok(EntityId::default()),
+        }
+    }
+
     fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
         if id.is_empty() {
             Some(Entity::Enum(self))

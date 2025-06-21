@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 
 use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, TypeAlias, TypeRef};
 
@@ -37,6 +37,10 @@ pub enum EntityMut<'a, 'api> {
 }
 
 pub trait FindEntity<'api> {
+    /// Qualify an [EntityId] relative to this [Entity], if possible.
+    /// If `referenceable` is true, will only find [Entity]s able to be referenced by a type ref.
+    fn qualify_id(&self, id: EntityId, referenceable: bool) -> Result<EntityId>;
+
     /// Find an [Entity] by qualified [EntityId], if it exists.
     fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>>;
 
@@ -45,6 +49,18 @@ pub trait FindEntity<'api> {
 }
 
 impl<'api> FindEntity<'api> for Entity<'_, 'api> {
+    fn qualify_id(&self, id: EntityId, referenceable: bool) -> Result<EntityId> {
+        match self {
+            Entity::Namespace(ns) => ns.qualify_id(id, referenceable),
+            Entity::Dto(dto) => dto.qualify_id(id, referenceable),
+            Entity::Rpc(rpc) => rpc.qualify_id(id, referenceable),
+            Entity::Enum(en) => en.qualify_id(id, referenceable),
+            Entity::Field(field) => field.qualify_id(id, referenceable),
+            Entity::TypeAlias(alias) => alias.qualify_id(id, referenceable),
+            Entity::Type(ty) => ty.qualify_id(id, referenceable),
+        }
+    }
+
     fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
         match self {
             Entity::Namespace(ns) => ns.find_entity(id),
@@ -63,6 +79,18 @@ impl<'api> FindEntity<'api> for Entity<'_, 'api> {
 }
 
 impl<'api> FindEntity<'api> for EntityMut<'_, 'api> {
+    fn qualify_id(&self, id: EntityId, referenceable: bool) -> Result<EntityId> {
+        match self {
+            EntityMut::Namespace(ns) => ns.qualify_id(id, referenceable),
+            EntityMut::Dto(dto) => dto.qualify_id(id, referenceable),
+            EntityMut::Rpc(rpc) => rpc.qualify_id(id, referenceable),
+            EntityMut::Enum(en) => en.qualify_id(id, referenceable),
+            EntityMut::Field(field) => field.qualify_id(id, referenceable),
+            EntityMut::TypeAlias(alias) => alias.qualify_id(id, referenceable),
+            EntityMut::Type(ty) => ty.qualify_id(id, referenceable),
+        }
+    }
+
     fn find_entity<'a>(&'a self, id: EntityId) -> Option<Entity<'a, 'api>> {
         match self {
             EntityMut::Namespace(ns) => ns.find_entity(id),
@@ -219,7 +247,13 @@ impl EntityType {
 impl Entity<'_, '_> {
     pub fn ty(&self) -> EntityType {
         match self {
-            Entity::Namespace(_) => EntityType::Namespace,
+            Entity::Namespace(ns) => {
+                if ns.is_virtual {
+                    EntityType::Dto
+                } else {
+                    EntityType::Namespace
+                }
+            }
             Entity::Dto(_) => EntityType::Dto,
             Entity::Rpc(_) => EntityType::Rpc,
             Entity::Enum(_) => EntityType::Enum,
@@ -249,6 +283,321 @@ impl TryFrom<&str> for EntityType {
                 "subtype '{}' does not map to a valid EntityType",
                 value
             )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    mod qualify_id {
+        use crate::model::entity::FindEntity;
+        use crate::model::EntityId;
+        use crate::test_util::executor::TestExecutor;
+        use anyhow::Result;
+
+        #[test]
+        fn dto() -> Result<()> {
+            let input = r#"
+            mod ns {
+                struct dto {}
+            }
+            "#;
+            run_test(input, true, "ns.dto", "ns:ns.d:dto")?;
+            Ok(())
+        }
+
+        #[test]
+        fn dto_field() -> Result<()> {
+            let input = r#"
+            mod ns {
+                struct dto {
+                    field: i32
+                }
+            }
+            "#;
+            run_test(input, false, "ns.dto.field", "ns:ns.d:dto.f:field")
+        }
+
+        #[test]
+        fn dto_field_ty() -> Result<()> {
+            let input = r#"
+            mod ns {
+                struct dto {
+                    field: i32
+                }
+            }
+            "#;
+            run_test(input, false, "ns.dto.field.ty", "ns:ns.d:dto.f:field.ty")
+        }
+
+        // todo pyx - nested rpc in addition to virtual ns
+
+        #[test]
+        fn dto_rpc() -> Result<()> {
+            let input = r#"
+            mod ns {
+                struct dto {}
+                impl dto {
+                    fn rpc() {}
+                }
+            }
+            "#;
+            run_test(input, false, "ns.dto.rpc", "ns:ns.d:dto.r:rpc")
+        }
+
+        #[test]
+        fn dto_rpc_param() -> Result<()> {
+            let input = r#"
+            mod ns {
+                struct dto {}
+                impl dto {
+                    fn rpc(param: i32) {}
+                }
+            }
+            "#;
+            run_test(
+                input,
+                false,
+                "ns.dto.rpc.param",
+                "ns:ns.d:dto.r:rpc.p:param",
+            )
+        }
+
+        #[test]
+        fn dto_rpc_param_ty() -> Result<()> {
+            let input = r#"
+            mod ns {
+                struct dto {}
+                impl dto {
+                    fn rpc(param: i32) {}
+                }
+            }
+            "#;
+            run_test(
+                input,
+                false,
+                "ns.dto.rpc.param.ty",
+                "ns:ns.d:dto.r:rpc.p:param.ty",
+            )
+        }
+
+        #[test]
+        fn dto_rpc_return_ty() -> Result<()> {
+            let input = r#"
+            mod ns {
+                struct dto {}
+                impl dto {
+                    fn rpc() -> i32 {}
+                }
+            }
+            "#;
+            run_test(
+                input,
+                false,
+                "ns.dto.rpc.return_ty",
+                "ns:ns.d:dto.r:rpc.return_ty",
+            )
+        }
+
+        // todo pyx - support nested
+        // #[test]
+        // fn dto_en() -> Result<()> {
+        //     let input = r#"
+        //     mod ns {
+        //         struct dto {
+        //             enum en {}
+        //         }
+        //     }
+        //     "#;
+        //     run_test(input, true, "ns.dto.en", "ns:ns.d:dto.e:en")
+        // }
+
+        // todo pyx - support nested
+        // #[test]
+        // fn dto_nested() -> Result<()> {
+        //     let input = r#"
+        //     mod ns {
+        //         struct dto {
+        //             struct dto2 {}
+        //         }
+        //     }
+        //     "#;
+        //     run_test(input, true, "ns.dto.dto2", "ns:ns.d:dto.d:dto2")
+        // }
+
+        // todo pyx - support nested
+        // #[test]
+        // fn dto_deeply_nested() -> Result<()> {
+        //     let input = r#"
+        //     mod ns {
+        //         struct dto {
+        //             struct dto2 {
+        //                 struct dto3 {}
+        //             }
+        //         }
+        //     }
+        //     "#;
+        //     run_test(input, true, "ns.dto.dto2.dto3", "ns:ns.d:dto.d:dto2.d:dto3")
+        // }
+
+        #[test]
+        fn field() -> Result<()> {
+            let input = r#"
+            mod ns {
+                const field: i32 = 5;
+            }
+            "#;
+            run_test(input, false, "ns.field", "ns:ns.f:field")
+        }
+
+        #[test]
+        fn field_ty() -> Result<()> {
+            let input = r#"
+            mod ns {
+                const field: i32 = 5;
+            }
+            "#;
+            run_test(input, false, "ns.field.ty", "ns:ns.f:field.ty")
+        }
+
+        #[test]
+        fn rpc() -> Result<()> {
+            let input = r#"
+            mod ns {
+                fn rpc() {}
+            }
+            "#;
+            run_test(input, false, "ns.rpc", "ns:ns.r:rpc")
+        }
+
+        #[test]
+        fn rpc_param() -> Result<()> {
+            let input = r#"
+            mod ns {
+                fn rpc(param: i32) {}
+            }
+            "#;
+            run_test(input, false, "ns.rpc.param", "ns:ns.r:rpc.p:param")
+        }
+
+        #[test]
+        fn rpc_param_ty() -> Result<()> {
+            let input = r#"
+            mod ns {
+                fn rpc(param: i32) {}
+            }
+            "#;
+            run_test(input, false, "ns.rpc.param.ty", "ns:ns.r:rpc.p:param.ty")
+        }
+
+        #[test]
+        fn rpc_return_ty() -> Result<()> {
+            let input = r#"
+            mod ns {
+                fn rpc() -> i32 {}
+            }
+            "#;
+            run_test(input, false, "ns.rpc.return_ty", "ns:ns.r:rpc.return_ty")
+        }
+
+        #[test]
+        fn en() -> Result<()> {
+            let input = r#"
+            mod ns {
+                enum en {}
+            }
+            "#;
+            run_test(input, true, "ns.en", "ns:ns.e:en")
+        }
+
+        #[test]
+        fn type_alias() -> Result<()> {
+            let input = r#"
+            mod ns {
+                type alias = i32;
+            }
+            "#;
+            run_test(input, true, "ns.alias", "ns:ns.a:alias")
+        }
+
+        #[test]
+        fn type_alias_target_ty() -> Result<()> {
+            let input = r#"
+            mod ns {
+                type alias = i32;
+            }
+            "#;
+            run_test(
+                input,
+                false,
+                "ns.alias.target_ty",
+                "ns:ns.a:alias.target_ty",
+            )
+        }
+
+        #[test]
+        fn namespace() -> Result<()> {
+            let input = r#"
+            mod ns {}
+            "#;
+            run_test(input, true, "ns", "ns:ns")
+        }
+
+        #[test]
+        fn namespace_nested() -> Result<()> {
+            let input = r#"
+            mod ns {
+                mod ns2 {}
+            }
+            "#;
+            run_test(input, true, "ns.ns2", "ns:ns.ns:ns2")
+        }
+
+        #[test]
+        fn namespace_deeply_nested() -> Result<()> {
+            let input = r#"
+            mod ns {
+                mod ns2 {
+                    mod ns3 {}
+                }
+            }
+            "#;
+            run_test(input, true, "ns.ns2.ns3", "ns:ns.ns:ns2.ns:ns3")
+        }
+
+        fn run_test(
+            input: &str,
+            is_entity_referenceable: bool,
+            qualify_id: &str,
+            expected_id: &str,
+        ) -> Result<()> {
+            let result = test_qualify_id(input, true, qualify_id, expected_id);
+            if is_entity_referenceable {
+                result?;
+            } else {
+                // If type is NOT referenceable, it should result in error when trying to qualify.
+                assert!(result.is_err());
+            }
+            test_qualify_id(input, false, qualify_id, expected_id)
+        }
+
+        fn test_qualify_id(
+            input: &str,
+            referenceable: bool,
+            qualify_id: &str,
+            expected_id: &str,
+        ) -> Result<()> {
+            let mut exe = TestExecutor::new(input);
+            let api = exe.api();
+            let actual = api.qualify_id(EntityId::new_unqualified(qualify_id), referenceable)?;
+            assert_eq!(
+                actual,
+                EntityId::try_from(expected_id)?,
+                "qualify_id: {} (referenceable: {})",
+                qualify_id,
+                referenceable
+            );
+            Ok(())
         }
     }
 }
