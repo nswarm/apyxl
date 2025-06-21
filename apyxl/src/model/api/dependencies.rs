@@ -200,6 +200,15 @@ impl Dependencies {
                 self.add_edge(from, namespace_id, &key.value);
                 self.add_edge(from, namespace_id, &value.value);
             }
+
+            Type::Function { params, return_ty } => {
+                for param in params {
+                    self.add_edge(from, namespace_id, &param.value)
+                }
+                if let Some(return_ty) = return_ty {
+                    self.add_edge(from, namespace_id, &return_ty.value)
+                }
+            }
         }
     }
 
@@ -670,6 +679,8 @@ mod tests {
                 "#,
             );
         }
+
+        // todo pyx - function type
 
         #[test]
         fn transitive() {

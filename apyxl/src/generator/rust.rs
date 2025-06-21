@@ -348,6 +348,11 @@ fn write_inner_type(ty: TypeRef, o: &mut dyn Output) -> Result<()> {
         Type::Array(array_ty) => write_vec(*array_ty, o),
         Type::Map { key, value } => write_map(*key, *value, o),
         Type::Optional(opt_ty) => write_option(*opt_ty, o),
+        Type::Function { params, return_ty } => write_function(
+            params.into_iter().map(|ty| *ty).collect_vec(),
+            return_ty.map(|opt| *opt),
+            o,
+        ),
     }
 }
 
@@ -389,10 +394,34 @@ fn write_option(ty: TypeRef, o: &mut dyn Output) -> Result<()> {
     o.write_char('>')
 }
 
+fn write_function(
+    params: Vec<TypeRef>,
+    return_ty: Option<TypeRef>,
+    o: &mut dyn Output,
+) -> Result<()> {
+    o.write("Box<dyn Fn(")?;
+
+    let len = params.len();
+    for (i, param) in params.into_iter().enumerate() {
+        write_type(param, o)?;
+        if i < len - 1 {
+            o.write(", ")?;
+        }
+    }
+    o.write_char(')')?;
+
+    if let Some(return_ty) = return_ty {
+        o.write(" -> ")?;
+        write_type(return_ty, o)?;
+    }
+
+    o.write_char('>')
+}
+
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
     use anyhow::Result;
+    use std::borrow::Cow;
 
     use crate::generator::rust::{
         write_dto, write_entity_id, write_enum, write_field, write_rpc, INDENT,
@@ -832,6 +861,18 @@ pub mod ns0 {
             TypeRef::new_map(
                 TypeRef::new(Type::String, Semantics::Value),
                 TypeRef::new(Type::I32, Semantics::Value),
+                Semantics::Value
+            )
+        );
+        test!(
+            function,
+            "Box<dyn Fn(String, i32) -> bool>",
+            TypeRef::new_function(
+                vec![
+                    TypeRef::new(Type::String, Semantics::Value),
+                    TypeRef::new(Type::I32, Semantics::Value)
+                ],
+                Some(TypeRef::new(Type::Bool, Semantics::Value)),
                 Semantics::Value
             )
         );

@@ -62,7 +62,7 @@ impl apyxl::Parser for CSharpParser {
                         .padded(),
                 )
                 .then_ignore(end())
-                .map(|(mut imports, mut children)| {
+                .map(|(imports, mut children)| {
                     let (imports, mut aliases): (Vec<_>, Vec<_>) =
                         imports.into_iter().partition_map(|import| match import {
                             Import::Namespace(id) => Either::Left(id),
@@ -343,6 +343,26 @@ fn apply_imports_to_type(
                         break;
                     }
                 }
+            }
+        }
+        Type::Function { params, return_ty } => {
+            for param in params {
+                apply_imports_to_type(
+                    all_entity_ids,
+                    local_entity_ids,
+                    namespace_id,
+                    param,
+                    imports,
+                )?;
+            }
+            if let Some(return_ty) = return_ty {
+                apply_imports_to_type(
+                    all_entity_ids,
+                    local_entity_ids,
+                    namespace_id,
+                    return_ty,
+                    imports,
+                )?;
             }
         }
     };

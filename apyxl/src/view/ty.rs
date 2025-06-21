@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-
+use itertools::Itertools;
 use crate::model;
 use crate::model::Semantics;
 use crate::view::{EntityId, EntityIdTransform, Namespace};
@@ -66,7 +66,8 @@ impl<'v> TypeRef<'v> {
             | Type::User(_)
             | Type::Array(_)
             | Type::Map { .. }
-            | Type::Optional(_) => false,
+            | Type::Optional(_)
+            | Type::Function { .. } => false,
         }
     }
 
@@ -100,6 +101,10 @@ impl<'v> TypeRef<'v> {
                 value: Box::new(self.nested(value)),
             },
             model::Type::Optional(ty) => Type::Optional(Box::new(self.nested(ty))),
+            model::Type::Function { params, return_ty } => Type::Function {
+                params: params.iter().map(|param| Box::new(self.nested(&param))).collect_vec(),
+                return_ty: return_ty.as_ref().map(|ty| Box::new(self.nested(&ty))),
+            }
         }
     }
 }

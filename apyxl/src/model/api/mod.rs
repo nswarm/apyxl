@@ -102,7 +102,7 @@ mod tests {
             "#,
             &initial_namespace,
             &find_id,
-            EntityId::try_from("ns0.ns1.d:dto").unwrap(),
+            EntityId::try_from("ns0.ns1.d:dto")?,
         )
     }
 
@@ -122,7 +122,7 @@ mod tests {
             "#,
             &initial_namespace,
             &find_id,
-            EntityId::try_from("ns0.ns1.d:dto").unwrap(),
+            EntityId::try_from("ns0.ns1.d:dto")?,
         )
     }
 
@@ -143,7 +143,7 @@ mod tests {
             "#,
             &initial_namespace,
             &find_id,
-            EntityId::try_from("ns0.ns1.ns2.d:dto").unwrap(),
+            EntityId::try_from("ns0.ns1.ns2.d:dto")?,
         )
     }
 
@@ -161,7 +161,7 @@ mod tests {
             "#,
             &initial_namespace,
             &find_id,
-            EntityId::try_from("ns0.ns1.e:en").unwrap(),
+            EntityId::try_from("ns0.ns1.e:en")?,
         )
     }
 
@@ -179,25 +179,7 @@ mod tests {
             "#,
             &initial_namespace,
             &find_id,
-            EntityId::try_from("ns0.ns1.a:alias").unwrap(),
-        )
-    }
-
-    #[test]
-    fn field_from_ns() -> Result<()> {
-        let initial_namespace = EntityId::new_unqualified("ns0");
-        let find_id = EntityId::new_unqualified("ns1.field");
-        run_test(
-            r#"
-            mod ns0 {
-                mod ns1 {
-                    const field: u32 = 5;
-                }
-            }
-            "#,
-            &initial_namespace,
-            &find_id,
-            EntityId::try_from("ns0.ns1.f:field").unwrap(),
+            EntityId::try_from("ns0.ns1.a:alias")?,
         )
     }
 

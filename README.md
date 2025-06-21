@@ -43,6 +43,7 @@ Notes:
 
 - `self` fns are in dto `rpcs`, static fns are in the dto's namespace.
 - fails to parse lifetimes on references anywhere.
+- generics are not supported.
 
 ### Parser: C#
 
@@ -53,6 +54,7 @@ Notes:
 - Properties are parsed as `get_<field_name>` and/or `set_<field_name>` rpcs on the dto.
 - `delegate` types are parsed as type aliases to function types.
 - `event` fields are parsed as fields with a function type.
+- generics are not supported.
 
 ### Generator: Rust
 
@@ -96,7 +98,7 @@ This is a list of things to keep in mind when writing a parser.
     - Nested types (e.g. other types inside DTOs)
     - Imports/includes
     - Events/event listener patterns should be parsed into fields with function types
-        - This makes it easier to handle explicitly in generators if desired
+        - This makes it easier to handle the concept in generators if desired
     - Comments (see [Attributes](apyxl/src/model/api/attributes))
     - Types including primitives, arrays, maps, optionals, functions
     - [User types](#user-types)
