@@ -171,7 +171,7 @@ impl<'v, 'a> Namespace<'v, 'a> {
 
     pub fn find_child(&'a self, id: &model::EntityId) -> Option<NamespaceChild<'v, 'a>> {
         self.target
-            .find_child(id)
+            .find_descendant(id)
             .filter(|child| self.filter_child(child))
             .map(|child| NamespaceChild::new(child, self.xforms))
     }
@@ -345,7 +345,7 @@ mod tests {
         let root = view.api();
 
         let visible_id = EntityId::try_from("ns0.d:visible").unwrap();
-        let expected = model.api().find_child(&visible_id).unwrap();
+        let expected = model.api().find_descendant(&visible_id).unwrap();
         let found = root.find_child(&visible_id).unwrap();
         assert_eq!(found.name(), expected.name());
 

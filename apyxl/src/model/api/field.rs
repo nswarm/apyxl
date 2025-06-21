@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity, ToEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, TypeRef};
@@ -27,6 +28,22 @@ impl AttributesHolder for Field<'_> {
 }
 
 impl<'api> FindEntity<'api> for Field<'api> {
+    fn qualify_id(&self, mut id: EntityId, referenceable: bool) -> anyhow::Result<EntityId> {
+        if referenceable {
+            return Err(anyhow!("fields are not referenceable"));
+        }
+        match id.pop_front() {
+            None => Ok(EntityId::default()),
+            Some((_, name)) => {
+                if entity::subtype::TY_ALL.contains(&name.as_str()) {
+                    Ok(EntityId::new(EntityType::Type, entity::subtype::TY))
+                } else {
+                    Err(anyhow!("failed to qualify_id: {} is an invalid field child", name))
+                }
+            }
+        }
+    }
+
     fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {

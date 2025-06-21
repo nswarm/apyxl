@@ -79,6 +79,12 @@ pub struct Component {
 }
 
 impl EntityId {
+    pub fn new(ty: EntityType, name: impl ToString) -> Self {
+        Self {
+            components: vec![Component { ty, name: name.to_string() }].into()
+        }
+    }
+    
     /// When parsing, you don't necessarily know what type of entity the [EntityId] is referencing.
     /// using `new_unqualified` takes only names, and during [crate::model::builder::Builder::build]
     /// any unqualified [EntityIds] will be qualified when the complete api is at its disposal.
@@ -120,17 +126,21 @@ impl EntityId {
             .map(|component| component.name.as_str())
     }
 
-    /// Returns a qualified copy of this [EntityId] assuming that every component is a namespace.
-    pub fn to_qualified_namespaces(&self) -> Self {
+    /// Returns a qualified copy of this [EntityId] assuming that every nonqualified component is a namespace.
+    pub fn with_qualified_namespaces(&self) -> Self {
         if self.is_qualified() {
             return self.clone();
         }
         let mut qualified = Self::default();
-        for name in self.component_names() {
-            qualified.components.push_back(Component {
-                ty: EntityType::Namespace,
-                name: name.to_string(),
-            })
+        for component in self.components() {
+            if component.ty == EntityType::None {
+                qualified.components.push_back(Component {
+                    ty: EntityType::Namespace,
+                    name: component.name.to_string(),
+                })
+            } else {
+                qualified.components.push_back(component.clone());
+            }
         }
         qualified
     }

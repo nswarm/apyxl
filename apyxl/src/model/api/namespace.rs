@@ -1,11 +1,10 @@
-use std::borrow::Cow;
-
-use itertools::Itertools;
-
 use crate::model::api::entity::{Entity, EntityType, ToEntity};
 use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Attributes, Dto, EntityId, Enum, Field, Rpc, TypeAlias};
+use anyhow::{anyhow, Result};
+use itertools::Itertools;
+use std::borrow::Cow;
 
 /// A named, nestable wrapper for a set of API entities.
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
@@ -43,6 +42,30 @@ impl AttributesHolder for Namespace<'_> {
 }
 
 impl<'api> FindEntity<'api> for Namespace<'api> {
+    fn qualify_id(&self, mut id: EntityId, referenceable: bool) -> Result<EntityId> {
+        let Some((_, child_name)) = id.pop_front() else {
+            return Ok(EntityId::default());
+        };
+
+        let Some(child) = self.child(&child_name) else {
+            return Err(anyhow!(
+                "qualify_id: failed to find namespace child {}",
+                child_name
+            ));
+        };
+
+        // We might get either the virtual ns or the dto from self.child, so need to check the other too.
+        if let Some(entity_id) =
+            try_qualify_virtual_namespace(self, child, &child_name, &id, referenceable)?
+        {
+            return Ok(entity_id);
+        }
+
+        let child_entity = child.to_entity();
+        EntityId::new(child_entity.ty(), child_name)
+            .concat(&child_entity.qualify_id(id, referenceable)?)
+    }
+
     fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {
@@ -409,7 +432,7 @@ impl<'a> Namespace<'a> {
     }
 
     /// Find a [NamespaceChild] by [EntityId] relative to this [Namespace].
-    pub fn find_child(&self, entity_id: &EntityId) -> Option<&NamespaceChild<'a>> {
+    pub fn find_descendant(&self, entity_id: &EntityId) -> Option<&NamespaceChild<'a>> {
         let namespace = self.find_namespace(&unqualified_namespace(entity_id));
         let name = unqualified_name(entity_id);
         match (namespace, name) {
@@ -679,6 +702,41 @@ fn unqualified_namespace(id: &EntityId) -> EntityId {
         EntityId::new_unqualified_vec(id.component_names().take(id.len() - 1))
     } else {
         EntityId::default()
+    }
+}
+
+fn try_qualify_virtual_namespace(
+    parent: &Namespace,
+    child: &NamespaceChild,
+    child_name: &str,
+    id: &EntityId,
+    referenceable: bool,
+) -> Result<Option<EntityId>> {
+    let mut sibling = None;
+    match child {
+        NamespaceChild::Namespace(ns) if ns.is_virtual => {
+            // Also look within dto.
+            if let Some(dto) = parent.dto(&ns.name) {
+                sibling = Some(dto.to_entity());
+            }
+        }
+        NamespaceChild::Dto(dto) => {
+            // Also look for virtual namespace.
+            if let Some(ns) = parent.namespace(dto.name) {
+                if ns.is_virtual {
+                    sibling = Some(ns.to_entity());
+                }
+            }
+        }
+        _ => {}
+    };
+
+    if let Some(sibling) = sibling {
+        Ok(EntityId::new(EntityType::Dto, child_name)
+            .concat(&sibling.qualify_id(id.clone(), referenceable)?)
+            .ok())
+    } else {
+        Ok(None)
     }
 }
 

@@ -3,6 +3,7 @@ mod mutation;
 use std::fmt::Debug;
 
 use itertools::Itertools;
+use log::{debug, error};
 use thiserror::Error;
 
 pub use crate::model::validate::mutation::Mutation;
@@ -446,8 +447,7 @@ pub fn field_list_types<'a, 'b: 'a>(
 
             let mut qualified = Err(EntityId::default());
             if can_be_nested_in_parent {
-                // Need to check if the type is in parent, otherwise we'll skip the namespace
-                // attached to the entity (e.g. dto's namespace).
+                // Need to check if the type is in parent i.e. the namespace attached to dto.
                 qualified = qualify_type(api, &parent_entity_id, &field.ty);
             }
             if qualified.is_err() {
@@ -529,9 +529,16 @@ fn qualify_type(
     // the same structure as the input type `ty`.
     match &ty.value {
         Type::Api(id) => {
-            let qualified_id = api
-                .find_qualified_type_relative(namespace_id, id)
-                .ok_or(id.clone())?;
+            let qualified_id =
+                api.find_qualified_type_relative(namespace_id, id)
+                    .map_err(|err| {
+                        error!("qualify_type: {}", err);
+                        id.clone()
+                    })?;
+            debug!(
+                "found qualified type '{}' for id '{}' starting in namespace '{}'",
+                qualified_id, id, namespace_id
+            );
             return Ok(Some(TypeRef::new(Type::Api(qualified_id), ty.semantics)));
         }
 

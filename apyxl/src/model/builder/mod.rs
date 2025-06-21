@@ -1222,13 +1222,13 @@ mod tests {
         }
 
         mod validate_rpc {
-            use std::borrow::Cow;
             use crate::model::builder::tests::{
                 assert_contains_error, build_from_input, test_builder,
             };
             use crate::model::builder::ValidationError;
             use crate::model::EntityId;
             use crate::test_util::executor::TestExecutor;
+            use std::borrow::Cow;
 
             #[test]
             fn name_empty() {
@@ -1516,7 +1516,7 @@ mod tests {
                 assert_contains_error(
                     &build_from_input(&mut exe),
                     ValidationError::InvalidNamespaceName(
-                        EntityId::new_unqualified(UNDEFINED_NAMESPACE).to_qualified_namespaces(),
+                        EntityId::new_unqualified(UNDEFINED_NAMESPACE).with_qualified_namespaces(),
                     ),
                 );
             }
@@ -1534,7 +1534,7 @@ mod tests {
                     &build_from_input(&mut exe),
                     ValidationError::InvalidNamespaceName(
                         EntityId::new_unqualified_vec(["ns", UNDEFINED_NAMESPACE].iter())
-                            .to_qualified_namespaces(),
+                            .with_qualified_namespaces(),
                     ),
                 );
             }

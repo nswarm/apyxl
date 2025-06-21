@@ -16,7 +16,7 @@ impl<'a> SubView<'a> {
         xforms: Transforms,
     ) -> Self {
         Self {
-            namespace_id: namespace_id.to_qualified_namespaces(),
+            namespace_id: namespace_id.with_qualified_namespaces(),
             namespace,
             xforms,
         }

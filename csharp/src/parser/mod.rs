@@ -19,6 +19,7 @@ mod attributes;
 mod comment;
 mod dto;
 mod en;
+mod event;
 mod expr_block;
 mod field;
 mod is_static;
@@ -196,28 +197,12 @@ fn apply_imports(
     //   using Id = int;
     //   namespace b {
     //     struct Entity {
-    //       id: Id; // this references the Id inside 'a' even though it's not qualified.
+    //       Id id; // this references the Id inside 'a' even though it's not qualified.
     //     }
     //   }
     // }
     let mut local_entity_ids = local_entity_ids.clone();
     collect_referenceable_entity_ids(namespace, EntityId::default(), &mut local_entity_ids);
-
-    println!(
-        r#"
---- {} ---
-all_entity_ids:
-  {}
-local_entity_ids:
-  {}
-imports:
-  {}
-"#,
-        namespace_id,
-        all_entity_ids.iter().format("\n  "),
-        local_entity_ids.iter().format("\n  "),
-        imports.iter().format("\n  ")
-    );
 
     // todo this is getting ridiculously convoluted. will the Great Entity Refactor (tm) help?
 
@@ -351,12 +336,9 @@ fn apply_imports_to_type(
             )?;
         }
         Type::Api(id) => {
-            println!("testing {}", id);
             if !local_entity_ids.contains(id) {
-                println!("no local id for {}", id);
                 for import in imports {
                     if let Some(qualified) = qualify_by_import(all_entity_ids, import, id)? {
-                        println!("-- {} qualified to {}", id, qualified);
                         *id = qualified;
                         break;
                     }
@@ -622,7 +604,6 @@ mod tests {
             )
             .into_result();
         if result.is_err() {
-            // println!("{}", result.unwrap_err().iter().join(","));
             panic!("error parsing");
         }
     }

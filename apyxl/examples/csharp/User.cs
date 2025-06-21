@@ -30,7 +30,7 @@ public class User
     public struct Id
     {
         // feature: property accessor
-        public UInt128 Value { get; }
+        public UInt64 Value { get; }
     }
     
     // feature: nested enum

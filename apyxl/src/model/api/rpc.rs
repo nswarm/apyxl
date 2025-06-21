@@ -2,6 +2,7 @@ use crate::model::api::entity::ToEntity;
 use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Field, TypeRef};
+use anyhow::anyhow;
 use std::borrow::Cow;
 
 /// A single Remote Procedure Call (RPC) within an [Api].
@@ -39,6 +40,29 @@ impl AttributesHolder for Rpc<'_> {
 }
 
 impl<'api> FindEntity<'api> for Rpc<'api> {
+    fn qualify_id(&self, mut id: EntityId, referenceable: bool) -> anyhow::Result<EntityId> {
+        if referenceable {
+            return Err(anyhow!("rpcs are not referenceable"));
+        }
+        
+        match id.pop_front() {
+            None => Ok(EntityId::default()),
+            Some((_, child_name)) => {
+                if let Some(param) = self.param(&child_name) {
+                    Ok(EntityId::new(EntityType::Field, child_name)
+                        .concat(&param.qualify_id(id, referenceable)?)?)
+                } else if child_name.as_str() == entity::subtype::RETURN_TY {
+                    Ok(EntityId::new(EntityType::Type, entity::subtype::RETURN_TY))
+                } else {
+                    Err(anyhow!(
+                        "failed to qualify_id: {} is an invalid rpc child",
+                        child_name
+                    ))
+                }
+            }
+        }
+    }
+
     fn find_entity<'a>(&'a self, mut id: EntityId) -> Option<Entity<'a, 'api>> {
         if let Some((ty, name)) = id.pop_front() {
             match ty {

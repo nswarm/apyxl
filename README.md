@@ -51,7 +51,8 @@ Notes:
 - `bytes[]` is parsed as `Type::Bytes`.
 - Optional (nullable) arrays are not supported, e.g. `int[]?`.
 - Properties are parsed as `get_<field_name>` and/or `set_<field_name>` rpcs on the dto.
-- Events are parsed as `add_<event_name>_listener` and `remove_<event_name>_listener` rpcs on the dto.
+- `delegate` types are parsed as type aliases to function types.
+- `event` fields are parsed as fields with a function type.
 
 ### Generator: Rust
 
@@ -94,8 +95,10 @@ This is a list of things to keep in mind when writing a parser.
     - Type aliases
     - Nested types (e.g. other types inside DTOs)
     - Imports/includes
+    - Events/event listener patterns should be parsed into fields with function types
+        - This makes it easier to handle explicitly in generators if desired
     - Comments (see [Attributes](apyxl/src/model/api/attributes))
-    - Types including primitives, arrays, maps, optionals
+    - Types including primitives, arrays, maps, optionals, functions
     - [User types](#user-types)
     - [User attributes](#user-attributes)
 - [Chunks](#api-builder)
