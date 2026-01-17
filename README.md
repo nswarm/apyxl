@@ -37,6 +37,17 @@ General:
 - Ignores anything inside the body of functions.
 - Only parses public definitions unless the parser config `enable_parse_private` is set to `true`.
 
+### Parser: Pyx
+
+Pyx in an Interface Definition Language (IDL) built with the explicit purpose of supporting every feature
+that apyxl supports. Originally apyxl was using the rust parser within tests to quickly set up APIs, but
+as development on other languages and use cases continued it became clear there are many things rust does
+_not_ support. Pyx grew out of that need.
+
+As such, pyx is extremely close to rust. It differs only where it needs to for the sake of apyxl features.
+These differences are listed in the [pyx documentation](PYX.md), which is separate to give it space to provide
+examples.
+
 ### Parser: Rust
 
 Notes:
