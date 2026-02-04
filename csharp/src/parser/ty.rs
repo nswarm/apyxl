@@ -211,10 +211,9 @@ fn user_ty(config: &Config) -> impl Parser<'_, &str, String, Error<'_>> {
             }
         }
         // Just need _any error_.
-        Err(chumsky::error::Error::<&str>::expected_found(
-            None,
-            None,
-            input.span_since(input.offset()),
+        Err(Rich::<'_, char>::custom(
+            input.span_since(&input.cursor()),
+            "failed to parse user type",
         ))
     })
 }

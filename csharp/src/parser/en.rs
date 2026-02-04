@@ -43,7 +43,7 @@ fn en_value<'a>() -> impl Parser<'a, &'a str, EnumValue<'a>, Error<'a>> {
         .padded()
         .ignore_then(text::int(10).try_map(|s, span| {
             str::parse::<EnumValueNumber>(s)
-                .map_err(|_| chumsky::error::Error::<&'a str>::expected_found(None, None, span))
+                .map_err(|_| Rich::<'a, char>::custom(span, "expected enum value number"))
         }));
     comment::multi()
         .then(attributes::attributes().padded())
