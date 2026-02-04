@@ -38,7 +38,7 @@ impl<'v, 'a> Field<'v, 'a> {
         }
     }
 
-    pub fn name(&self) -> Cow<str> {
+    pub fn name(&self) -> Cow<'_, str> {
         let mut name = Cow::Borrowed(self.target.name);
         for x in self.xforms {
             x.name(&mut name)
@@ -50,11 +50,11 @@ impl<'v, 'a> Field<'v, 'a> {
         self.target.entity_type()
     }
 
-    pub fn ty(&self) -> TypeRef {
+    pub fn ty(&self) -> TypeRef<'_> {
         TypeRef::new(&self.target.ty, self.entity_id_xforms)
     }
 
-    pub fn attributes(&self) -> Attributes {
+    pub fn attributes(&self) -> Attributes<'_, '_> {
         Attributes::new(
             &self.target.attributes,
             self.attr_xforms,

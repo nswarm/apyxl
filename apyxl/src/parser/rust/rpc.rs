@@ -1,12 +1,12 @@
-use std::borrow::Cow;
 use crate::model::{Attributes, Field, Rpc};
 use crate::parser::error::Error;
 use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, comment, expr_block, ty, visibility};
 use crate::parser::{util, Config};
 use chumsky::prelude::*;
+use std::borrow::Cow;
 
-pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, (Rpc<'_>, Visibility), Error<'_>> {
     let prefix = util::keyword_ex("fn").then(text::whitespace().at_least(1));
     let name = text::ident();
     let params = params(config).delimited_by(
@@ -60,7 +60,7 @@ fn self_param<'a>() -> impl Parser<'a, &'a str, Option<&'a str>, Error<'a>> {
         .or_not()
 }
 
-fn param(config: &Config) -> impl Parser<&str, Field, Error> {
+fn param(config: &Config) -> impl Parser<'_, &str, Field<'_>, Error<'_>> {
     let param = text::ident()
         .then_ignore(just(':').padded())
         .then(ty::parser(config));
@@ -79,7 +79,7 @@ fn param(config: &Config) -> impl Parser<&str, Field, Error> {
         })
 }
 
-fn params(config: &Config) -> impl Parser<&str, Vec<Field>, Error> {
+fn params(config: &Config) -> impl Parser<'_, &str, Vec<Field<'_>>, Error<'_>> {
     self_param().ignore_then(
         param(config)
             .separated_by(just(',').padded())

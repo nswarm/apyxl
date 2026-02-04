@@ -1,8 +1,8 @@
-use std::fmt::Debug;
-use itertools::Itertools;
 use crate::model;
 use crate::model::Semantics;
 use crate::view::{EntityId, EntityIdTransform, Namespace};
+use itertools::Itertools;
+use std::fmt::Debug;
 
 pub type Type<'v, 'a> = model::BaseType<TypeRef<'v>, EntityId<'v>, &'a str>;
 
@@ -24,7 +24,7 @@ impl<'v> TypeRef<'v> {
         }
     }
 
-    pub fn value(&self) -> Type {
+    pub fn value(&self) -> Type<'_, '_> {
         self.model_to_view_ty(self.target)
     }
 
@@ -102,15 +102,18 @@ impl<'v> TypeRef<'v> {
             },
             model::Type::Optional(ty) => Type::Optional(Box::new(self.nested(ty))),
             model::Type::Function { params, return_ty } => Type::Function {
-                params: params.iter().map(|param| Box::new(self.nested(&param))).collect_vec(),
+                params: params
+                    .iter()
+                    .map(|param| Box::new(self.nested(&param)))
+                    .collect_vec(),
                 return_ty: return_ty.as_ref().map(|ty| Box::new(self.nested(&ty))),
-            }
+            },
         }
     }
 }
 
 impl Type<'_, '_> {
-    pub fn api(&self) -> Option<&EntityId> {
+    pub fn api(&self) -> Option<&EntityId<'_>> {
         if let Type::Api(id) = self {
             Some(id)
         } else {

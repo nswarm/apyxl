@@ -33,7 +33,7 @@ impl<'v, 'a> Rpc<'v, 'a> {
         Self { target, xforms }
     }
 
-    pub fn name(&self) -> Cow<str> {
+    pub fn name(&self) -> Cow<'_, str> {
         let mut name = self.target.name.clone();
         for x in &self.xforms.rpc {
             x.name(&mut name)
@@ -60,14 +60,14 @@ impl<'v, 'a> Rpc<'v, 'a> {
             })
     }
 
-    pub fn return_type(&self) -> Option<TypeRef> {
+    pub fn return_type(&self) -> Option<TypeRef<'_>> {
         self.target
             .return_type
             .as_ref()
             .map(|target| TypeRef::new(target, &self.xforms.entity_id))
     }
 
-    pub fn attributes(&self) -> Attributes {
+    pub fn attributes(&self) -> Attributes<'_, '_> {
         Attributes::new(
             &self.target.attributes,
             &self.xforms.attr,

@@ -37,7 +37,7 @@ impl<'v> EntityId<'v> {
     ///     `namespace1.namespace2.DtoName`
     ///     `namespace1.namespace2.DtoName.field0`
     ///     `namespace1.RpcName.param0`
-    pub fn path(&self) -> Vec<Cow<str>> {
+    pub fn path(&self) -> Vec<Cow<'_, str>> {
         let mut value = self
             .target
             .component_names()

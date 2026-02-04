@@ -30,7 +30,7 @@ impl<'v, 'a> TypeAlias<'v, 'a> {
         self.target.entity_type()
     }
 
-    pub fn name(&self) -> Cow<str> {
+    pub fn name(&self) -> Cow<'_, str> {
         let mut name = Cow::Borrowed(self.target.name);
         for x in &self.xforms.ty_alias {
             x.name(&mut name)
@@ -38,11 +38,11 @@ impl<'v, 'a> TypeAlias<'v, 'a> {
         name
     }
 
-    pub fn target_ty(&self) -> TypeRef {
+    pub fn target_ty(&self) -> TypeRef<'_> {
         TypeRef::new(&self.target.target_ty, &self.xforms.entity_id)
     }
 
-    pub fn attributes(&self) -> Attributes {
+    pub fn attributes(&self) -> Attributes<'_, '_> {
         Attributes::new(
             &self.target.attributes,
             &self.xforms.attr,

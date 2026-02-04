@@ -16,13 +16,13 @@ pub struct Field<'a> {
 }
 
 impl ToEntity for Field<'_> {
-    fn to_entity(&self) -> Entity {
+    fn to_entity(&self) -> Entity<'_, '_> {
         Entity::Field(self)
     }
 }
 
 impl AttributesHolder for Field<'_> {
-    fn attributes(&self) -> &Attributes {
+    fn attributes(&self) -> &Attributes<'_> {
         &self.attributes
     }
 }

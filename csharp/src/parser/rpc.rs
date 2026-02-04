@@ -7,7 +7,7 @@ use apyxl::parser::Config;
 use chumsky::prelude::*;
 use std::borrow::Cow;
 
-pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, (Rpc, Visibility), Error<'_>> {
     let return_type = choice((just("void").map(|_| None), ty::parser(config).map(Some)))
         .then_ignore(text::whitespace().at_least(1));
     let name = text::ident();
@@ -46,7 +46,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Rpc, Visibility), Error> {
         )
 }
 
-fn param(config: &Config) -> impl Parser<&str, Field, Error> {
+fn param(config: &Config) -> impl Parser<'_, &str, Field, Error<'_>> {
     let field = ty::parser(config)
         .then_ignore(text::whitespace().at_least(1))
         .then(text::ident());
@@ -65,7 +65,7 @@ fn param(config: &Config) -> impl Parser<&str, Field, Error> {
         })
 }
 
-fn params(config: &Config) -> impl Parser<&str, Vec<Field>, Error> {
+fn params(config: &Config) -> impl Parser<'_, &str, Vec<Field>, Error<'_>> {
     param(config)
         .separated_by(just(',').padded())
         .allow_trailing()

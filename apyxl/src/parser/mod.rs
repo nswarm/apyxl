@@ -10,6 +10,7 @@ pub mod test_util;
 pub mod util;
 
 mod config;
+mod pyx;
 mod rust;
 
 pub trait Parser {

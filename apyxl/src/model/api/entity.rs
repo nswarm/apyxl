@@ -118,7 +118,7 @@ impl<'api> FindEntity<'api> for EntityMut<'_, 'api> {
 
 pub trait ToEntity {
     /// Create an [Entity] reference to this entity.
-    fn to_entity(&self) -> Entity;
+    fn to_entity(&self) -> Entity<'_, '_>;
 
     fn entity_type(&self) -> EntityType {
         self.to_entity().ty()

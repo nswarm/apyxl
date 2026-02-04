@@ -3,7 +3,7 @@ use chumsky::error::Rich;
 use chumsky::{text, Parser};
 
 /// Expanded [text::keyword] that has a more informative error.
-pub fn keyword_ex(keyword: &str) -> impl Parser<&str, &str, Error> {
+pub fn keyword_ex(keyword: &str) -> impl Parser<'_, &str, &str, Error<'_>> {
     text::ident()
         .try_map(move |s: &str, span| {
             if s == keyword {

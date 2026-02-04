@@ -12,13 +12,13 @@ pub struct TypeAlias<'a> {
 }
 
 impl ToEntity for TypeAlias<'_> {
-    fn to_entity(&self) -> Entity {
+    fn to_entity(&self) -> Entity<'_, '_> {
         Entity::TypeAlias(self)
     }
 }
 
 impl AttributesHolder for TypeAlias<'_> {
-    fn attributes(&self) -> &Attributes {
+    fn attributes(&self) -> &Attributes<'_> {
         &self.attributes
     }
 }

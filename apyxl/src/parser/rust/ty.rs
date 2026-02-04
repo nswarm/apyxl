@@ -6,7 +6,7 @@ use crate::parser::Config;
 
 const ALLOWED_TYPE_NAME_CHARS: &str = "_<>";
 
-pub fn parser(config: &Config) -> impl Parser<&str, TypeRef, Error> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, TypeRef, Error<'_>> {
     let ref_type = choice((
         just("&mut")
             .then(text::whitespace().at_least(1))
@@ -105,7 +105,7 @@ fn option<'a>(
         .map(Type::new_optional)
 }
 
-fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
+fn user_ty(config: &Config) -> impl Parser<'_, &str, String, Error<'_>> {
     custom(move |input| {
         for (i, ty) in config.user_types.iter().enumerate() {
             let marker = input.save();

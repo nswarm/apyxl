@@ -35,13 +35,13 @@ impl<'a> Dto<'a> {
 }
 
 impl ToEntity for Dto<'_> {
-    fn to_entity(&self) -> Entity {
+    fn to_entity(&self) -> Entity<'_, '_> {
         Entity::Dto(self)
     }
 }
 
 impl AttributesHolder for Dto<'_> {
-    fn attributes(&self) -> &Attributes {
+    fn attributes(&self) -> &Attributes<'_> {
         &self.attributes
     }
 }

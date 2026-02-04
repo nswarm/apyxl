@@ -8,7 +8,7 @@ use apyxl::parser::Config;
 const ALLOWED_TYPE_NAME_CHARS: &str = "_<>";
 const LANGUAGE_RESERVED_KEYWORDS: &[&str] = &["namespace", "class", "struct", "interface", "enum"];
 
-pub fn parser(config: &Config) -> impl Parser<&str, TypeRef, Error> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, TypeRef, Error<'_>> {
     recursive(|nested| {
         let optional_parser = optional(config, nested.clone());
         let array_parser = array(config, nested.clone(), optional_parser.clone());
@@ -194,7 +194,7 @@ fn function<'a>(
     ))
 }
 
-fn user_ty(config: &Config) -> impl Parser<&str, String, Error> {
+fn user_ty(config: &Config) -> impl Parser<'_, &str, String, Error<'_>> {
     custom(move |input| {
         for (i, ty) in config.user_types.iter().enumerate() {
             let marker = input.save();

@@ -33,13 +33,13 @@ impl<'a> Enum<'a> {
 }
 
 impl ToEntity for Enum<'_> {
-    fn to_entity(&self) -> Entity {
+    fn to_entity(&self) -> Entity<'_, '_> {
         Entity::Enum(self)
     }
 }
 
 impl AttributesHolder for Enum<'_> {
-    fn attributes(&self) -> &Attributes {
+    fn attributes(&self) -> &Attributes<'_> {
         &self.attributes
     }
 }

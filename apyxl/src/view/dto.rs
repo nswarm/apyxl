@@ -37,7 +37,7 @@ impl<'v, 'a> Dto<'v, 'a> {
         Self { target, xforms }
     }
 
-    pub fn name(&self) -> Cow<str> {
+    pub fn name(&self) -> Cow<'_, str> {
         let mut name = Cow::Borrowed(self.target.name);
         for x in &self.xforms.dto {
             x.name(&mut name)
@@ -77,7 +77,7 @@ impl<'v, 'a> Dto<'v, 'a> {
             })
     }
 
-    pub fn attributes(&self) -> Attributes {
+    pub fn attributes(&self) -> Attributes<'_, '_> {
         Attributes::new(
             &self.target.attributes,
             &self.xforms.attr,
@@ -180,7 +180,7 @@ mod tests {
     //         .find_dto(&EntityId::try_from("d:dto").unwrap())
     //         .unwrap();
     //     let fields = dto.fields().map(|f| f.name().to_string()).collect_vec();
-    // 
+    //
     //     assert_eq!(fields, vec!["visible0", "visible1"]);
     // }
 }

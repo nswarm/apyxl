@@ -1767,11 +1767,11 @@ mod tests {
         }
     }
 
-    fn build_from_input(exe: &mut TestExecutor) -> Result<Model, Vec<ValidationError>> {
+    fn build_from_input(exe: &mut TestExecutor) -> Result<Model<'_>, Vec<ValidationError>> {
         test_builder(exe).build()
     }
 
-    fn test_builder(exe: &mut TestExecutor) -> Builder {
+    fn test_builder(exe: &mut TestExecutor) -> Builder<'_> {
         Builder {
             api: exe.api(),
             ..Default::default()

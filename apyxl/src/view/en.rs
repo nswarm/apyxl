@@ -46,7 +46,7 @@ impl<'v, 'a> Enum<'v, 'a> {
         Self { target, xforms }
     }
 
-    pub fn name(&self) -> Cow<str> {
+    pub fn name(&self) -> Cow<'_, str> {
         let mut name = Cow::Borrowed(self.target.name);
         for x in &self.xforms.en {
             x.name(&mut name)
@@ -66,7 +66,7 @@ impl<'v, 'a> Enum<'v, 'a> {
             .map(move |value| EnumValue::new(value, self.xforms))
     }
 
-    pub fn attributes(&self) -> Attributes {
+    pub fn attributes(&self) -> Attributes<'_, '_> {
         Attributes::new(
             &self.target.attributes,
             &self.xforms.attr,
@@ -84,7 +84,7 @@ impl<'v, 'a> EnumValue<'v, 'a> {
         Self { target, xforms }
     }
 
-    pub fn name(&self) -> Cow<str> {
+    pub fn name(&self) -> Cow<'_, str> {
         let mut name = Cow::Borrowed(self.target.name);
         for x in self.xforms.en_value.as_slice() {
             x.name(&mut name)
@@ -100,7 +100,7 @@ impl<'v, 'a> EnumValue<'v, 'a> {
         number
     }
 
-    pub fn attributes(&self) -> Attributes {
+    pub fn attributes(&self) -> Attributes<'_, '_> {
         Attributes::new(
             &self.target.attributes,
             &self.xforms.attr,

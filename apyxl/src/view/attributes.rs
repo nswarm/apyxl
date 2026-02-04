@@ -28,7 +28,7 @@ impl<'v, 'a> Attributes<'v, 'a> {
         self.target.chunk.as_ref()
     }
 
-    pub fn entity_id(&self) -> EntityId {
+    pub fn entity_id(&self) -> EntityId<'_> {
         EntityId::new(&self.target.entity_id, self.entity_id_xforms)
     }
 

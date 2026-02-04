@@ -29,7 +29,7 @@ impl TestExecutor {
         }
     }
 
-    pub fn api(&mut self) -> model::Api {
+    pub fn api(&mut self) -> model::Api<'_> {
         let mut builder = Builder::default();
         self.parser
             .parse(&TEST_CONFIG, &mut self.input, &mut builder)
@@ -37,12 +37,12 @@ impl TestExecutor {
         builder.into_api()
     }
 
-    pub fn model(&mut self) -> model::Model {
+    pub fn model(&mut self) -> model::Model<'_> {
         // Skip deps which rely on valid api.
         model::Model::without_deps(self.api(), Metadata::default())
     }
 
-    pub fn build(&mut self) -> model::Model {
+    pub fn build(&mut self) -> model::Model<'_> {
         let mut builder = Builder::default();
         self.parser
             .parse(&TEST_CONFIG, &mut self.input, &mut builder)

@@ -30,13 +30,13 @@ pub enum NamespaceChild<'a> {
 }
 
 impl ToEntity for Namespace<'_> {
-    fn to_entity(&self) -> Entity {
+    fn to_entity(&self) -> Entity<'_, '_> {
         Entity::Namespace(self)
     }
 }
 
 impl AttributesHolder for Namespace<'_> {
-    fn attributes(&self) -> &Attributes {
+    fn attributes(&self) -> &Attributes<'_> {
         &self.attributes
     }
 }
@@ -677,7 +677,7 @@ impl<'a> NamespaceChild<'a> {
 }
 
 impl ToEntity for NamespaceChild<'_> {
-    fn to_entity(&self) -> Entity {
+    fn to_entity(&self) -> Entity<'_, '_> {
         match self {
             NamespaceChild::Dto(dto) => dto.to_entity(),
             NamespaceChild::Rpc(rpc) => rpc.to_entity(),

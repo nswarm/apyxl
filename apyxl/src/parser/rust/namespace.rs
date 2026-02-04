@@ -9,7 +9,7 @@ use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, comment, dto, en, rpc, ty, ty_alias, visibility};
 use crate::parser::{util, Config};
 
-pub fn parser(config: &Config) -> impl Parser<&str, (Namespace, Visibility), Error> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, (Namespace<'_>, Visibility), Error<'_>> {
     recursive(|nested| {
         let prefix = util::keyword_ex("mod").then(text::whitespace().at_least(1));
         let name = text::ident();
@@ -68,7 +68,7 @@ pub fn children<'a>(
     .then_ignore(comment::multi())
 }
 
-fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
+fn field(config: &Config) -> impl Parser<'_, &str, (Field<'_>, Visibility), Error<'_>> {
     let end = just(';');
     let initializer = just('=')
         .padded()
@@ -102,7 +102,7 @@ fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
 }
 
 // Parses to a 'virtual' namespace that will be merged into the DTO with the same name.
-pub fn impl_block(config: &Config) -> impl Parser<&str, Namespace, Error> {
+pub fn impl_block(config: &Config) -> impl Parser<'_, &str, Namespace<'_>, Error<'_>> {
     let prefix = util::keyword_ex("impl").then(text::whitespace().at_least(1));
 
     let children = choice((

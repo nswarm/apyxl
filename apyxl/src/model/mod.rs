@@ -36,7 +36,7 @@ impl<'a> Model<'a> {
         }
     }
 
-    pub fn api(&self) -> &Api {
+    pub fn api(&self) -> &Api<'_> {
         &self.api
     }
 
@@ -48,7 +48,7 @@ impl<'a> Model<'a> {
         &self.dependencies
     }
 
-    pub fn view(&self) -> view::Model {
+    pub fn view(&self) -> view::Model<'_, '_> {
         view::Model::new(self)
     }
 }

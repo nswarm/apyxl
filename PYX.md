@@ -24,6 +24,9 @@ These differences are iterated in this document.
 
 ## Differences from Rust
 
+The biggest difference is that pyx is not a programming language, and does not support any sort of logic or
+execution.
+
 ### DTO children can be defined inside DTO or impl block
 
 ```rust

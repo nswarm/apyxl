@@ -91,7 +91,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
         }
     }
 
-    pub fn name(&self) -> Cow<str> {
+    pub fn name(&self) -> Cow<'_, str> {
         match self {
             NamespaceChild::Dto(dto) => dto.name(),
             NamespaceChild::Rpc(rpc) => rpc.name(),
@@ -102,7 +102,7 @@ impl<'v, 'a> NamespaceChild<'v, 'a> {
         }
     }
 
-    pub fn attributes(&self) -> Attributes {
+    pub fn attributes(&self) -> Attributes<'_, '_> {
         match self {
             NamespaceChild::Dto(dto) => dto.attributes(),
             NamespaceChild::Rpc(rpc) => rpc.attributes(),
@@ -137,7 +137,7 @@ impl<'v, 'a> Namespace<'v, 'a> {
         }
     }
 
-    pub fn name(&self) -> Cow<str> {
+    pub fn name(&self) -> Cow<'_, str> {
         let mut name = self.target.name.clone();
         for x in &self.xforms.namespace {
             x.name(&mut name)
@@ -161,7 +161,7 @@ impl<'v, 'a> Namespace<'v, 'a> {
             .map(|child| NamespaceChild::new(child, self.xforms))
     }
 
-    pub fn attributes(&self) -> Attributes {
+    pub fn attributes(&self) -> Attributes<'_, '_> {
         Attributes::new(
             &self.target.attributes,
             &self.xforms.attr,

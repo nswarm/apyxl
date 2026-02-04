@@ -28,13 +28,13 @@ impl<'a> Rpc<'a> {
 }
 
 impl ToEntity for Rpc<'_> {
-    fn to_entity(&self) -> Entity {
+    fn to_entity(&self) -> Entity<'_, '_> {
         Entity::Rpc(self)
     }
 }
 
 impl AttributesHolder for Rpc<'_> {
-    fn attributes(&self) -> &Attributes {
+    fn attributes(&self) -> &Attributes<'_> {
         &self.attributes
     }
 }
@@ -44,7 +44,7 @@ impl<'api> FindEntity<'api> for Rpc<'api> {
         if referenceable {
             return Err(anyhow!("rpcs are not referenceable"));
         }
-        
+
         match id.pop_front() {
             None => Ok(EntityId::default()),
             Some((_, child_name)) => {

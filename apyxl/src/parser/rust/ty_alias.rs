@@ -6,7 +6,7 @@ use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, comment, ty, visibility};
 use crate::parser::{util, Config};
 
-pub fn parser(config: &Config) -> impl Parser<&str, (TypeAlias, Visibility), Error> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, (TypeAlias<'_>, Visibility), Error<'_>> {
     let prefix = util::keyword_ex("type").then(text::whitespace().at_least(1));
     comment::multi()
         .padded()

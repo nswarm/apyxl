@@ -7,7 +7,7 @@ use crate::parser::rust::visibility::Visibility;
 use crate::parser::rust::{attributes, comment, ty, visibility};
 use crate::parser::{util, Config};
 
-pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, (Dto<'_>, Visibility), Error<'_>> {
     let prefix = util::keyword_ex("struct").then(text::whitespace().at_least(1));
     let name = text::ident();
     let fields = fields(config).delimited_by(
@@ -45,7 +45,7 @@ pub fn parser(config: &Config) -> impl Parser<&str, (Dto, Visibility), Error> {
         })
 }
 
-fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
+fn field(config: &Config) -> impl Parser<'_, &str, (Field<'_>, Visibility), Error<'_>> {
     let field = text::ident()
         .then_ignore(just(':').padded())
         .then(ty::parser(config));
@@ -70,7 +70,7 @@ fn field(config: &Config) -> impl Parser<&str, (Field, Visibility), Error> {
         })
 }
 
-fn fields(config: &Config) -> impl Parser<&str, Vec<(Field, Visibility)>, Error> {
+fn fields(config: &Config) -> impl Parser<'_, &str, Vec<(Field<'_>, Visibility)>, Error<'_>> {
     field(config)
         .separated_by(just(',').padded())
         .allow_trailing()

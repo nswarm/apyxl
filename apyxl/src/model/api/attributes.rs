@@ -14,7 +14,7 @@ pub struct Attributes<'a> {
 }
 
 pub trait AttributesHolder {
-    fn attributes(&self) -> &Attributes;
+    fn attributes(&self) -> &Attributes<'_>;
 }
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
