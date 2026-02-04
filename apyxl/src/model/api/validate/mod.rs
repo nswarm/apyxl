@@ -14,8 +14,8 @@ use crate::model::{
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum ValidationError {
     #[error(
-        "Invalid namespace found at path {0}. Only the root namespace can be named {}.",
-        UNDEFINED_NAMESPACE
+        "Invalid namespace found at path {0}. Only the root namespace can be named {root}.",
+        root = UNDEFINED_NAMESPACE
     )]
     InvalidNamespaceName(EntityId),
 
