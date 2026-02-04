@@ -14,7 +14,7 @@ apyxl = { path = "apyxl" }
 csharp = { path = "csharp" }
 anyhow = "1.0"
 thiserror = "2.0"
-chumsky = "=1.0.0-alpha.4"
+chumsky = "=1.0.0-alpha.5"
 ariadne = "0.6"
 log = "0.4"
 env_logger = "0.11"

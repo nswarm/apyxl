@@ -11,7 +11,7 @@ pub fn parser(config: &Config) -> impl Parser<'_, &str, (Field, Visibility), Err
     let end = just(';');
     let initializer = just('=')
         .padded()
-        .then(any().and_is(end.not()).repeated().slice());
+        .then(any().and_is(end.not()).repeated().to_slice());
     let field = ty::parser(config)
         .then_ignore(text::whitespace().at_least(1))
         .then(text::ident())

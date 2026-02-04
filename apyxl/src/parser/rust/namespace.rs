@@ -72,7 +72,7 @@ fn field(config: &Config) -> impl Parser<'_, &str, (Field<'_>, Visibility), Erro
     let end = just(';');
     let initializer = just('=')
         .padded()
-        .then(any().and_is(end.not()).repeated().slice());
+        .then(any().and_is(end.not()).repeated().to_slice());
     let field = util::keyword_ex("const")
         .ignore_then(text::whitespace().at_least(1))
         .ignore_then(text::ident())

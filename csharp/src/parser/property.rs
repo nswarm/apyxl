@@ -19,7 +19,7 @@ pub fn parser(config: &Config) -> impl Parser<'_, &str, Vec<(Rpc, Visibility)>, 
     let anything_until_semicolon = any()
         .and_is(just(';').not())
         .repeated()
-        .slice()
+        .to_slice()
         .then(semicolon);
     let initializer = just('=').padded().then(anything_until_semicolon);
 

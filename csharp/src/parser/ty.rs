@@ -64,7 +64,7 @@ fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
                 .filter(|c: &char| c.is_ascii_alphanumeric() || *c == '_')
                 .repeated(),
         )
-        .slice()
+        .to_slice()
         .try_map(|ty: &str, span| {
             if LANGUAGE_RESERVED_KEYWORDS.contains(&ty) {
                 Err(Rich::custom(
@@ -108,7 +108,7 @@ fn array<'a>(
             .filter(|c: &char| c.is_alphanumeric() || "._<>?".contains(*c))
             .repeated()
             .at_least(1)
-            .slice()
+            .to_slice()
             .ignore_then(just("[]").padded().repeated().at_least(1).count());
 
         let marker = input.save();

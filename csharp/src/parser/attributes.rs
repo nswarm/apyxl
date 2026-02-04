@@ -5,7 +5,7 @@ use apyxl::model::attributes;
 use apyxl::parser::error::Error;
 
 pub fn attributes<'a>() -> impl Parser<'a, &'a str, Vec<attributes::User<'a>>, Error<'a>> {
-    let name = text::ident().separated_by(just(".").padded()).slice();
+    let name = text::ident().separated_by(just(".").padded()).to_slice();
     let assigned_data = just('=')
         .padded()
         .ignore_then(text::ident())

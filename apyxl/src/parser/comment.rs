@@ -27,7 +27,7 @@ pub fn block_comment<'a>(
     any()
         .and_is(end.clone().not())
         .repeated()
-        .slice()
+        .to_slice()
         .map(&str::trim)
         .delimited_by(start, end)
         .map(|s| {
@@ -54,7 +54,7 @@ pub fn block_comment<'a>(
 pub fn line_comment<'a>(
     start: impl Parser<'a, &'a str, &'a str, Error<'a>>,
 ) -> impl Parser<'a, &'a str, Comment<'a>, Error<'a>> {
-    let text = any().and_is(just('\n').not()).repeated().slice();
+    let text = any().and_is(just('\n').not()).repeated().to_slice();
     let line_start = start.then(just(' ').or_not());
     let line = text::inline_whitespace()
         .then(line_start)

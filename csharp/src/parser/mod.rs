@@ -493,7 +493,7 @@ fn collect_type_ids(namespace: &Namespace, namespace_id: EntityId, type_ids: &mu
 fn assembly_definitions<'a>() -> impl Parser<'a, &'a str, (), Error<'a>> {
     let asmdef = util::keyword_ex("assembly")
         .then(just(":").padded())
-        .then(any().and_is(just("]").not()).repeated().slice())
+        .then(any().and_is(just("]").not()).repeated().to_slice())
         .delimited_by(just("[").padded(), just("]").padded());
     comment::multi().then(asmdef).repeated().ignored()
 }

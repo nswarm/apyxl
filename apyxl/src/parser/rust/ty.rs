@@ -67,7 +67,7 @@ fn type_name<'a>() -> impl Parser<'a, &'a str, &'a str, Error<'a>> {
                 .filter(|c: &char| c.is_ascii_alphanumeric() || *c == '_')
                 .repeated(),
         )
-        .slice()
+        .to_slice()
 }
 
 fn vec<'a>(

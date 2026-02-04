@@ -11,7 +11,7 @@ pub enum ExprBlock<'a> {
 }
 
 pub fn parser<'a>() -> impl Parser<'a, &'a str, Vec<ExprBlock<'a>>, Error<'a>> {
-    let body = none_of("{}").repeated().at_least(1).slice().map(&str::trim);
+    let body = none_of("{}").repeated().at_least(1).to_slice().map(&str::trim);
     recursive(|nested| {
         choice((
             comment::single().boxed().padded().map(ExprBlock::Comment),

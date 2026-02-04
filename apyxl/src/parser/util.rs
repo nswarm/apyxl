@@ -12,5 +12,5 @@ pub fn keyword_ex(keyword: &str) -> impl Parser<'_, &str, &str, Error<'_>> {
                 Err(Rich::custom(span, format!("found unexpected token {}", s)))
             }
         })
-        .slice()
+        .to_slice()
 }
