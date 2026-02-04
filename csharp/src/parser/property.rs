@@ -14,7 +14,7 @@ enum Accessor {
     Set,
 }
 
-pub fn parser(config: &Config) -> impl Parser<'_, &str, Vec<(Rpc, Visibility)>, Error<'_>> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, Vec<(Rpc<'_>, Visibility)>, Error<'_>> {
     let semicolon = just(';').padded();
     let anything_until_semicolon = any()
         .and_is(just(';').not())

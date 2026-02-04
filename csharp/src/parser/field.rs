@@ -7,7 +7,7 @@ use apyxl::parser::{util, Config};
 use chumsky::prelude::{any, just};
 use chumsky::{text, Parser};
 
-pub fn parser(config: &Config) -> impl Parser<'_, &str, (Field, Visibility), Error<'_>> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, (Field<'_>, Visibility), Error<'_>> {
     let end = just(';');
     let initializer = just('=')
         .padded()

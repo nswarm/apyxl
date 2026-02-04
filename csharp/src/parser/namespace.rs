@@ -10,7 +10,7 @@ use crate::parser::{attributes, comment, dto, en, ty_alias};
 use apyxl::model::{Attributes, Namespace, NamespaceChild};
 use apyxl::parser::Config;
 
-pub fn parser(config: &Config) -> impl Parser<'_, &str, Namespace, Error<'_>> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, Namespace<'_>, Error<'_>> {
     recursive(|nested| {
         let prefix = keyword_ex("namespace").then(text::whitespace().at_least(1));
         let name_chain = text::ident()

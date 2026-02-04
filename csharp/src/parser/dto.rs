@@ -7,7 +7,7 @@ use apyxl::parser::error::Error;
 use chumsky::prelude::*;
 use itertools::Itertools;
 
-pub fn parser(config: &Config) -> impl Parser<'_, &str, (Dto, Visibility), Error<'_>> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, (Dto<'_>, Visibility), Error<'_>> {
     recursive(|nested| {
         let prefix = choice((
             util::keyword_ex("struct"),

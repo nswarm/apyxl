@@ -5,7 +5,7 @@ use apyxl::model::{Attributes, TypeAlias};
 use apyxl::parser::error::Error;
 use apyxl::parser::{util, Config};
 
-pub fn parser(config: &Config) -> impl Parser<'_, &str, TypeAlias, Error<'_>> {
+pub fn parser(config: &Config) -> impl Parser<'_, &str, TypeAlias<'_>, Error<'_>> {
     let prefix = util::keyword_ex("using").then(text::whitespace().at_least(1));
     let alias_name = text::ident().then_ignore(just("=").padded());
     comment::multi()
