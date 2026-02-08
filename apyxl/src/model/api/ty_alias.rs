@@ -2,9 +2,10 @@ use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity, ToEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, TypeRef};
 use anyhow::anyhow;
+use serde::Serialize;
 
 /// A single enum type in the within an [Api].
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct TypeAlias<'a> {
     pub name: &'a str,
     pub target_ty: TypeRef,

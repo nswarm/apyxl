@@ -5,9 +5,10 @@ use crate::model::{Attributes, Dto, EntityId, Enum, Field, Rpc, TypeAlias};
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use std::borrow::Cow;
+use serde::Serialize;
 
 /// A named, nestable wrapper for a set of API entities.
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Namespace<'a> {
     pub name: Cow<'a, str>,
     pub children: Vec<NamespaceChild<'a>>,
@@ -19,7 +20,7 @@ pub struct Namespace<'a> {
     pub is_virtual: bool,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub enum NamespaceChild<'a> {
     Field(Field<'a>),
     Dto(Dto<'a>),

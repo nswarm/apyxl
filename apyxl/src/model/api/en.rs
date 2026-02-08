@@ -3,9 +3,10 @@ use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Attributes, Entity, EntityId};
 use anyhow::anyhow;
+use serde::Serialize;
 
 /// A single enum type in the within an [Api].
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Enum<'a> {
     pub name: &'a str,
     pub values: Vec<EnumValue<'a>>,
@@ -15,7 +16,7 @@ pub struct Enum<'a> {
 pub type EnumValueNumber = i64;
 
 /// A single value within an [Enum].
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct EnumValue<'a> {
     pub name: &'a str,
     pub number: EnumValueNumber,

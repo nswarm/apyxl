@@ -1,10 +1,11 @@
-use anyhow::anyhow;
 use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity, ToEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, TypeRef};
+use anyhow::anyhow;
+use serde::Serialize;
 
 /// A pair of name and type that describe a named instance of a type e.g. within a [Dto] or [Rpc].
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Field<'a> {
     pub name: &'a str,
     pub ty: TypeRef,
@@ -38,7 +39,10 @@ impl<'api> FindEntity<'api> for Field<'api> {
                 if entity::subtype::TY_ALL.contains(&name.as_str()) {
                     Ok(EntityId::new(EntityType::Type, entity::subtype::TY))
                 } else {
-                    Err(anyhow!("failed to qualify_id: {} is an invalid field child", name))
+                    Err(anyhow!(
+                        "failed to qualify_id: {} is an invalid field child",
+                        name
+                    ))
                 }
             }
         }

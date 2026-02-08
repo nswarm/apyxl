@@ -3,12 +3,13 @@ use itertools::Itertools;
 use log::debug;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
+use serde::Serialize;
 
 pub type DependencyGraph = DiGraph<EntityId, ()>;
 
 /// Tracks all dependencies across the API. Each [NamespaceChild] type is a node in the graph,
 /// and each reference between namespace children are edges.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct Dependencies {
     graph: DependencyGraph,
     node_map: HashMap<EntityId, NodeIndex>,

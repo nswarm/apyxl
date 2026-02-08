@@ -3,10 +3,11 @@ use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{entity, Attributes, Entity, EntityId, EntityType, Field, TypeRef};
 use anyhow::anyhow;
+use serde::Serialize;
 use std::borrow::Cow;
 
 /// A single Remote Procedure Call (RPC) within an [Api].
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Rpc<'a> {
     pub name: Cow<'a, str>,
     pub params: Vec<Field<'a>>,

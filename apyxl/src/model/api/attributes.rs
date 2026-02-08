@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
 use itertools::Itertools;
-
+use serde::Serialize;
 use crate::model::{chunk, EntityId};
 
 /// Additional metadata attached to entities.
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Attributes<'a> {
     pub chunk: Option<chunk::Attribute>,
     pub entity_id: EntityId,
@@ -17,18 +17,18 @@ pub trait AttributesHolder {
     fn attributes(&self) -> &Attributes<'_>;
 }
 
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Comment<'a> {
     lines: Vec<Cow<'a, str>>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct User<'a> {
     pub name: Cow<'a, str>,
     pub data: Vec<UserData<'a>>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct UserData<'a> {
     pub key: Option<&'a str>,
     pub value: &'a str,

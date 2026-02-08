@@ -4,6 +4,7 @@ use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Entity, EntityId, Namespace};
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
+use serde::Serialize;
 
 /// A type within the language or API. Types other than [TypeRef::Api] are assumed to always
 /// exist during API validation and can be used by [crate::Generator]s to map to the relevant known
@@ -15,7 +16,7 @@ use itertools::Itertools;
 /// exist after the API is built.
 ///
 /// This is generic so that view::Type can provide relevant view types for variants with data.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub enum BaseType<TypeRef, ApiType, UserTypeName>
 where
     TypeRef: Debug + Clone,
@@ -88,13 +89,13 @@ where
 pub type UserTypeName = String;
 pub type Type = BaseType<TypeRef, EntityId, UserTypeName>;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct TypeRef {
     pub value: Type,
     pub semantics: Semantics,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Semantics {
     Value,
     Ref,

@@ -1,3 +1,4 @@
+use serde::Serialize;
 use crate::view;
 pub use api::*;
 pub use builder::Builder;
@@ -10,7 +11,7 @@ pub mod chunk;
 pub mod metadata;
 
 /// In-memory representation of a fully parsed and validated API.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct Model<'a> {
     api: Api<'a>,
     metadata: Metadata,

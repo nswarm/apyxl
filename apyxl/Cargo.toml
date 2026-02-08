@@ -14,10 +14,12 @@ itertools = { workspace = true }
 globset = { workspace = true }
 walkdir = { workspace = true }
 dyn-clone = { workspace = true }
-petgraph = { workspace = true }
+petgraph = { workspace = true, features = ["serde-1"] }
 lazy_static = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 serde_json = { workspace = true }
+insta = { workspace = true, features = ["yaml"] }
+

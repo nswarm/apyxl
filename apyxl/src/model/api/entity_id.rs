@@ -3,11 +3,11 @@ use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
-use anyhow::{anyhow, Result};
-use itertools::{zip_eq, Itertools};
-
 use crate::model::api::entity;
 use crate::model::api::entity::EntityType;
+use anyhow::{anyhow, Result};
+use itertools::{zip_eq, Itertools};
+use serde::Serialize;
 
 /// An [EntityId] is a unique sequence of components that each define the type and name of an
 /// entity within the API, and together define a path from through the hierarchy to a specific
@@ -67,12 +67,12 @@ use crate::model::api::entity::EntityType;
 ///     [crate::model::TypeAlias]: `target`:                  [crate::model::TypeRef] (nameless),
 ///     [crate::model::Enum]:      <none>
 ///     [crate::model::TypeRef]:      <none>
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct EntityId {
     components: VecDeque<Component>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize)]
 pub struct Component {
     pub ty: EntityType,
     pub name: String,
@@ -81,10 +81,14 @@ pub struct Component {
 impl EntityId {
     pub fn new(ty: EntityType, name: impl ToString) -> Self {
         Self {
-            components: vec![Component { ty, name: name.to_string() }].into()
+            components: vec![Component {
+                ty,
+                name: name.to_string(),
+            }]
+            .into(),
         }
     }
-    
+
     /// When parsing, you don't necessarily know what type of entity the [EntityId] is referencing.
     /// using `new_unqualified` takes only names, and during [crate::model::builder::Builder::build]
     /// any unqualified [EntityIds] will be qualified when the complete api is at its disposal.

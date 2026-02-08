@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
-
+use serde::Serialize;
 use crate::model::{Dto, EntityId, Enum, Field, Namespace, Rpc, TypeAlias, TypeRef};
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Copy, Clone, Serialize)]
 pub enum EntityType {
     None, // Unqualified EntityIds.
     Namespace,

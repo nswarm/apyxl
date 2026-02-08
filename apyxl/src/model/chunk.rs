@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use chumsky::container::Seq;
-
 use crate::model;
 use crate::model::{Attributes, EntityId};
 use crate::view::NamespaceTransform;
+use chumsky::container::Seq;
+use serde::Serialize;
 
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Chunk {
     /// Relative path including file name from a common root path shared by the other [Chunk]s from
     /// the [Input]. Typically used by a [crate::Generator] to determine where to put the final file
@@ -22,7 +22,7 @@ impl Chunk {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct Metadata {
     /// The namespace that all entities within the chunk reside.
     /// Entities will still need to be filtered by the [Attribute] via the [ChunkFilter]
@@ -33,7 +33,7 @@ pub struct Metadata {
 }
 
 /// Information stored about the entity's origin chunk(s).
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Attribute {
     /// Some entities can exist in more than one chunk.
     pub relative_file_paths: Vec<PathBuf>,

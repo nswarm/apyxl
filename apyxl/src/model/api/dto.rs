@@ -3,9 +3,10 @@ use crate::model::attributes::AttributesHolder;
 use crate::model::entity::{EntityMut, FindEntity};
 use crate::model::{Attributes, Entity, EntityId, EntityType, Field, Namespace, Rpc};
 use anyhow::anyhow;
+use serde::Serialize;
 
 /// A single Data Transfer Object (DTO) used in an [Rpc], either directly or nested in another [Dto].
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct Dto<'a> {
     pub name: &'a str,
     pub fields: Vec<Field<'a>>,
