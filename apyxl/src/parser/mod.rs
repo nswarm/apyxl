@@ -12,6 +12,7 @@ pub mod util;
 mod config;
 mod pyx;
 mod rust;
+mod validation;
 
 pub trait Parser {
     fn parse<'a, I: Input + 'a>(

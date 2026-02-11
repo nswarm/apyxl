@@ -15,4 +15,5 @@ pub mod view;
 // Used and useful in crates that provide parsers/generators so not cfg(test).
 pub mod test_util;
 
+mod feature;
 mod rust_util;
