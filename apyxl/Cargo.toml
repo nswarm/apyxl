@@ -17,6 +17,7 @@ dyn-clone = { workspace = true }
 petgraph = { workspace = true, features = ["serde-1"] }
 lazy_static = { workspace = true }
 serde = { workspace = true }
+macros = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

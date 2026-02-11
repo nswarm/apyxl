@@ -13,6 +13,7 @@
       <sourceFolder url="file://$MODULE_DIR$/output/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/apyxl/examples/rust/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/csharp/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/macros/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/model/target" />
       <excludeFolder url="file://$MODULE_DIR$/apyxl/examples/rust/target" />
