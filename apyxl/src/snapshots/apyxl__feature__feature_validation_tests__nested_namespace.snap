@@ -1,0 +1,33 @@
+---
+source: apyxl/src/feature.rs
+expression: api
+---
+name: _
+children:
+  - Namespace:
+      name: outer
+      children:
+        - Namespace:
+            name: inner
+            children: []
+            attributes:
+              chunk: ~
+              entity_id:
+                components: []
+              comments: []
+              user: []
+            is_virtual: false
+      attributes:
+        chunk: ~
+        entity_id:
+          components: []
+        comments: []
+        user: []
+      is_virtual: false
+attributes:
+  chunk: ~
+  entity_id:
+    components: []
+  comments: []
+  user: []
+is_virtual: false
