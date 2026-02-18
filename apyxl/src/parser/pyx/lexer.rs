@@ -4,14 +4,16 @@ use chumsky::prelude::*;
 pub fn lexer<'src>(
 ) -> impl Parser<'src, &'src str, Vec<Spanned<Token<'src>>>, extra::Err<Rich<'src, char, SimpleSpan>>>
 {
-    let ctrl = one_of("{}").map(Token::Ctrl);
+    let attr_open = just("#[").to(Token::AttrOpen);
+
+    let ctrl = one_of("{}](),=").map(Token::Ctrl);
 
     let ident = text::ascii::ident().map(|ident: &str| match ident {
         "namespace" => Token::Namespace,
         _ => Token::Ident(ident),
     });
 
-    let token = choice((ctrl, ident));
+    let token = choice((attr_open, ctrl, ident));
 
     token
         .map_with(|tok, e| Spanned {

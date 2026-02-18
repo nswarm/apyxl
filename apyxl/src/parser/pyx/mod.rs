@@ -1,3 +1,4 @@
+mod attributes;
 mod error;
 mod lexer;
 mod namespace;

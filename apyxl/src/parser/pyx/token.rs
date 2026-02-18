@@ -5,6 +5,7 @@ pub enum Token<'src> {
     Ctrl(char),
     Ident(&'src str),
     Namespace,
+    AttrOpen,
 }
 
 impl fmt::Display for Token<'_> {
@@ -13,6 +14,7 @@ impl fmt::Display for Token<'_> {
             Token::Ctrl(c) => write!(f, "{c}"),
             Token::Ident(s) => write!(f, "{s}"),
             Token::Namespace => write!(f, "namespace"),
+            Token::AttrOpen => write!(f, "#["),
         }
     }
 }

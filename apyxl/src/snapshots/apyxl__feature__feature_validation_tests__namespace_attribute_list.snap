@@ -1,0 +1,32 @@
+---
+source: apyxl/src/feature.rs
+description: "#[some_attr(a, b, c)] namespace ns {}"
+expression: api
+---
+name: _
+children:
+  - Namespace:
+      name: ns
+      children: []
+      attributes:
+        chunk: ~
+        entity_id:
+          components: []
+        comments: []
+        user:
+          - name: some_attr
+            data:
+              - key: ~
+                value: a
+              - key: ~
+                value: b
+              - key: ~
+                value: c
+      is_virtual: false
+attributes:
+  chunk: ~
+  entity_id:
+    components: []
+  comments: []
+  user: []
+is_virtual: false
