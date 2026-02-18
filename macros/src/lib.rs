@@ -22,14 +22,18 @@ pub fn derive_validate_features(input: TokenStream) -> TokenStream {
             quote! {
                 #[test]
                 fn #test_name() -> Result<()> {
-                    let input = #enum_name::#variant_name.to_pyx_str();
+                    let input_str = #enum_name::#variant_name.to_pyx_str();
                     let parser = Pyx::default();
                     let config = Config::default();
-                    let mut input = input::Buffer::new(input);
+                    let mut input = input::Buffer::new(input_str);
                     let mut builder = model::Builder::default();
                     parser.parse(&config, &mut input, &mut builder)?;
                     let api = builder.into_api();
-                    insta::assert_yaml_snapshot!(api);
+                    insta::with_settings!({
+                        description => input_str,
+                    }, {
+                        insta::assert_yaml_snapshot!(api);
+                    });
                     Ok(())
                 }
             }
@@ -51,4 +55,3 @@ pub fn derive_validate_features(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
-
