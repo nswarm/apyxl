@@ -1,3 +1,12 @@
+## Adding a pyx Feature
+
+1. Add the feature to the [Feature enum](apyxl/src/feature.rs)
+2. Add a representative string to `Feature::to_pyx_str` that will be used in validation
+3. Add logic to the pyx parser
+4. run `just test` to generate the snapshot
+5. run `just review-ss` to review the snapshot
+6. if snapshot looks good, accept and you're done. Otherwise, modify parser and return to step 4.
+
 ## Adding a NamespaceChild
 
 List of stuff to consider when adding a new NamespaceChild:
