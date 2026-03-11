@@ -6,6 +6,7 @@ pub enum Token<'src> {
     Ident(&'src str),
     Namespace,
     AttrOpen,
+    Comment(Vec<&'src str>),
 }
 
 impl fmt::Display for Token<'_> {
@@ -15,6 +16,7 @@ impl fmt::Display for Token<'_> {
             Token::Ident(s) => write!(f, "{s}"),
             Token::Namespace => write!(f, "namespace"),
             Token::AttrOpen => write!(f, "#["),
+            Token::Comment(_) => write!(f, "comment"),
         }
     }
 }

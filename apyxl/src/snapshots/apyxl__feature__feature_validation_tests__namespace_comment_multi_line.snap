@@ -1,0 +1,27 @@
+---
+source: apyxl/src/feature.rs
+description: "\n                /// line 1\n                /// line 2\n                namespace ns {}\n                "
+expression: api
+---
+name: _
+children:
+  - Namespace:
+      name: ns
+      children: []
+      attributes:
+        chunk: ~
+        entity_id:
+          components: []
+        comments:
+          - lines:
+              - line 1
+              - line 2
+        user: []
+      is_virtual: false
+attributes:
+  chunk: ~
+  entity_id:
+    components: []
+  comments: []
+  user: []
+is_virtual: false

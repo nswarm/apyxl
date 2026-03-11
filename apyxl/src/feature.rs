@@ -6,6 +6,9 @@ pub enum Feature {
     NamespaceAttributeList,
     NamespaceAttributeMap,
     NamespaceAttributeMultiple,
+    NamespaceCommentLine,
+    NamespaceCommentMultiLine,
+    NamespaceCommentBlock,
 }
 
 impl Feature {
@@ -18,6 +21,29 @@ impl Feature {
             Feature::NamespaceAttributeMap => "#[some_attr(a=x, b=y)] namespace ns {}",
             Feature::NamespaceAttributeMultiple => {
                 "#[attr1, attr2(a, b), attr3(k=v)] namespace ns {}"
+            }
+            Feature::NamespaceCommentLine => {
+                r#"
+                /// comment
+                namespace ns {}
+                "#
+            }
+            Feature::NamespaceCommentMultiLine => {
+                r#"
+                /// line 1
+                /// line 2
+                namespace ns {}
+                "#
+            }
+            Feature::NamespaceCommentBlock => {
+                r#"
+                /*
+                multiline
+                  block
+                comment
+                */
+                namespace ns {}
+                "#
             }
         }
     }

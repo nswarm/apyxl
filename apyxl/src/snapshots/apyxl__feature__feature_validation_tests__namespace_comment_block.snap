@@ -1,0 +1,28 @@
+---
+source: apyxl/src/feature.rs
+description: "\n                /*\n                multiline\n                  block\n                comment\n                */\n                namespace ns {}\n                "
+expression: api
+---
+name: _
+children:
+  - Namespace:
+      name: ns
+      children: []
+      attributes:
+        chunk: ~
+        entity_id:
+          components: []
+        comments:
+          - lines:
+              - multiline
+              - "  block"
+              - comment
+        user: []
+      is_virtual: false
+attributes:
+  chunk: ~
+  entity_id:
+    components: []
+  comments: []
+  user: []
+is_virtual: false

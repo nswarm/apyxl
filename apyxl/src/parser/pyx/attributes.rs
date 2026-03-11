@@ -1,9 +1,23 @@
 use crate::model::attributes;
+use crate::model::Comment;
 use crate::parser::pyx::token::Token;
 use crate::parser::pyx::Error;
 use chumsky::input::ValueInput;
 use chumsky::prelude::*;
 use std::borrow::Cow;
+
+/// Parses zero or more comment tokens into `Vec<Comment>`.
+/// Each token becomes one `Comment`. Separate tokens (separated by blank lines
+/// for line comments, or distinct `/* */` blocks) become separate entries.
+pub fn comments<'tok, 'src: 'tok, I>(
+) -> impl Parser<'tok, I, Vec<Comment<'src>>, Error<'tok, 'src>>
+where
+    I: ValueInput<'tok, Token = Token<'src>, Span = SimpleSpan>,
+{
+    select! { Token::Comment(lines) => Comment::from(lines) }
+    .repeated()
+    .collect::<Vec<_>>()
+}
 
 /// Parses a single data entry: `value` or `key=value`.
 fn data_entry<'tok, 'src: 'tok, I>(

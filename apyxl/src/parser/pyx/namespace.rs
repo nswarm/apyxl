@@ -21,17 +21,19 @@ where
             .repeated()
             .collect::<Vec<_>>();
 
-        attributes::user()
+        attributes::comments()
+            .then(attributes::user())
             .then_ignore(just(Token::Namespace))
             .then(ident)
             .then(children.delimited_by(just(Token::Ctrl('{')), just(Token::Ctrl('}'))))
-            .map_with(|((user, name), children), e| {
+            .map_with(|(((comments, user), name), children), e| {
                 let mut ns = Namespace {
                     name: Cow::Borrowed(name),
                     children,
                     attributes: Default::default(),
                     is_virtual: false,
                 };
+                ns.attributes.comments = comments;
                 ns.attributes.user = user;
                 ns.with_span(e.span())
             })
